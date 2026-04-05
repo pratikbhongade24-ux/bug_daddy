@@ -1,0 +1,821 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  GrabHack infrastructure as code. Defines the VPC-bound Lambda services,
+  RDS MySQL instance, security groups, EventBridge schedules, CloudWatch log
+  groups, and CloudWatch Logs subscription filters that forward service errors
+  to the monitoring bot.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: grabhack
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC that hosts Lambda ENIs and the RDS instance.
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Two or more subnets for Lambda and the DB subnet group.
+  DbName:
+    Type: String
+    Default: bug_daddy
+  DbUsername:
+    Type: String
+    Default: bug_daddy
+  DbPassword:
+    Type: String
+    NoEcho: true
+  DbInstanceIdentifier:
+    Type: String
+    Default: database-1
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DbAllocatedStorage:
+    Type: Number
+    Default: 20
+  LambdaRuntime:
+    Type: String
+    Default: python3.13
+  LambdaArchitecture:
+    Type: String
+    Default: x86_64
+    AllowedValues:
+      - x86_64
+      - arm64
+  ServiceCodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing the zip for the six service Lambdas.
+  ServiceCodeS3Key:
+    Type: String
+    Description: S3 key for the zip used by the six service Lambdas.
+  RdsAdminCodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing the RdsAdmin Lambda zip.
+  RdsAdminCodeS3Key:
+    Type: String
+    Description: S3 key for the RdsAdmin Lambda zip.
+  MonitoringCodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing the LogMonitoringBot Lambda zip.
+  MonitoringCodeS3Key:
+    Type: String
+    Description: S3 key for the LogMonitoringBot Lambda zip.
+  CustomerNormalSchedule:
+    Type: String
+    Default: rate(5 minutes)
+  BankNormalSchedule:
+    Type: String
+    Default: rate(6 minutes)
+  KycNormalSchedule:
+    Type: String
+    Default: rate(7 minutes)
+  AutoDebitNormalSchedule:
+    Type: String
+    Default: rate(8 minutes)
+  DisbursementNormalSchedule:
+    Type: String
+    Default: rate(9 minutes)
+  SupportNormalSchedule:
+    Type: String
+    Default: rate(10 minutes)
+  CustomerErrorSchedule:
+    Type: String
+    Default: rate(13 minutes)
+  BankErrorSchedule:
+    Type: String
+    Default: rate(14 minutes)
+  KycErrorSchedule:
+    Type: String
+    Default: rate(15 minutes)
+  AutoDebitErrorSchedule:
+    Type: String
+    Default: rate(16 minutes)
+  DisbursementErrorSchedule:
+    Type: String
+    Default: rate(17 minutes)
+  SupportErrorSchedule:
+    Type: String
+    Default: rate(18 minutes)
+
+Resources:
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: GrabHack Lambda access to RDS
+      GroupName: !Sub ${ProjectName}-lambda-sg
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-lambda-sg
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: GrabHack MySQL access
+      GroupName: !Sub ${ProjectName}-db-sg
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db-sg
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DatabaseIngressFromLambda:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DatabaseSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: GrabHack database subnets
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Ref DbInstanceIdentifier
+      Engine: mysql
+      EngineVersion: '8.4.8'
+      DBName: !Ref DbName
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      MaxAllocatedStorage: 1000
+      StorageType: gp2
+      StorageEncrypted: true
+      PubliclyAccessible: true
+      BackupRetentionPeriod: 1
+      MonitoringInterval: 60
+      CopyTagsToSnapshot: true
+      DeletionProtection: false
+      MultiAZ: false
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-lambda-exec-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  LogMonitorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-log-monitor-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: !Sub ${ProjectName}-log-monitor-inline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:FilterLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*:*
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  CustomerOnboardingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-CustomerOnboardingService
+      RetentionInDays: 14
+
+  BankStatementLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-BankStatementService
+      RetentionInDays: 14
+
+  KycLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-KYCService
+      RetentionInDays: 14
+
+  AutoDebitLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-AutoDebitService
+      RetentionInDays: 14
+
+  DisbursementLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-DisbursementService
+      RetentionInDays: 14
+
+  SupportLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-SupportService
+      RetentionInDays: 14
+
+  RdsAdminLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-RdsAdmin
+      RetentionInDays: 14
+
+  LogMonitoringBotLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-LogMonitoringBot
+      RetentionInDays: 14
+
+  CustomerOnboardingService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-CustomerOnboardingService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: CustomerOnboardingService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  BankStatementService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-BankStatementService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: BankStatementService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  KycService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-KYCService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: KYCService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  AutoDebitService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-AutoDebitService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: AutoDebitService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  DisbursementService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-DisbursementService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: DisbursementService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  SupportService:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-SupportService
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ServiceCodeS3Bucket
+        S3Key: !Ref ServiceCodeS3Key
+      Timeout: 30
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          SERVICE_NAME: SupportService
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+
+  RdsAdminFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-RdsAdmin
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref RdsAdminCodeS3Bucket
+        S3Key: !Ref RdsAdminCodeS3Key
+      Timeout: 60
+      MemorySize: 256
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
+
+  LogMonitoringBotFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-LogMonitoringBot
+      Runtime: !Ref LambdaRuntime
+      Architectures:
+        - !Ref LambdaArchitecture
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LogMonitorRole.Arn
+      Code:
+        S3Bucket: !Ref MonitoringCodeS3Bucket
+        S3Key: !Ref MonitoringCodeS3Key
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt DatabaseInstance.Endpoint.Address
+          DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
+          DB_NAME: !Ref DbName
+          DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
+
+  CustomerNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-customer-normal
+      ScheduleExpression: !Ref CustomerNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CustomerOnboardingService.Arn
+          Id: '1'
+          Input: '{"requestId":"createLead","customerId":"C101","source":"scheduler"}'
+
+  CustomerErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-customer-error
+      ScheduleExpression: !Ref CustomerErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CustomerOnboardingService.Arn
+          Id: '1'
+          Input: '{"requestId":"createLead","payload":{"requestId":"createLead","customerId":"C900","simulateBug":"risk_division"}}'
+
+  BankNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-bank-normal
+      ScheduleExpression: !Ref BankNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BankStatementService.Arn
+          Id: '1'
+          Input: '{"requestId":"parseStatement","statementId":"BS101","source":"scheduler"}'
+
+  BankErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-bank-error
+      ScheduleExpression: !Ref BankErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BankStatementService.Arn
+          Id: '1'
+          Input: '{"requestId":"parseStatement","statementId":"BS900","simulateBug":"timeout"}'
+
+  KycNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-kyc-normal
+      ScheduleExpression: !Ref KycNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt KycService.Arn
+          Id: '1'
+          Input: '{"requestId":"verifyKyc","customerId":"K101","source":"scheduler"}'
+
+  KycErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-kyc-error
+      ScheduleExpression: !Ref KycErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt KycService.Arn
+          Id: '1'
+          Input: '{"requestId":"verifyKyc","customerId":"K900","simulateBug":"key_error"}'
+
+  AutoDebitNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-autodebit-normal
+      ScheduleExpression: !Ref AutoDebitNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AutoDebitService.Arn
+          Id: '1'
+          Input: '{"requestId":"setupMandate","loanId":"AD101","source":"scheduler"}'
+
+  AutoDebitErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-autodebit-error
+      ScheduleExpression: !Ref AutoDebitErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AutoDebitService.Arn
+          Id: '1'
+          Input: '{"requestId":"setupMandate","loanId":"AD900","simulateBug":"runtime_error"}'
+
+  DisbursementNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-disbursement-normal
+      ScheduleExpression: !Ref DisbursementNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DisbursementService.Arn
+          Id: '1'
+          Input: '{"requestId":"disburseLoan","loanId":"D101","source":"scheduler"}'
+
+  DisbursementErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-disbursement-error
+      ScheduleExpression: !Ref DisbursementErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DisbursementService.Arn
+          Id: '1'
+          Input: '{"requestId":"disburseLoan","loanId":"D900","simulateBug":"database_timeout"}'
+
+  SupportNormalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-support-normal
+      ScheduleExpression: !Ref SupportNormalSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt SupportService.Arn
+          Id: '1'
+          Input: '{"requestId":"createTicket","ticketId":"SUP-101","source":"scheduler"}'
+
+  SupportErrorRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${ProjectName}-support-error
+      ScheduleExpression: !Ref SupportErrorSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt SupportService.Arn
+          Id: '1'
+          Input: '{"requestId":"createTicket","ticketId":"SUP-900","simulateBug":"traceback"}'
+
+  PermissionForCustomerNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CustomerOnboardingService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CustomerNormalRule.Arn
+
+  PermissionForCustomerErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CustomerOnboardingService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CustomerErrorRule.Arn
+
+  PermissionForBankNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BankStatementService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BankNormalRule.Arn
+
+  PermissionForBankErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BankStatementService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BankErrorRule.Arn
+
+  PermissionForKycNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref KycService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt KycNormalRule.Arn
+
+  PermissionForKycErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref KycService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt KycErrorRule.Arn
+
+  PermissionForAutoDebitNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AutoDebitService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AutoDebitNormalRule.Arn
+
+  PermissionForAutoDebitErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AutoDebitService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AutoDebitErrorRule.Arn
+
+  PermissionForDisbursementNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DisbursementService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DisbursementNormalRule.Arn
+
+  PermissionForDisbursementErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DisbursementService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DisbursementErrorRule.Arn
+
+  PermissionForSupportNormalRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SupportService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SupportNormalRule.Arn
+
+  PermissionForSupportErrorRule:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SupportService
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SupportErrorRule.Arn
+
+  AllowCloudWatchLogsToInvokeMonitoringBotCustomer:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-CustomerOnboardingService:*
+
+  AllowCloudWatchLogsToInvokeMonitoringBotBank:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-BankStatementService:*
+
+  AllowCloudWatchLogsToInvokeMonitoringBotKyc:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-KYCService:*
+
+  AllowCloudWatchLogsToInvokeMonitoringBotAutoDebit:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-AutoDebitService:*
+
+  AllowCloudWatchLogsToInvokeMonitoringBotDisbursement:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-DisbursementService:*
+
+  AllowCloudWatchLogsToInvokeMonitoringBotSupport:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LogMonitoringBotFunction
+      Principal: !Sub logs.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-SupportService:*
+
+  CustomerOnboardingSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotCustomer
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref CustomerOnboardingLogGroup
+
+  BankStatementSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotBank
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref BankStatementLogGroup
+
+  KycSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotKyc
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref KycLogGroup
+
+  AutoDebitSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotAutoDebit
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref AutoDebitLogGroup
+
+  DisbursementSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotDisbursement
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref DisbursementLogGroup
+
+  SupportSubscriptionFilter:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: AllowCloudWatchLogsToInvokeMonitoringBotSupport
+    Properties:
+      DestinationArn: !GetAtt LogMonitoringBotFunction.Arn
+      Distribution: ByLogStream
+      FilterName: ErrorExceptionToLogMonitoringBot
+      FilterPattern: '?error ?Error ?ERROR ?exception ?Exception ?EXCEPTION'
+      LogGroupName: !Ref SupportLogGroup
+
+Outputs:
+  DatabaseEndpoint:
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
+  DatabasePort:
+    Value: !GetAtt DatabaseInstance.Endpoint.Port
+  LambdaSecurityGroupId:
+    Value: !Ref LambdaSecurityGroup
+  DatabaseSecurityGroupId:
+    Value: !Ref DatabaseSecurityGroup
+  MonitoringFunctionName:
+    Value: !Ref LogMonitoringBotFunction

@@ -1,0 +1,16 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "incident_daddy": {
+            "runtimeId": "IncidentDaddy_incident_daddy-oPWBcX7omv",
+            "runtimeArn": "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/IncidentDaddy_incident_daddy-oPWBcX7omv",
+            "roleArn": "arn:aws:iam::105028893980:role/AgentCore-IncidentDaddy-d-ApplicationAgentIncidentD-N9PQDTAwAlgO"
+          }
+        },
+        "stackName": "AgentCore-IncidentDaddy-default"
+      }
+    }
+  }
+}

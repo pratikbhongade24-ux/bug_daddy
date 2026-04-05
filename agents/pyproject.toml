@@ -1,0 +1,34 @@
+[project]
+name = "agentic-solution"
+version = "0.1.0"
+description = "AgentCore-ready multi-agent incident and bug remediation workflow built with Strands."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "bedrock-agentcore",
+  "boto3>=1.34.0",
+  "mcp>=1.0.0",
+  "pydantic>=2.8.0",
+  "python-dotenv>=1.0.1",
+  "strands-agents",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src",
+]

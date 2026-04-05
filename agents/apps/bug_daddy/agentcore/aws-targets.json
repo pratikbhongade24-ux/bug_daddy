@@ -1,0 +1,8 @@
+[
+  {
+    "name": "default",
+    "description": "Default deployment target for bug_daddy",
+    "account": "105028893980",
+    "region": "ap-south-1"
+  }
+]

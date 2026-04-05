@@ -1,0 +1,16 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "reviewer_daddy": {
+            "runtimeId": "ReviewerDaddy_reviewer_daddy-TfzrAW2fPi",
+            "runtimeArn": "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/ReviewerDaddy_reviewer_daddy-TfzrAW2fPi",
+            "roleArn": "arn:aws:iam::105028893980:role/AgentCore-ReviewerDaddy-d-ApplicationAgentReviewerD-DtI4vxI3sB7R"
+          }
+        },
+        "stackName": "AgentCore-ReviewerDaddy-default"
+      }
+    }
+  }
+}

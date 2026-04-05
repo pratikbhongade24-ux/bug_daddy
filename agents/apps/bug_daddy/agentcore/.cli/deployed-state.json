@@ -1,0 +1,16 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "bug_daddy": {
+            "runtimeId": "BugDaddy_bug_daddy-paFAKHCmBY",
+            "runtimeArn": "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/BugDaddy_bug_daddy-paFAKHCmBY",
+            "roleArn": "arn:aws:iam::105028893980:role/AgentCore-BugDaddy-defaul-ApplicationAgentBugDaddyR-ZJSDqiti9K0U"
+          }
+        },
+        "stackName": "AgentCore-BugDaddy-default"
+      }
+    }
+  }
+}
