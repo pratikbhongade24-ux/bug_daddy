@@ -1,0 +1,5 @@
+/* Minimal globals - actual styles are in the HTML files */
+body {
+  margin: 0;
+  padding: 0;
+}

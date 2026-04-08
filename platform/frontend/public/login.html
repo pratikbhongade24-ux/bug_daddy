@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign In — Bug Daddy</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #030609;
+  --bd: rgba(255,255,255,0.1);
+  --bd-focus: rgba(255,255,255,0.25);
+  --c1: #00ffcc;
+  --c2: #ff00ff;
+  --t: #ffffff;
+  --t2: #a0aabf;
+  --t3: #5e6b82;
+  --sans: 'Plus Jakarta Sans', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(0,255,204,0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(255,0,255,0.05) 0%, transparent 40%);
+  color: var(--t);
+  font-family: var(--sans);
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.login-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  padding: 2.5rem 2.2rem;
+  background: rgba(15, 20, 25, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  box-shadow: 0 40px 100px rgba(0,0,0,0.8),
+              inset 0 1px 0 rgba(255,255,255,0.1);
+  z-index: 10;
+}
+
+.login-card::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 120%; height: 120%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(from 180deg at 50% 50%, var(--c1) 0deg, var(--c2) 180deg, var(--c1) 360deg);
+  filter: blur(80px);
+  opacity: 0.15;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.header { text-align: center; margin-bottom: 2rem; }
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.title-icon {
+  background: rgba(0,255,204,0.15);
+  color: var(--c1);
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 1.2rem;
+  display: inline-flex;
+}
+.title-skull { color: var(--c1); font-size: 1.2rem; }
+.title span.v2 { color: var(--c2); }
+.subtitle { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem; }
+.form-group { margin-bottom: 1.2rem; }
+.form-label { display: block; font-family: var(--sans); font-size: 0.8rem; font-weight: 500; color: var(--t); margin-bottom: 0.6rem; }
+
+.input-wrap { position: relative; display: flex; align-items: center; }
+.input-icon { position: absolute; left: 1rem; color: var(--t3); font-size: 1.1rem; pointer-events: none; }
+.form-input {
+  width: 100%; background: transparent; border: 1px solid var(--bd);
+  color: var(--t); font-family: var(--sans); font-size: 0.9rem;
+  padding: 0.85rem 1rem 0.85rem 2.8rem; border-radius: 8px;
+  outline: none; transition: all 0.2s ease;
+}
+.form-input::placeholder { color: var(--t3); }
+.form-input:focus { border-color: var(--bd-focus); }
+
+.forgot-pwd { text-align: right; margin-top: -0.4rem; margin-bottom: 1.5rem; }
+.forgot-pwd a { color: var(--c1); font-size: 0.75rem; text-decoration: none; transition: color 0.15s; }
+.forgot-pwd a:hover { text-decoration: underline; }
+
+.btn-primary {
+  width: 100%; padding: 0.9rem; border: none; border-radius: 30px;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+  color: #fff; font-family: var(--sans); font-weight: 700; font-size: 0.95rem;
+  cursor: pointer; box-shadow: 0 0 20px rgba(255, 0, 255, 0.4);
+  transition: all 0.3s ease; position: relative; overflow: hidden;
+}
+.btn-primary:hover { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 5px 25px rgba(255, 0, 255, 0.6); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary::after {
+  content: ''; position: absolute; top: 0; left: -100%;
+  width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: shine 3s infinite;
+}
+@keyframes shine { 0% { left: -100%; } 20% { left: 200%; } 100% { left: 200%; } }
+
+.divider {
+  display: flex; align-items: center; text-align: center;
+  margin: 1.5rem 0; color: var(--t3); font-family: var(--mono);
+  font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--bd); }
+.divider::before { margin-right: 0.75em; }
+.divider::after { margin-left: 0.75em; }
+
+.btn-sso {
+  width: 100%; padding: 0.85rem; border: 1px solid var(--bd); border-radius: 8px;
+  background: rgba(255,255,255,0.02); color: var(--t); font-family: var(--sans);
+  font-weight: 500; font-size: 0.85rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+  transition: all 0.2s ease; position: relative;
+}
+.btn-sso:hover { background: rgba(255,255,255,0.05); border-color: var(--bd-focus); }
+.btn-sso svg { width: 18px; height: 18px; }
+.btn-sso .tooltip {
+  visibility: hidden; width: 200px; background-color: #080d17;
+  color: var(--t2); text-align: center; border: 1px solid var(--bd-focus);
+  border-radius: 6px; padding: 6px; position: absolute; z-index: 1;
+  bottom: 125%; left: 50%; margin-left: -100px; opacity: 0;
+  transition: opacity 0.3s; font-family: var(--mono); font-size: 0.6rem;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.btn-sso .tooltip::after {
+  content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px;
+  border-width: 5px; border-style: solid; border-color: var(--bd-focus) transparent transparent transparent;
+}
+.btn-sso:hover .tooltip { visibility: visible; opacity: 1; }
+
+.error-msg {
+  background: rgba(255,64,96,0.1); border: 1px solid rgba(255,64,96,0.25);
+  color: #ff4060; font-family: var(--mono); font-size: 0.7rem;
+  padding: 0.6rem 0.8rem; border-radius: 6px; margin-bottom: 1rem;
+  display: none; text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="header">
+    <div class="title">
+      <span class="title-icon">AI</span>
+      BUG DADDY <span class="title-skull">☠</span> <span class="v2">2.0</span>
+    </div>
+    <div class="subtitle">Sign In</div>
+  </div>
+
+  <div class="error-msg" id="error-msg"></div>
+
+  <form id="loginForm" onsubmit="handleLogin(event)">
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <div class="input-wrap">
+        <span class="input-icon">👤</span>
+        <input type="email" id="emailInput" class="form-input" placeholder="name@domain.com" required>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div class="input-wrap">
+        <span class="input-icon">🔒</span>
+        <input type="password" id="pwdInput" class="form-input" placeholder="••••••••" required>
+      </div>
+    </div>
+
+    <div class="forgot-pwd">
+      <a href="#">Forgot Password?</a>
+    </div>
+
+    <button type="submit" class="btn-primary">Sign In</button>
+  </form>
+
+  <div class="divider">or continue with</div>
+
+  <button class="btn-sso" type="button" onclick="handleSSO()">
+    <svg viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#f25022" d="M1 1h9v9H1z"/>
+      <path fill="#00a4ef" d="M1 11h9v9H1z"/>
+      <path fill="#7fba00" d="M11 1h9v9h-9z"/>
+      <path fill="#ffb900" d="M11 11h9v9h-9z"/>
+    </svg>
+    Sign in with Microsoft
+    <span class="tooltip">Tip: Use your Azure Active Directory credentials to single-sign on.</span>
+  </button>
+</div>
+
+<script>
+  function handleLogin(event) {
+    event.preventDefault();
+    const email = document.getElementById('emailInput').value;
+    const pwd = document.getElementById('pwdInput').value;
+    if (email && pwd) {
+      localStorage.setItem('bugDaddyUser', email);
+      window.location.href = '/dashboard.html';
+    }
+  }
+
+  function handleSSO() {
+    localStorage.setItem('bugDaddyUser', 'sso-user@microsoft.com');
+    window.location.href = '/dashboard.html';
+  }
+</script>
+
+</body>
+</html>
