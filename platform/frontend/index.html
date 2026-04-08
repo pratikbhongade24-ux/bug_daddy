@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GrabHack 2.0 — Agentic Issue Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:     #030609;
+  --s1:     #05080e;
+  --s2:     #080d17;
+  --s3:     #0c1220;
+  --s4:     #111828;
+  --s5:     #161f30;
+  --bd:     rgba(255,255,255,.07);
+  --bdh:    rgba(255,255,255,.14);
+  --c1: #00d4aa; --c1d: rgba(0,212,170,.1); --c1h: rgba(0,212,170,.06);
+  --c2: #ff4060; --c2d: rgba(255,64,96,.1);
+  --c3: #3b9eff; --c3d: rgba(59,158,255,.1);
+  --c4: #ffaa00; --c4d: rgba(255,170,0,.1);
+  --c5: #b667ff; --c5d: rgba(182,103,255,.1);
+  --c6: #ff6b35; --c6d: rgba(255,107,53,.1);
+  --t:  #e2eaf8; --t2: #6e7d9c; --t3: #2e3a50;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Plus Jakarta Sans', sans-serif;
+  --radius: 8px;
+  --sw: 220px;
+}
+
+/* ── RESET & BASE ── */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--t); font-family: var(--sans); font-size: 13px; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--t3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--t2); }
+
+/* ── TOPBAR ── */
+.topbar {
+  height: 52px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 1rem;
+  background: var(--s1); border-bottom: 1px solid var(--bd);
+  padding: 0 1.5rem; z-index: 80; position: relative;
+}
+.topbar::after { content:''; position:absolute; bottom:0; left:0; right:0; height:1px; background: linear-gradient(90deg, var(--c1), transparent 40%); opacity:.3; }
+.logo { font-family: var(--sans); font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: .5rem; letter-spacing: -.03em; }
+.logo-g { color: var(--c1); }
+.logo-tag { font-family: var(--mono); font-size: .5rem; font-weight: 400; color: var(--t3); background: var(--s3); border: 1px solid var(--bd); padding: 2px 6px; border-radius: 3px; letter-spacing: .06em; }
+.tb-sep { width: 1px; height: 20px; background: var(--bd); flex-shrink: 0; }
+.live-ind { display: flex; align-items: center; gap: .4rem; font-family: var(--mono); font-size: .6rem; color: var(--t2); }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c1); box-shadow: 0 0 8px var(--c1); animation: pulse-dot 2s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+.tb-pills { flex: 1; display: flex; align-items: center; justify-content: center; gap: 2rem; }
+.tb-pill { text-align: center; }
+.tb-pill-val { font-family: var(--mono); font-size: .75rem; font-weight: 600; color: var(--t); }
+.tb-pill-val.red { color: var(--c2); }
+.tb-pill-val.grn { color: var(--c1); }
+.tb-pill-val.amb { color: var(--c4); }
+.tb-pill-val.blu { color: var(--c3); }
+.tb-pill-lbl { font-family: var(--mono); font-size: .48rem; color: var(--t3); letter-spacing: .1em; text-transform: uppercase; margin-top: 1px; }
+.tb-right { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
+.role-btn { font-family: var(--mono); font-size: .58rem; padding: 4px 10px; border: 1px solid var(--bd); background: transparent; color: var(--t2); cursor: pointer; border-radius: 4px; transition: all .15s; letter-spacing: .04em; }
+.role-btn:hover { border-color: var(--bdh); color: var(--t); }
+.role-btn.on { border-color: var(--c1); color: var(--c1); background: var(--c1h); }
+.tb-clock { font-family: var(--mono); font-size: .62rem; color: var(--t3); min-width: 64px; text-align: right; }
+
+/* ── APP ── */
+.app { display: flex; flex: 1; overflow: hidden; }
+
+/* ── SIDEBAR ── */
+.sidebar { width: var(--sw); flex-shrink: 0; background: var(--s1); border-right: 1px solid var(--bd); display: flex; flex-direction: column; overflow: hidden; }
+.sb-sec { padding: .65rem 1.1rem .2rem; font-family: var(--mono); font-size: .48rem; color: var(--t3); letter-spacing: .14em; text-transform: uppercase; }
+.nav-item {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .55rem 1.1rem; font-size: .82rem; font-weight: 500;
+  color: var(--t2); cursor: pointer; transition: all .15s;
+  border-left: 2px solid transparent; user-select: none;
+  border-radius: 0;
+}
+.nav-item:hover { color: var(--t); background: rgba(255,255,255,.025); }
+.nav-item.active { color: var(--c1); background: var(--c1h); border-left-color: var(--c1); }
+.nav-item:focus-visible { outline: 2px solid var(--c1); outline-offset: -2px; }
+.ni-ic { width: 18px; text-align: center; font-size: .88rem; flex-shrink: 0; }
+.ni-badge { margin-left: auto; font-family: var(--mono); font-size: .52rem; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
+.ni-badge.r { background: var(--c2d); color: var(--c2); border: 1px solid rgba(255,64,96,.2); }
+.ni-badge.g { background: var(--c1d); color: var(--c1); border: 1px solid rgba(0,212,170,.2); }
+
+.sb-filters { padding: .75rem 1.1rem; overflow-y: auto; flex: 1; }
+.sf-grp { margin-bottom: .7rem; }
+.sf-lbl { font-family: var(--mono); font-size: .54rem; color: var(--t2); letter-spacing: .06em; text-transform: uppercase; margin-bottom: .3rem; display: block; }
+.sb-inp, .sb-sel {
+  width: 100%; background: var(--s3); border: 1px solid var(--bd);
+  color: var(--t); font-family: var(--mono); font-size: .62rem;
+  padding: 6px 8px; outline: none; border-radius: 4px;
+  transition: border-color .15s;
+}
+.sb-inp:focus, .sb-sel:focus { border-color: var(--c1); }
+.sb-inp::placeholder { color: var(--t3); }
+.sb-sel option { background: var(--s2); }
+.sb-sel { cursor: pointer; }
+
+.sb-foot { flex-shrink: 0; padding: .85rem 1.1rem; border-top: 1px solid var(--bd); }
+.sb-health-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.sb-health-lbl { font-family: var(--mono); font-size: .55rem; color: var(--t2); }
+.sb-health-val { font-family: var(--mono); font-size: .55rem; }
+.hbar { height: 3px; background: var(--s4); border-radius: 2px; overflow: hidden; margin-bottom: 7px; }
+.hbar-f { height: 100%; border-radius: 2px; transition: width 1s ease; }
+
+/* ── MAIN ── */
+.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.view { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+.view.active { display: flex; }
+
+/* ── PANEL HEADER ── */
+.ph { padding: .9rem 1.5rem; border-bottom: 1px solid var(--bd); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--s1); }
+.ph-left h2 { font-family: var(--sans); font-weight: 700; font-size: .92rem; display: flex; align-items: center; gap: .5rem; letter-spacing: -.01em; }
+.ph-left .ph-sub { font-family: var(--mono); font-size: .55rem; color: var(--t3); margin-top: 3px; }
+.ph-right { display: flex; gap: .5rem; align-items: center; }
+.btn { font-family: var(--mono); font-size: .58rem; letter-spacing: .04em; padding: 5px 12px; cursor: pointer; border: 1px solid var(--bd); background: transparent; color: var(--t2); transition: all .15s; border-radius: 4px; }
+.btn:hover { border-color: var(--bdh); color: var(--t); }
+.btn:focus-visible { outline: 2px solid var(--c1); outline-offset: 2px; }
+.btn.pri { background: var(--c1); color: #000; border-color: var(--c1); font-weight: 700; }
+.btn.pri:hover { box-shadow: 0 0 20px rgba(0,212,170,.3); }
+.btn.danger { background: var(--c2); color: #fff; border-color: var(--c2); }
+.btn.danger:hover { box-shadow: 0 0 20px rgba(255,64,96,.3); }
+
+/* ═══════════════════════════════════
+   DASHBOARD
+═══════════════════════════════════ */
+.dash-scroll { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* KPI CARDS */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .875rem; }
+.kpi-card {
+  background: var(--s2); border: 1px solid var(--bd);
+  padding: 1.2rem 1.3rem 1rem; position: relative; overflow: hidden;
+  cursor: pointer; transition: border-color .2s, transform .15s, box-shadow .2s;
+  border-radius: var(--radius);
+}
+.kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--kc, var(--c1)); border-radius: var(--radius) var(--radius) 0 0; }
+.kpi-card::after { content: ''; position: absolute; top: 0; right: 0; width: 80px; height: 80px; background: radial-gradient(circle at 100% 0%, var(--kcd, rgba(0,212,170,.06)), transparent 70%); pointer-events: none; }
+.kpi-card:hover { border-color: var(--kc, var(--c1)); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+.kpi-card:focus-visible { outline: 2px solid var(--kc, var(--c1)); outline-offset: 2px; }
+.kpi-label { font-family: var(--mono); font-size: .52rem; color: var(--t2); letter-spacing: .12em; text-transform: uppercase; margin-bottom: .6rem; }
+.kpi-val { font-family: var(--sans); font-weight: 800; font-size: 2.4rem; line-height: 1; color: var(--kc, var(--t)); letter-spacing: -.04em; }
+.kpi-footer { display: flex; align-items: center; justify-content: space-between; margin-top: .6rem; }
+.kpi-sub { font-family: var(--mono); font-size: .56rem; color: var(--t3); }
+.kpi-trend { font-family: var(--mono); font-size: .6rem; display: flex; align-items: center; gap: .2rem; font-weight: 600; }
+.kpi-trend.up { color: var(--c1); }
+.kpi-trend.dn { color: var(--c2); }
+.kpi-trend.neu { color: var(--t3); }
+
+/* SECTION LABEL */
+.sec-label { font-family: var(--mono); font-size: .54rem; color: var(--t2); letter-spacing: .12em; text-transform: uppercase; display: flex; align-items: center; gap: .6rem; }
+.sec-label::before { content: ''; width: 16px; height: 1px; background: var(--t3); display: inline-block; }
+
+/* HORIZONTAL BAR CHARTS */
+.hcharts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .875rem; }
+.hchart-card { background: var(--s2); border: 1px solid var(--bd); border-radius: var(--radius); padding: 1.1rem 1.25rem; }
+.hcc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.hcc-title { font-family: var(--sans); font-weight: 600; font-size: .78rem; color: var(--t); }
+.hcc-total { font-family: var(--mono); font-size: .58rem; color: var(--t3); }
+.hbar-chart { display: flex; flex-direction: column; gap: .55rem; }
+.hbc-row { display: flex; align-items: center; gap: .7rem; }
+.hbc-label { font-family: var(--mono); font-size: .58rem; color: var(--t2); width: 76px; flex-shrink: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbc-track { flex: 1; height: 20px; background: var(--s4); border-radius: 4px; overflow: hidden; position: relative; cursor: pointer; }
+.hbc-fill {
+  height: 100%; border-radius: 4px;
+  background: var(--bar-color, var(--c1));
+  transition: width 1s cubic-bezier(.4,0,.2,1), filter .2s;
+  animation: barGrow 1s cubic-bezier(.4,0,.2,1) both;
+  animation-delay: var(--bar-delay, 0s);
+  position: relative; transform-origin: left;
+}
+@keyframes barGrow { from { width: 0 !important; } }
+.hbc-fill:hover { filter: brightness(1.2); }
+.hbc-track::after { content: attr(data-tip); position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-family: var(--mono); font-size: .56rem; color: rgba(255,255,255,.7); pointer-events: none; }
+.hbc-val { font-family: var(--mono); font-size: .62rem; color: var(--t2); width: 26px; text-align: right; flex-shrink: 0; font-weight: 600; }
+
+/* BOTTOM 2-COL */
+.bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
+
+/* ESCALATION QUEUE */
+.esc-card { background: var(--s2); border: 1px solid rgba(255,64,96,.15); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
+.esc-card-head {
+  padding: .9rem 1.1rem .7rem;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(255,64,96,.1);
+  background: rgba(255,64,96,.04);
+}
+.esc-head-left { display: flex; align-items: center; gap: .6rem; }
+.esc-head-icon { width: 28px; height: 28px; border-radius: 6px; background: rgba(255,64,96,.15); display: flex; align-items: center; justify-content: center; font-size: .9rem; flex-shrink: 0; }
+.esc-head-title { font-family: var(--sans); font-weight: 700; font-size: .82rem; color: var(--t); }
+.esc-head-sub { font-family: var(--mono); font-size: .54rem; color: var(--t3); margin-top: 1px; }
+.esc-count-badge { font-family: var(--mono); font-size: .6rem; font-weight: 700; color: var(--c2); background: var(--c2d); border: 1px solid rgba(255,64,96,.2); padding: 3px 8px; border-radius: 3px; }
+.esc-list { overflow-y: auto; max-height: 230px; }
+.esc-item {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .7rem 1.1rem;
+  border-bottom: 1px solid var(--bd);
+  cursor: pointer; transition: background .15s;
+  position: relative;
+}
+.esc-item:last-child { border-bottom: none; }
+.esc-item:hover { background: rgba(255,64,96,.04); }
+.esc-item:focus-visible { outline: 2px solid var(--c2); outline-offset: -2px; }
+.esc-item::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--esc-color, var(--c2)); opacity: 0; transition: opacity .15s; }
+.esc-item:hover::before { opacity: 1; }
+.esc-severity { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px var(--sev-color, var(--c2)); background: var(--sev-color, var(--c2)); }
+.esc-content { flex: 1; min-width: 0; }
+.esc-svc { font-weight: 600; font-size: .78rem; color: var(--t); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.esc-err { font-family: var(--mono); font-size: .56rem; color: var(--t2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.esc-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+.esc-freq { font-family: var(--mono); font-size: .65rem; color: var(--c2); font-weight: 700; }
+.esc-time { font-family: var(--mono); font-size: .52rem; color: var(--t3); }
+.esc-arrow { color: var(--t3); font-size: .7rem; margin-left: .25rem; flex-shrink: 0; transition: transform .15s, color .15s; }
+.esc-item:hover .esc-arrow { transform: translateX(2px); color: var(--c2); }
+
+/* LIVE FEED */
+.feed-card { background: var(--s2); border: 1px solid var(--bd); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
+.feed-card-head {
+  padding: .9rem 1.1rem .7rem;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--bd);
+}
+.feed-head-left { display: flex; align-items: center; gap: .6rem; }
+.feed-head-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--c1h); display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+.feed-head-title { font-family: var(--sans); font-weight: 700; font-size: .82rem; }
+.feed-head-sub { font-family: var(--mono); font-size: .54rem; color: var(--t3); margin-top: 1px; }
+.feed-head-right { display: flex; align-items: center; gap: .4rem; }
+.feed-live-chip { font-family: var(--mono); font-size: .52rem; color: var(--c1); border: 1px solid rgba(0,212,170,.25); padding: 2px 7px; border-radius: 3px; display: flex; align-items: center; gap: .35rem; }
+.feed-list { overflow-y: auto; max-height: 230px; }
+.feed-item {
+  display: flex; align-items: flex-start; gap: .7rem;
+  padding: .65rem 1.1rem;
+  border-bottom: 1px solid var(--bd);
+  cursor: pointer; transition: background .15s;
+  position: relative;
+}
+.feed-item:last-child { border-bottom: none; }
+.feed-item:hover { background: rgba(255,255,255,.025); }
+.feed-item:focus-visible { outline: 2px solid var(--c1); outline-offset: -2px; }
+.feed-item.new { animation: feedIn .4s ease; }
+@keyframes feedIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+.feed-ico-wrap { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; }
+.feed-body { flex: 1; min-width: 0; }
+.feed-title { font-size: .78rem; font-weight: 500; color: var(--t); line-height: 1.4; }
+.feed-meta { font-family: var(--mono); font-size: .54rem; color: var(--t3); margin-top: 2px; }
+.feed-time { font-family: var(--mono); font-size: .54rem; color: var(--t3); flex-shrink: 0; white-space: nowrap; }
+.feed-arrow { color: var(--t3); font-size: .7rem; flex-shrink: 0; margin-top: 5px; transition: transform .15s, color .15s; }
+.feed-item:hover .feed-arrow { transform: translateX(2px); color: var(--c1); }
+
+/* ═══════════════════════════════════
+   ISSUES TABLE VIEW
+═══════════════════════════════════ */
+.tbl-controls { padding: .7rem 1.5rem; display: flex; align-items: center; gap: .6rem; border-bottom: 1px solid var(--bd); background: var(--s1); flex-shrink: 0; flex-wrap: wrap; }
+.srch-box { display: flex; align-items: center; gap: .4rem; background: var(--s3); border: 1px solid var(--bd); padding: 5px 9px; border-radius: 5px; flex: 1; max-width: 250px; transition: border-color .15s; }
+.srch-box:focus-within { border-color: var(--c1); }
+.srch-box input { background: none; border: none; outline: none; color: var(--t); font-family: var(--mono); font-size: .62rem; width: 100%; }
+.srch-box input::placeholder { color: var(--t3); }
+.tc-sel { background: var(--s3); border: 1px solid var(--bd); color: var(--t2); font-family: var(--mono); font-size: .6rem; padding: 5px 8px; outline: none; cursor: pointer; border-radius: 5px; transition: border-color .15s; }
+.tc-sel:focus { border-color: var(--c1); }
+.tc-sel option { background: var(--s2); }
+.tbl-count { font-family: var(--mono); font-size: .58rem; color: var(--t3); margin-left: auto; }
+
+/* TABS */
+.tab-bar { display: flex; border-bottom: 1px solid var(--bd); background: var(--s1); flex-shrink: 0; padding: 0 1.5rem; gap: .25rem; }
+.tab {
+  padding: .65rem 1.1rem; font-family: var(--mono); font-size: .6rem;
+  color: var(--t2); cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all .15s; letter-spacing: .04em; display: flex; align-items: center; gap: .4rem;
+  position: relative; top: 1px;
+}
+.tab:hover { color: var(--t); }
+.tab.active { color: var(--c1); border-bottom-color: var(--c1); }
+.tab:focus-visible { outline: 2px solid var(--c1); }
+.tc { font-size: .52rem; background: var(--s4); padding: 1px 6px; border-radius: 3px; }
+.tab.active .tc { background: var(--c1d); color: var(--c1); }
+
+/* TABLE */
+.tbl-wrap { flex: 1; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead tr { background: var(--s2); position: sticky; top: 0; z-index: 10; }
+th {
+  padding: .6rem 1rem; text-align: left;
+  font-family: var(--mono); font-size: .52rem; color: var(--t2);
+  letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid var(--bd);
+  white-space: nowrap; cursor: pointer; user-select: none; transition: color .15s;
+}
+th:hover { color: var(--t); }
+tbody tr { border-bottom: 1px solid var(--bd); transition: background .1s; cursor: pointer; }
+tbody tr:hover { background: rgba(255,255,255,.025); }
+td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
+.td-id { font-family: var(--mono); font-size: .62rem; color: var(--c3); font-weight: 600; }
+.td-id a { color: inherit; text-decoration: none; }
+.td-id a:hover { text-decoration: underline; }
+.td-desc { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--t2); font-size: .73rem; }
+.td-svc { font-weight: 600; font-size: .74rem; }
+.td-own { font-family: var(--mono); font-size: .58rem; color: var(--t2); }
+.td-eta { font-family: var(--mono); font-size: .6rem; color: var(--c4); }
+.td-freq { font-family: var(--mono); font-size: .64rem; font-weight: 600; }
+.td-freq.hi { color: var(--c2); }
+.td-freq.med { color: var(--c4); }
+.td-freq.low { color: var(--t2); }
+.badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 3px; font-family: var(--mono); font-size: .54rem; font-weight: 600; white-space: nowrap; }
+.badge.crit { background: rgba(255,64,96,.18); color: var(--c2); }
+.badge.high { background: rgba(255,170,0,.18); color: var(--c4); }
+.badge.med { background: rgba(59,158,255,.18); color: var(--c3); }
+.badge.low { background: var(--s4); color: var(--t2); }
+.badge.src { background: var(--s4); color: var(--t2); border: 1px solid var(--bd); }
+.act-btn { font-family: var(--mono); font-size: .56rem; padding: 4px 9px; cursor: pointer; border: 1px solid; background: transparent; transition: all .15s; border-radius: 4px; white-space: nowrap; }
+.act-btn.pri-btn { border-color: rgba(255,170,0,.4); color: var(--c4); }
+.act-btn.pri-btn:hover { background: var(--c4d); }
+.act-btn.live-btn { border-color: rgba(0,212,170,.4); color: var(--c1); }
+.act-btn.live-btn:hover { background: var(--c1d); }
+.act-btn.sum-btn { border-color: rgba(59,158,255,.4); color: var(--c3); }
+.act-btn.sum-btn:hover { background: var(--c3d); }
+
+/* ═══════════════════════════════════
+   EXECUTION GRAPH MODAL
+═══════════════════════════════════ */
+.modal-ov {
+  position: fixed; inset: 0; background: rgba(0,0,0,.88);
+  z-index: 200; display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px);
+}
+.modal-ov.open { display: flex; }
+.modal {
+  background: var(--s2); border: 1px solid var(--bdh);
+  width: 95vw; max-width: 1200px; height: 90vh; max-height: 760px;
+  display: flex; flex-direction: column;
+  box-shadow: 0 40px 120px rgba(0,0,0,.6);
+  border-radius: 12px; overflow: hidden;
+}
+.modal-hdr {
+  padding: .9rem 1.25rem; border-bottom: 1px solid var(--bd);
+  display: flex; align-items: center; gap: 1rem; flex-shrink: 0;
+  background: var(--s1);
+}
+.modal-hdr-left { flex: 1; }
+.modal-title { font-family: var(--sans); font-weight: 700; font-size: .88rem; display: flex; align-items: center; gap: .5rem; }
+.modal-sub { font-family: var(--mono); font-size: .55rem; color: var(--t3); margin-top: 2px; }
+.modal-close { background: transparent; border: 1px solid var(--bd); color: var(--t2); cursor: pointer; font-size: .7rem; padding: 5px 10px; border-radius: 4px; font-family: var(--mono); transition: all .15s; }
+.modal-close:hover { border-color: var(--bdh); color: var(--t); }
+.modal-body { flex: 1; display: grid; grid-template-columns: 1fr 360px; overflow: hidden; }
+
+/* N8N CANVAS */
+.n8n-canvas {
+  overflow: auto; background: var(--bg); position: relative;
+  background-image: radial-gradient(circle, rgba(255,255,255,.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.n8n-canvas-inner { position: relative; min-width: 760px; min-height: 520px; padding: 24px; }
+
+/* N8N NODES - styled like real n8n */
+.n8n-node {
+  position: absolute;
+  width: 66px; height: 66px;
+  border-radius: 12px;
+  background: var(--nd-bg, #1a2235);
+  border: 1.5px solid var(--nd-border, rgba(255,255,255,.1));
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; cursor: pointer;
+  transition: border-color .2s, box-shadow .2s, transform .15s;
+  user-select: none;
+}
+.n8n-node:hover { transform: scale(1.05); box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+.n8n-node.active { border-color: var(--nd-color, var(--c1)); box-shadow: 0 0 0 2px rgba(0,212,170,.2), 0 8px 30px rgba(0,0,0,.4); }
+.n8n-node.done { border-color: rgba(0,212,170,.4); }
+.n8n-node.error { border-color: rgba(255,64,96,.5); box-shadow: 0 0 0 2px rgba(255,64,96,.15); }
+.nd-icon { font-size: 1.5rem; line-height: 1; }
+.nd-label { font-family: var(--mono); font-size: .42rem; color: var(--t2); text-align: center; line-height: 1.3; max-width: 60px; }
+.n8n-node.active .nd-label { color: var(--nd-color, var(--c1)); }
+
+/* SPINNING EXECUTION RING */
+.exec-ring {
+  position: absolute; inset: -8px;
+  border-radius: 20px;
+  display: none; pointer-events: none;
+}
+.n8n-node.active .exec-ring { display: block; }
+.exec-ring svg { width: 100%; height: 100%; }
+.exec-ring-arc {
+  stroke: var(--nd-color, var(--c1));
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 36 60;
+  animation: spinRing 1.1s linear infinite;
+  transform-origin: center;
+}
+@keyframes spinRing { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* DONE CHECK OVERLAY */
+.nd-done-mark {
+  position: absolute; bottom: -4px; right: -4px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--c1); color: #000;
+  font-size: .55rem; display: none; align-items: center; justify-content: center;
+  font-weight: 700; z-index: 2;
+}
+.n8n-node.done .nd-done-mark { display: flex; }
+.nd-err-mark {
+  position: absolute; bottom: -4px; right: -4px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--c2); color: #fff;
+  font-size: .55rem; display: none; align-items: center; justify-content: center;
+  font-weight: 700; z-index: 2;
+}
+.n8n-node.error .nd-err-mark { display: flex; }
+
+/* EDGES SVG */
+.n8n-edges { position: absolute; inset: 0; pointer-events: none; }
+
+/* N8N RIGHT PANEL - dynamic step log */
+.n8n-right {
+  border-left: 1px solid var(--bd);
+  background: var(--s1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.n8n-step-header {
+  padding: .9rem 1.1rem; border-bottom: 1px solid var(--bd); flex-shrink: 0;
+}
+.n8n-step-none {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: .75rem;
+  color: var(--t3); font-family: var(--mono); font-size: .65rem; text-align: center; padding: 2rem;
+}
+.n8n-step-active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.n8n-step-title { font-family: var(--sans); font-weight: 700; font-size: .85rem; color: var(--t); display: flex; align-items: center; gap: .5rem; }
+.n8n-step-chip { font-family: var(--mono); font-size: .5rem; padding: 2px 6px; border-radius: 3px; }
+.n8n-step-chip.running { background: rgba(255,170,0,.15); color: var(--c4); }
+.n8n-step-chip.done { background: rgba(0,212,170,.15); color: var(--c1); }
+.n8n-step-chip.error { background: rgba(255,64,96,.15); color: var(--c2); }
+.n8n-step-desc { font-family: var(--mono); font-size: .58rem; color: var(--t3); margin-top: 4px; }
+.n8n-log-stream { flex: 1; overflow-y: auto; padding: .75rem 1.1rem; display: flex; flex-direction: column; gap: .5rem; }
+
+/* LOG ENTRY TYPES */
+.log-entry { border-radius: 5px; padding: .5rem .65rem; font-family: var(--mono); font-size: .6rem; animation: logSlide .3s ease; }
+@keyframes logSlide { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.log-entry.thinking { background: rgba(255,170,0,.07); border: 1px solid rgba(255,170,0,.12); }
+.log-entry.tool-call { background: rgba(59,158,255,.07); border: 1px solid rgba(59,158,255,.12); }
+.log-entry.tool-result { background: rgba(0,212,170,.07); border: 1px solid rgba(0,212,170,.12); }
+.log-entry.error { background: rgba(255,64,96,.07); border: 1px solid rgba(255,64,96,.12); }
+.log-entry.info { background: var(--s3); border: 1px solid var(--bd); }
+.log-type { font-size: .48rem; letter-spacing: .1em; text-transform: uppercase; margin-bottom: .3rem; font-weight: 600; display: flex; align-items: center; gap: .35rem; }
+.log-type.t { color: var(--c4); }
+.log-type.tc { color: var(--c3); }
+.log-type.tr { color: var(--c1); }
+.log-type.er { color: var(--c2); }
+.log-type.inf { color: var(--t3); }
+.log-content { color: var(--t); line-height: 1.6; }
+.log-code { color: var(--c1); background: var(--bg); padding: .3rem .5rem; border-radius: 3px; margin-top: .3rem; font-size: .58rem; white-space: pre-wrap; }
+.log-ts { float: right; color: var(--t3); font-size: .48rem; margin-top: 1px; }
+
+/* ── TOAST ── */
+.toastc { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 500; display: flex; flex-direction: column; gap: .4rem; }
+.toast { background: var(--s2); border: 1px solid var(--bd); padding: .6rem 1rem; font-family: var(--mono); font-size: .65rem; display: flex; align-items: center; gap: .5rem; min-width: 230px; animation: toastIn .25s ease; border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+.toast.ok { border-left: 3px solid var(--c1); color: var(--c1); }
+.toast.err { border-left: 3px solid var(--c2); color: var(--c2); }
+.toast.inf { border-left: 3px solid var(--c3); color: var(--c3); }
+
+/* DETAIL SIDE PANEL in modal - when clicking node */
+.nd-popup { position: absolute; z-index: 20; background: var(--s2); border: 1px solid var(--bdh); border-radius: 8px; padding: .85rem 1rem; min-width: 200px; max-width: 240px; box-shadow: 0 8px 30px rgba(0,0,0,.5); pointer-events: none; transition: opacity .15s; }
+.nd-popup h4 { font-family: var(--sans); font-weight: 700; font-size: .78rem; margin-bottom: .5rem; }
+.nd-popup p { font-family: var(--mono); font-size: .58rem; color: var(--t2); line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar" role="banner">
+  <div class="logo"><span class="logo-g">GrabHack</span> 2.0 <span class="logo-tag">AGENTIC AI</span></div>
+  <div class="live-ind"><div class="live-dot"></div>Live</div>
+  <div class="tb-sep"></div>
+  <div class="tb-pills" id="tb-pills" role="status" aria-label="System metrics"></div>
+  <div class="tb-right">
+    <button class="role-btn on" onclick="setRole('Developer',this)">Developer</button>
+    <button class="role-btn" onclick="setRole('SRE',this)">SRE</button>
+    <button class="role-btn" onclick="setRole('Manager',this)">Manager</button>
+    <div class="tb-sep"></div>
+    <time class="tb-clock" id="tb-clock" aria-label="Current time"></time>
+  </div>
+</header>
+
+<div class="app">
+<!-- SIDEBAR -->
+<nav class="sidebar" aria-label="Main navigation">
+  <div class="sb-sec">Views</div>
+  <div class="nav-item active" tabindex="0" role="button" aria-current="page" data-view="dashboard" onclick="switchView('dashboard',this)" onkeydown="if(event.key==='Enter')switchView('dashboard',this)">
+    <span class="ni-ic" aria-hidden="true">◈</span> Dashboard
+    <span class="ni-badge g" id="nb-total">36</span>
+  </div>
+  <div class="nav-item" tabindex="0" role="button" data-view="issues" onclick="switchView('issues',this)" onkeydown="if(event.key==='Enter')switchView('issues',this)">
+    <span class="ni-ic" aria-hidden="true">⊞</span> Issues Table
+    <span class="ni-badge r" id="nb-backlog">—</span>
+  </div>
+
+  <div class="sb-sec" style="margin-top:.5rem">Filters</div>
+  <div class="sb-filters">
+    <div class="sf-grp">
+      <label class="sf-lbl" for="gl-search">Search</label>
+      <input class="sb-inp" id="gl-search" type="search" placeholder="ID or description…" oninput="applyFilters()" autocomplete="off"/>
+    </div>
+    <div class="sf-grp">
+      <label class="sf-lbl" for="gl-svc">Service</label>
+      <select class="sb-sel" id="gl-svc" onchange="applyFilters()" aria-label="Filter by service"><option value="">All Services</option></select>
+    </div>
+    <div class="sf-grp">
+      <label class="sf-lbl" for="gl-crit">Criticality</label>
+      <select class="sb-sel" id="gl-crit" onchange="applyFilters()">
+        <option value="">All</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
+      </select>
+    </div>
+    <div class="sf-grp">
+      <label class="sf-lbl" for="gl-orig">Origin</label>
+      <select class="sb-sel" id="gl-orig" onchange="applyFilters()">
+        <option value="">All Origins</option><option>CloudWatch</option><option>CVE</option><option>SonarQube</option><option>JIRA</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sb-foot">
+    <div class="sb-health-row"><span class="sb-health-lbl">Pipeline</span><span class="sb-health-val" style="color:var(--c1)">97%</span></div>
+    <div class="hbar"><div class="hbar-f" style="width:97%;background:var(--c1)"></div></div>
+    <div class="sb-health-row"><span class="sb-health-lbl">Bug Daddy</span><span class="sb-health-val" style="color:var(--t3)" id="bd-health">Idle</span></div>
+    <div class="hbar"><div class="hbar-f" style="width:8%;background:var(--c3)" id="bd-hbar"></div></div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+<!-- ══ DASHBOARD ══ -->
+<div class="view active" id="view-dashboard">
+  <div class="ph">
+    <div class="ph-left">
+      <h2><span aria-hidden="true">◈</span> Engineering Intelligence Dashboard</h2>
+      <div class="ph-sub">GrabHack Issues Tracker · CloudWatch · ap-south-1 · 36 real issues</div>
+    </div>
+    <div class="ph-right">
+      <button class="btn" onclick="exportCSV()">↓ Export CSV</button>
+      <button class="btn danger" onclick="escalateAll()">⚡ Escalate All Critical</button>
+    </div>
+  </div>
+  <div class="dash-scroll">
+    <!-- KPIs -->
+    <div class="kpi-grid" id="kpi-grid" role="region" aria-label="Key metrics"></div>
+    <!-- Charts -->
+    <div class="sec-label">Microservice Breakdown</div>
+    <div class="hcharts-grid" id="hcharts-grid"></div>
+    <!-- Bottom row -->
+    <div class="bottom-row">
+      <!-- Escalation Queue -->
+      <div class="esc-card" role="region" aria-label="Escalation queue">
+        <div class="esc-card-head">
+          <div class="esc-head-left">
+            <div class="esc-head-icon" aria-hidden="true">🚨</div>
+            <div>
+              <div class="esc-head-title">Escalation Queue</div>
+              <div class="esc-head-sub">freq &gt; 400 · auto-routed to Incident Daddy</div>
+            </div>
+          </div>
+          <div class="esc-count-badge" id="esc-count" aria-live="polite">—</div>
+        </div>
+        <div class="esc-list" id="esc-list" role="list"></div>
+      </div>
+      <!-- Live Feed -->
+      <div class="feed-card" role="region" aria-label="Live activity feed">
+        <div class="feed-card-head">
+          <div class="feed-head-left">
+            <div class="feed-head-icon" aria-hidden="true">⚡</div>
+            <div>
+              <div class="feed-head-title">Live Activity Feed</div>
+              <div class="feed-head-sub">Agent events · real-time</div>
+            </div>
+          </div>
+          <div class="feed-head-right">
+            <div class="feed-live-chip"><div class="live-dot" style="width:5px;height:5px"></div> LIVE</div>
+          </div>
+        </div>
+        <div class="feed-list" id="live-feed" role="list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ISSUES TABLE ══ -->
+<div class="view" id="view-issues">
+  <div class="ph">
+    <div class="ph-left">
+      <h2><span aria-hidden="true">⊞</span> Issues Tracking Table</h2>
+      <div class="ph-sub">PostgreSQL · issues_tracking · All 36 real issues from CSV</div>
+    </div>
+    <div class="ph-right">
+      <button class="btn" onclick="exportCSV()">↓ Export CSV</button>
+    </div>
+  </div>
+  <div class="tbl-controls">
+    <div class="srch-box"><span aria-hidden="true" style="color:var(--t3)">⌕</span><input id="tbl-srch" type="search" placeholder="Search ID or description…" oninput="renderTable()" autocomplete="off" aria-label="Search issues"/></div>
+    <select class="tc-sel" id="tbl-svc" onchange="renderTable()" aria-label="Filter by service"><option value="">All Services</option></select>
+    <select class="tc-sel" id="tbl-crit" onchange="renderTable()" aria-label="Filter by criticality"><option value="">All Criticality</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select>
+    <select class="tc-sel" id="tbl-orig" onchange="renderTable()" aria-label="Filter by origin"><option value="">All Origins</option><option>CloudWatch</option><option>CVE</option><option>SonarQube</option><option>JIRA</option></select>
+    <div class="tbl-count" id="tbl-count" aria-live="polite">— issues</div>
+  </div>
+  <div class="tab-bar" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true" onclick="switchTab('backlog',this)">📥 Backlog <span class="tc" id="tc-backlog">0</span></button>
+    <button class="tab" role="tab" aria-selected="false" onclick="switchTab('wip',this)">🔄 WIP <span class="tc" id="tc-wip">0</span></button>
+    <button class="tab" role="tab" aria-selected="false" onclick="switchTab('resolved',this)">✅ Resolved <span class="tc" id="tc-resolved">0</span></button>
+  </div>
+  <div class="tbl-wrap" role="tabpanel">
+    <table aria-label="Issues table">
+      <thead><tr>
+        <th onclick="sortBy('id')" title="Sort by ID">JIRA ID ↕</th>
+        <th>ETA</th>
+        <th>Description</th>
+        <th onclick="sortBy('freq')" title="Sort by frequency">Frequency ↕</th>
+        <th>Service</th>
+        <th>Owner</th>
+        <th>Origin</th>
+        <th>Criticality</th>
+        <th>Action</th>
+      </tr></thead>
+      <tbody id="issues-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- EXECUTION GRAPH MODAL -->
+<div class="modal-ov" id="exec-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-hdr-left">
+        <div class="modal-title" id="modal-title">
+          <span id="modal-mode-ico">🔄</span>
+          <span id="modal-title-text">Live Execution Graph</span>
+          <span style="font-family:var(--mono);font-size:.72rem;color:var(--c3)" id="modal-issue-id"></span>
+        </div>
+        <div class="modal-sub" id="modal-sub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close modal">✕ Close</button>
+    </div>
+    <div class="modal-body">
+      <!-- Canvas -->
+      <div class="n8n-canvas" id="n8n-canvas">
+        <div class="n8n-canvas-inner" id="n8n-inner">
+          <svg class="n8n-edges" id="n8n-edges" aria-hidden="true"></svg>
+          <!-- Nodes injected by JS -->
+        </div>
+      </div>
+      <!-- Right Panel -->
+      <div class="n8n-right">
+        <div class="n8n-step-header" id="n8n-step-hdr">
+          <div class="n8n-step-none" id="n8n-step-none">
+            <span style="font-size:2rem;opacity:.2">◈</span>
+            <span>Execution starting…</span>
+          </div>
+          <div style="display:none" id="n8n-step-info">
+            <div class="n8n-step-title">
+              <span id="n8n-step-ico"></span>
+              <span id="n8n-step-name"></span>
+              <span class="n8n-step-chip running" id="n8n-step-chip">RUNNING</span>
+            </div>
+            <div class="n8n-step-desc" id="n8n-step-desc"></div>
+          </div>
+        </div>
+        <div class="n8n-log-stream" id="n8n-log-stream"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toastc" id="toastc" aria-live="polite"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════
+const SVC_OWNERS = { 'grabhack-BankStatementService':'Priya S.','grabhack-CustomerOnboardingService':'Rohan M.','grabhack-KYCService':'Ananya K.','grabhack-AutoDebitService':'Vikram P.','grabhack-DisbursementService':'Neha T.','grabhack-SupportService':'Arjun R.' };
+const SVC_SHORT  = { 'grabhack-BankStatementService':'BankStatement','grabhack-CustomerOnboardingService':'CustOnboard','grabhack-KYCService':'KYCService','grabhack-AutoDebitService':'AutoDebit','grabhack-DisbursementService':'Disbursement','grabhack-SupportService':'Support' };
+const SVC_COLORS = ['#00d4aa','#ff4060','#3b9eff','#ffaa00','#b667ff','#ff6b35'];
+
+const svcList = Object.keys(SVC_SHORT);
+const svcColors = {};
+svcList.forEach((s,i) => svcColors[s] = SVC_COLORS[i % SVC_COLORS.length]);
+
+function criticality(freq) { return freq>600?'Critical':freq>200?'High':freq>50?'Medium':'Low'; }
+function eta(pos) { const m=pos*15; return m<60?`~${m}m`:`~${(m/60).toFixed(1)}h`; }
+function shortErr(desc) {
+  const m=desc.match(/ERROR \w+ failed while handling (\w+):/);
+  if(m)return m[0].substring(0,60);
+  const m2=desc.match(/\[ERROR\] (\w+Error[^\\n]*)/);
+  if(m2)return m2[1].substring(0,60);
+  return desc.substring(0,60);
+}
+
+const RAW = [
+  {id:104,service:'grabhack-BankStatementService',type:'log_exception',freq:2,status:'open',err:'ValueError: invalid literal for int() — summarizeCashflow'},
+  {id:103,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:4,status:'open',err:'ZeroDivisionError: division by zero — createLead / run_risk_checks'},
+  {id:102,service:'grabhack-KYCService',type:'log_exception',freq:38,status:'open',err:'ZeroDivisionError: division by zero — runFaceMatch score calc'},
+  {id:101,service:'grabhack-KYCService',type:'python_traceback',freq:23,status:'open',err:'ZeroDivisionError — runFaceMatch face_threshold simulation'},
+  {id:100,service:'grabhack-AutoDebitService',type:'python_traceback',freq:15,status:'open',err:'TypeError: unsupported operand int + str — executeDebit'},
+  {id:99,service:'grabhack-DisbursementService',type:'python_traceback',freq:92,status:'open',err:'ZeroDivisionError — releaseFunds disbursement / 0'},
+  {id:98,service:'grabhack-CustomerOnboardingService',type:'log_exception',freq:6,status:'open',err:'ZeroDivisionError — createLead risk check riskDenominator=0'},
+  {id:97,service:'grabhack-SupportService',type:'python_traceback',freq:110,status:'open',err:'RuntimeError: queue assignment failed for loan-ops'},
+  {id:96,service:'grabhack-SupportService',type:'python_traceback',freq:106,status:'open',err:'RuntimeError: queue assignment failed — assignTicket'},
+  {id:95,service:'grabhack-SupportService',type:'log_exception',freq:58,status:'open',err:'RuntimeError: queue assignment failed — log_exception'},
+  {id:94,service:'grabhack-BankStatementService',type:'python_traceback',freq:140,status:'open',err:'ValueError: invalid literal int() — summarizeCashflow'},
+  {id:93,service:'grabhack-BankStatementService',type:'python_traceback',freq:128,status:'open',err:'ValueError — build_transactions int("not-a-number")'},
+  {id:92,service:'grabhack-DisbursementService',type:'log_exception',freq:72,status:'open',err:'ZeroDivisionError — releaseFunds log_exception'},
+  {id:91,service:'grabhack-AutoDebitService',type:'python_traceback',freq:142,status:'open',err:'TypeError int+str — executeDebit traceback'},
+  {id:90,service:'grabhack-BankStatementService',type:'error',freq:654,status:'open',err:'ERROR BankStatementService summarizeCashflow: not-a-number'},
+  {id:89,service:'grabhack-KYCService',type:'python_traceback',freq:210,status:'open',err:'ZeroDivisionError — runFaceMatch score: 1/0'},
+  {id:88,service:'grabhack-AutoDebitService',type:'python_traceback',freq:90,status:'open',err:'TypeError int+str — executeDebit mandate amount'},
+  {id:87,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:405,status:'open',err:'ZeroDivisionError — createLead riskDenominator=0'},
+  {id:86,service:'grabhack-DisbursementService',type:'python_traceback',freq:85,status:'open',err:'ZeroDivisionError — releaseFunds amount/0'},
+  {id:85,service:'grabhack-DisbursementService',type:'error',freq:569,status:'open',err:'ERROR DisbursementService releaseFunds: division by zero'},
+  {id:84,service:'grabhack-AutoDebitService',type:'log_exception',freq:98,status:'open',err:'TypeError int+str executeDebit mandate amount+100'},
+  {id:83,service:'grabhack-SupportService',type:'error',freq:498,status:'open',err:'ERROR SupportService assignTicket: queue assignment failed'},
+  {id:82,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:329,status:'open',err:'ZeroDivisionError createLead run_risk_checks riskDenominator'},
+  {id:81,service:'grabhack-KYCService',type:'python_traceback',freq:139,status:'open',err:'ZeroDivisionError runFaceMatch score=1/0 result MATCHED'},
+  {id:80,service:'grabhack-DisbursementService',type:'python_traceback',freq:183,status:'open',err:'ZeroDivisionError releaseFunds disbursement[amount]/0'},
+  {id:79,service:'grabhack-BankStatementService',type:'python_traceback',freq:241,status:'open',err:'ValueError summarizeCashflow: int(not-a-number)'},
+  {id:78,service:'grabhack-DisbursementService',type:'python_traceback',freq:358,status:'open',err:'ZeroDivisionError releaseFunds release_zero simulation'},
+  {id:77,service:'grabhack-BankStatementService',type:'python_traceback',freq:485,status:'open',err:'ERROR BankStatementService summarizeCashflow amount_cast'},
+  {id:76,service:'grabhack-AutoDebitService',type:'error',freq:663,status:'open',err:'ERROR AutoDebitService executeDebit: int+str type error'},
+  {id:75,service:'grabhack-CustomerOnboardingService',type:'error',freq:579,status:'open',err:'ERROR CustomerOnboardingService createLead: division by zero'},
+  {id:74,service:'grabhack-AutoDebitService',type:'python_traceback',freq:441,status:'open',err:'TypeError AutoDebitService executeDebit mandate amount+100'},
+  {id:73,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:456,status:'open',err:'ZeroDivisionError createLead riskDenominator=0 risk_division'},
+  {id:72,service:'grabhack-KYCService',type:'error',freq:544,status:'open',err:'ERROR KYCService runFaceMatch: division by zero'},
+  {id:71,service:'grabhack-SupportService',type:'python_traceback',freq:185,status:'open',err:'RuntimeError SupportService assignTicket queue loan-ops'},
+  {id:70,service:'grabhack-KYCService',type:'python_traceback',freq:589,status:'open',err:'ZeroDivisionError KYCService runFaceMatch face_threshold bug'},
+  {id:69,service:'grabhack-SupportService',type:'python_traceback',freq:332,status:'open',err:'RuntimeError SupportService assignTicket queue_failure sim'},
+];
+
+let ISSUES = RAW.map((r,i) => ({
+  ...r, jiraId:`GH-${r.id}`, owner:SVC_OWNERS[r.service]||'Unassigned',
+  shortSvc:SVC_SHORT[r.service]||r.service,
+  criticality:criticality(r.freq), eta:eta(i+1), origin:'CloudWatch',
+  tab:r.freq>600?'wip':[90,76,75,70,72,85,104,103,101,100,98].includes(r.id)?'resolved':'backlog'
+}));
+
+let currentTab='backlog', sortKey='id', sortDir=-1;
+
+// ═══════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════
+function getStats(){
+  return {
+    total:ISSUES.length,
+    backlog:ISSUES.filter(i=>i.tab==='backlog').length,
+    wip:ISSUES.filter(i=>i.tab==='wip').length,
+    resolved:ISSUES.filter(i=>i.tab==='resolved').length,
+    critical:ISSUES.filter(i=>i.criticality==='Critical').length,
+  };
+}
+
+// ═══════════════════════════════════════════
+// TOPBAR
+// ═══════════════════════════════════════════
+function updateClock(){ document.getElementById('tb-clock').textContent=new Date().toLocaleTimeString('en-IN',{hour12:false}); }
+setInterval(updateClock,1000); updateClock();
+
+function buildTopbar(){
+  const s=getStats();
+  document.getElementById('tb-pills').innerHTML=`
+    <div class="tb-pill"><div class="tb-pill-val">${s.total}</div><div class="tb-pill-lbl">Total</div></div>
+    <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
+    <div class="tb-pill"><div class="tb-pill-val red">${s.critical}</div><div class="tb-pill-lbl">Critical</div></div>
+    <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
+    <div class="tb-pill"><div class="tb-pill-val amb">${s.backlog}</div><div class="tb-pill-lbl">Backlog</div></div>
+    <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
+    <div class="tb-pill"><div class="tb-pill-val blu">${s.wip}</div><div class="tb-pill-lbl">WIP</div></div>
+    <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
+    <div class="tb-pill"><div class="tb-pill-val grn">${s.resolved}</div><div class="tb-pill-lbl">Resolved</div></div>
+  `;
+  document.getElementById('nb-total').textContent=s.total;
+  document.getElementById('nb-backlog').textContent=s.backlog;
+  document.getElementById('tc-backlog').textContent=s.backlog;
+  document.getElementById('tc-wip').textContent=s.wip;
+  document.getElementById('tc-resolved').textContent=s.resolved;
+}
+
+// ═══════════════════════════════════════════
+// KPI CARDS
+// ═══════════════════════════════════════════
+function buildKPIs(){
+  const s=getStats();
+  const cards=[
+    {lbl:'Total Issues',val:s.total,sub:'all microservices',trend:'↑ +3 today',tc:'up',c:'var(--c2)',cd:'rgba(255,64,96,.06)'},
+    {lbl:'Backlog',val:s.backlog,sub:'awaiting Bug Daddy',trend:'↑ +2 queued',tc:'dn',c:'var(--c4)',cd:'rgba(255,170,0,.06)'},
+    {lbl:'In Progress',val:s.wip,sub:'agent executing',trend:'● active now',tc:'up',c:'var(--c3)',cd:'rgba(59,158,255,.06)'},
+    {lbl:'Resolved',val:s.resolved,sub:'PRs merged · closed',trend:'↑ +5 today',tc:'up',c:'var(--c1)',cd:'rgba(0,212,170,.06)'},
+  ];
+  document.getElementById('kpi-grid').innerHTML=cards.map(c=>`
+    <div class="kpi-card" style="--kc:${c.c};--kcd:${c.cd}" tabindex="0" role="button" aria-label="${c.lbl}: ${c.val}" onclick="switchView('issues',document.querySelector('[data-view=issues]'));setTimeout(()=>renderTable(),50)">
+      <div class="kpi-label">${c.lbl}</div>
+      <div class="kpi-val">${c.val}</div>
+      <div class="kpi-footer">
+        <div class="kpi-sub">${c.sub}</div>
+        <div class="kpi-trend ${c.tc}">${c.trend}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════
+// HORIZONTAL BAR CHARTS
+// ═══════════════════════════════════════════
+function buildCharts(){
+  const s=getStats();
+  const defs=[
+    {title:'Total Issues',sub:`${s.total} total`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc).length)},
+    {title:'Backlog by Service',sub:`${s.backlog} in queue`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='backlog').length)},
+    {title:'WIP by Service',sub:`${s.wip} active`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='wip').length)},
+    {title:'Resolved by Service',sub:`${s.resolved} done`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='resolved').length)},
+  ];
+  document.getElementById('hcharts-grid').innerHTML=defs.map(d=>{
+    const data=d.fn();
+    const max=Math.max(...data,1);
+    const bars=svcList.map((svc,i)=>`
+      <div class="hbc-row">
+        <div class="hbc-label" title="${SVC_SHORT[svc]}">${SVC_SHORT[svc]}</div>
+        <div class="hbc-track" data-tip="${data[i]}" role="img" aria-label="${SVC_SHORT[svc]}: ${data[i]} issues" onclick="filterBySvc('${svc}')">
+          <div class="hbc-fill" style="width:${data[i]?Math.max(4,(data[i]/max)*100):0}%;background:${SVC_COLORS[i]};--bar-delay:${i*0.08}s" title="${data[i]} issues"></div>
+        </div>
+        <div class="hbc-val" style="color:${SVC_COLORS[i]}">${data[i]}</div>
+      </div>
+    `).join('');
+    return `<div class="hchart-card"><div class="hcc-header"><div class="hcc-title">${d.title}</div><div class="hcc-total">${d.sub}</div></div><div class="hbar-chart">${bars}</div></div>`;
+  }).join('');
+}
+
+function filterBySvc(svc){
+  document.getElementById('gl-svc').value=svc;
+  switchView('issues',document.querySelector('[data-view=issues]'));
+  setTimeout(()=>renderTable(),50);
+}
+
+// ═══════════════════════════════════════════
+// ESCALATION QUEUE
+// ═══════════════════════════════════════════
+function buildEscQueue(){
+  const esc=ISSUES.filter(i=>i.freq>400).sort((a,b)=>b.freq-a.freq);
+  document.getElementById('esc-count').textContent=esc.length;
+  const sevColor=freq=>freq>600?'var(--c2)':freq>400?'var(--c4)':'var(--c5)';
+  document.getElementById('esc-list').innerHTML=esc.length?esc.map(i=>`
+    <div class="esc-item" tabindex="0" role="listitem button" aria-label="${i.jiraId} ${i.shortSvc} frequency ${i.freq}" onclick="openExecGraph(null,${i.id},${i.tab==='resolved'})" onkeydown="if(event.key==='Enter')openExecGraph(null,${i.id},${i.tab==='resolved'})" style="--esc-color:${sevColor(i.freq)}">
+      <div class="esc-severity" style="--sev-color:${sevColor(i.freq)}"></div>
+      <div class="esc-content">
+        <div class="esc-svc"><span style="font-family:var(--mono);font-size:.58rem;color:var(--c3);margin-right:.4rem">${i.jiraId}</span>${i.shortSvc}</div>
+        <div class="esc-err">${i.err}</div>
+      </div>
+      <div class="esc-right">
+        <div class="esc-freq">⚡ ${i.freq.toLocaleString()}</div>
+        <div class="esc-time">${i.criticality}</div>
+      </div>
+      <div class="esc-arrow" aria-hidden="true">›</div>
+    </div>
+  `).join(''):`<div style="padding:1.5rem;text-align:center;font-family:var(--mono);font-size:.62rem;color:var(--t3)">No active escalations</div>`;
+}
+
+// ═══════════════════════════════════════════
+// LIVE FEED
+// ═══════════════════════════════════════════
+const FEED_DATA=[
+  {ico:'🚨',bg:'rgba(255,64,96,.1)',color:'var(--c2)',title:'BankStatementService freq=654 → Incident Daddy triggered',meta:'GH-90 · CloudWatch',time:'just now'},
+  {ico:'⚡',bg:'rgba(255,170,0,.1)',color:'var(--c4)',title:'AutoDebitService TypeError freq=663 → escalating',meta:'GH-76 · 2m ago',time:'2m ago'},
+  {ico:'🐛',bg:'rgba(0,212,170,.1)',color:'var(--c1)',title:'Bug Daddy invoked: KYCService ZeroDivisionError',meta:'GH-89 · 5m ago',time:'5m ago'},
+  {ico:'✅',bg:'rgba(0,212,170,.08)',color:'var(--c1)',title:'Bug Daddy resolved DisbursementService — PR #2841 merged',meta:'GH-85 · 18m ago',time:'18m ago'},
+  {ico:'🧠',bg:'rgba(182,103,255,.1)',color:'var(--c5)',title:'SME Knowledge Base: 4 SOP matches for ZeroDivisionError',meta:'Vector DB · 21m ago',time:'21m ago'},
+  {ico:'🦊',bg:'rgba(59,158,255,.1)',color:'var(--c3)',title:'Reviewer Daddy: PR review complete — AutoDebit patch approved',meta:'GH-84 · 35m ago',time:'35m ago'},
+];
+
+function buildFeed(){
+  document.getElementById('live-feed').innerHTML=FEED_DATA.map((f,idx)=>`
+    <div class="feed-item ${idx===0?'new':''}" tabindex="0" role="listitem button" aria-label="${f.title}" onkeydown="if(event.key==='Enter')toast('${f.title}','inf')" onclick="toast('${f.title.replace(/'/g,"\\'")}','inf')">
+      <div class="feed-ico-wrap" style="background:${f.bg}" aria-hidden="true">${f.ico}</div>
+      <div class="feed-body">
+        <div class="feed-title">${f.title}</div>
+        <div class="feed-meta">${f.meta}</div>
+      </div>
+      <div class="feed-time">${f.time}</div>
+      <div class="feed-arrow" aria-hidden="true">›</div>
+    </div>
+  `).join('');
+}
+
+let feedTick=0;
+const FEED_CYCLE=[
+  {ico:'🔥',bg:'rgba(255,107,53,.1)',color:'var(--c6)',title:'CloudWatch: new error spike in CustomerOnboardingService',meta:'Freq +12 · just now',time:'now'},
+  {ico:'⏱️',bg:'rgba(0,212,170,.08)',color:'var(--c1)',title:'15M Scheduler: Bug Daddy queued 3 new issues',meta:'Orchestrator · just now',time:'now'},
+  {ico:'🛡️',bg:'rgba(255,64,96,.1)',color:'var(--c2)',title:'CVE Monitor: no new matches this cycle',meta:'NVD feed · just now',time:'now'},
+];
+setInterval(()=>{
+  FEED_DATA.unshift({...FEED_CYCLE[feedTick%FEED_CYCLE.length],time:'just now'});
+  if(FEED_DATA.length>7)FEED_DATA.pop();
+  feedTick++;buildFeed();
+},10000);
+
+// ═══════════════════════════════════════════
+// DROPDOWN POPULATION
+// ═══════════════════════════════════════════
+function populateDropdowns(){
+  const svcs=[...new Set(ISSUES.map(i=>i.service))].sort();
+  ['gl-svc','tbl-svc'].forEach(id=>{
+    const sel=document.getElementById(id);
+    svcs.forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s; o.textContent=SVC_SHORT[s]||s; sel.appendChild(o);
+    });
+  });
+}
+
+// ═══════════════════════════════════════════
+// ISSUES TABLE
+// ═══════════════════════════════════════════
+function getFiltered(){
+  const q=(document.getElementById('tbl-srch')||{value:''}).value.toLowerCase();
+  const svc=(document.getElementById('tbl-svc')||{value:''}).value;
+  const crit=(document.getElementById('tbl-crit')||{value:''}).value;
+  const gs=document.getElementById('gl-search').value.toLowerCase();
+  const gsvc=document.getElementById('gl-svc').value;
+  const gcrit=document.getElementById('gl-crit').value;
+  return ISSUES.filter(i=>{
+    const mQ=!q||(i.jiraId.toLowerCase().includes(q)||i.err.toLowerCase().includes(q)||i.shortSvc.toLowerCase().includes(q));
+    const mS=!svc||i.service===svc;
+    const mC=!crit||i.criticality===crit;
+    const mGQ=!gs||(i.jiraId.toLowerCase().includes(gs)||i.err.toLowerCase().includes(gs));
+    const mGS=!gsvc||i.service===gsvc;
+    const mGC=!gcrit||i.criticality===gcrit;
+    return mQ&&mS&&mC&&mGQ&&mGS&&mGC&&i.tab===currentTab;
+  });
+}
+
+function renderTable(){
+  let data=getFiltered();
+  data.sort((a,b)=>sortDir*(a[sortKey]>b[sortKey]?1:-1));
+  document.getElementById('tbl-count').textContent=`${data.length} issue${data.length!==1?'s':''}`;
+  const actMap={
+    backlog:id=>`<button class="act-btn pri-btn" onclick="prioritize(event,${id})" aria-label="Prioritize issue">Prioritize</button>`,
+    wip:id=>`<button class="act-btn live-btn" onclick="openExecGraph(event,${id},false)" aria-label="View live execution graph">Live Graph</button>`,
+    resolved:id=>`<button class="act-btn sum-btn" onclick="openExecGraph(event,${id},true)" aria-label="View execution summary">Summary</button>`,
+  };
+  const freqCls=f=>f>400?'hi':f>100?'med':'low';
+  const critCls=c=>({Critical:'crit',High:'high',Medium:'med',Low:'low'}[c]||'low');
+  document.getElementById('issues-tbody').innerHTML=data.map(i=>`
+    <tr>
+      <td class="td-id"><a href="https://jira.example.com/browse/${i.jiraId}" target="_blank" rel="noopener" title="Open in JIRA">${i.jiraId}</a></td>
+      <td class="td-eta">${i.eta}</td>
+      <td class="td-desc" title="${i.err}">${i.err}</td>
+      <td><span class="td-freq ${freqCls(i.freq)}">${i.freq.toLocaleString()}${i.freq>600?' 🚨':i.freq>400?' ⚠':''}</span></td>
+      <td class="td-svc" style="color:${svcColors[i.service]||'var(--t)'}">${i.shortSvc}</td>
+      <td class="td-own">${i.owner}</td>
+      <td><span class="badge src">${i.origin}</span></td>
+      <td><span class="badge ${critCls(i.criticality)}">${i.criticality}</span></td>
+      <td>${actMap[i.tab](i.id)}</td>
+    </tr>
+  `).join('');
+}
+
+function switchTab(tab,el){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>{t.classList.remove('active');t.setAttribute('aria-selected','false');});
+  el.classList.add('active'); el.setAttribute('aria-selected','true');
+  renderTable();
+}
+function sortBy(k){ sortKey=k; sortDir*=-1; renderTable(); }
+function applyFilters(){ renderTable(); }
+
+function prioritize(e,id){
+  if(e)e.stopPropagation();
+  const issue=ISSUES.find(i=>i.id===id);
+  if(!issue)return;
+  issue.tab='wip'; issue.eta='~15m';
+  buildAll(); renderTable();
+  toast(`${issue.jiraId} prioritized → WIP queue`,'ok');
+}
+
+// ═══════════════════════════════════════════
+// N8N GRAPH
+// ═══════════════════════════════════════════
+const NODES=[
+  // Row 0: Triggers
+  {id:'cw',  x:30,  y:30,  icon:'☁️',  label:'CloudWatch',  color:'#ff6b35', type:'trigger'},
+  {id:'sq',  x:125, y:30,  icon:'🔬',  label:'SonarQube',   color:'#ffaa00', type:'trigger'},
+  {id:'cve', x:220, y:30,  icon:'🛡️',  label:'CVE Feed',    color:'#ff4060', type:'trigger'},
+  {id:'jira',x:315, y:30,  icon:'📋',  label:'JIRA Debt',   color:'#b667ff', type:'trigger'},
+  {id:'slk', x:410, y:30,  icon:'💬',  label:'Slack',       color:'#4a154b', type:'trigger'},
+  // Row 1: Central
+  {id:'esc', x:200, y:145, icon:'⚡',  label:'Escalation\nAgent',  color:'#3b9eff', type:'agent', w:90},
+  {id:'db',  x:310, y:145, icon:'🗄️',  label:'Issues\nTracker DB', color:'#00d4aa', type:'db', w:90},
+  // Row 2: Monitors
+  {id:'freq',x:100, y:255, icon:'📊',  label:'Freq Monitor\n>1000', color:'#ff4060', type:'monitor'},
+  {id:'sch', x:350, y:255, icon:'⏱️',  label:'15M\nScheduler',     color:'#00d4aa', type:'monitor'},
+  // SME
+  {id:'sme', x:480, y:145, icon:'🧠',  label:'SME / KB',   color:'#ffaa00', type:'sme'},
+  // Row 3: Daddies
+  {id:'inc', x:50,  y:365, icon:'🚨',  label:'Incident\nDaddy',    color:'#ff4060', type:'daddy'},
+  {id:'bug', x:250, y:365, icon:'🐛',  label:'Bug\nDaddy',         color:'#00d4aa', type:'daddy'},
+  {id:'rev', x:480, y:365, icon:'👁️',  label:'Reviewer\nDaddy',    color:'#b667ff', type:'daddy'},
+  // Row 4: Sub-agents
+  {id:'jag', x:20,  y:460, icon:'📌',  label:'JIRA\nAgent',   color:'#b667ff', type:'sub'},
+  {id:'slkb',x:90,  y:460, icon:'💬',  label:'Slack\nBot',    color:'#4a154b', type:'sub'},
+  {id:'plan',x:190, y:460, icon:'🗺️',  label:'Planner',       color:'#3b9eff', type:'sub'},
+  {id:'gath',x:255, y:460, icon:'⛏️',  label:'Gather',        color:'#ffaa00', type:'sub'},
+  {id:'code',x:320, y:460, icon:'💻',  label:'Coder',         color:'#00d4aa', type:'sub'},
+  {id:'crit',x:385, y:460, icon:'🎯',  label:'Critic',        color:'#ff6b35', type:'sub'},
+  {id:'airev',x:450,y:460, icon:'🤖',  label:'AI Rev',        color:'#b667ff', type:'sub'},
+  {id:'bbag', x:520,y:460, icon:'🦊',  label:'BitBucket',     color:'#3b9eff', type:'sub'},
+  // JIRA PR final
+  {id:'jprf', x:520,y:525, icon:'🏁',  label:'JIRA PR\nUpdate',color:'#00d4aa', type:'output'},
+];
+
+const EDGES=[
+  ['cw','esc'],['sq','esc'],['cve','esc'],['jira','esc'],['slk','esc'],
+  ['esc','db'],['db','freq'],['db','sch'],
+  ['sme','inc'],['sme','bug'],
+  ['freq','inc'],['sch','bug'],
+  ['bug','rev'],
+  ['inc','jag'],['inc','slkb'],
+  ['bug','plan'],['bug','gath'],['bug','code'],['bug','crit'],
+  ['code','bbag'],['rev','airev'],['rev','bbag'],['bbag','jprf'],
+];
+
+let animTimers=[];
+let currentStepData=null;
+
+function openExecGraph(e,id,isSummary){
+  if(e)e.stopPropagation();
+  const issue=ISSUES.find(i=>i.id===id);
+  if(!issue)return;
+  document.getElementById('exec-modal').classList.add('open');
+  const isInc=issue.freq>600;
+  const mode=isSummary?'Execution Summary':(isInc?'Incident Daddy Flow':'Bug Daddy Flow');
+  document.getElementById('modal-mode-ico').textContent=isSummary?'📋':(isInc?'🚨':'🔄');
+  document.getElementById('modal-title-text').textContent=mode+' —';
+  document.getElementById('modal-issue-id').textContent=issue.jiraId;
+  document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
+  document.getElementById('n8n-step-none').style.display='flex';
+  document.getElementById('n8n-step-info').style.display='none';
+  document.getElementById('n8n-log-stream').innerHTML='';
+  drawGraph(issue,isInc,isSummary);
+}
+function closeModal(){
+  document.getElementById('exec-modal').classList.remove('open');
+  animTimers.forEach(clearTimeout); animTimers=[];
+}
+
+function buildNodeEl(n){
+  const nd=document.createElement('div');
+  nd.className='n8n-node';
+  nd.id='nd-'+n.id;
+  nd.style.left=(n.x)+'px';
+  nd.style.top=(n.y)+'px';
+  nd.style.setProperty('--nd-color',n.color);
+  nd.style.setProperty('--nd-bg',hexToRgba(n.color,.07));
+  nd.style.setProperty('--nd-border',hexToRgba(n.color,.2));
+  nd.setAttribute('title',n.label.replace('\n',' '));
+  nd.setAttribute('tabindex','0');
+  nd.setAttribute('role','img');
+  nd.setAttribute('aria-label',n.label.replace('\n',' '));
+  // Spinning ring
+  nd.innerHTML=`
+    <div class="exec-ring">
+      <svg viewBox="0 0 82 82" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="41" cy="41" r="38" class="exec-ring-arc" style="stroke:${n.color}"/>
+      </svg>
+    </div>
+    <div class="nd-icon">${n.icon}</div>
+    <div class="nd-label">${n.label.replace('\n','<br/>')}</div>
+    <div class="nd-done-mark">✓</div>
+    <div class="nd-err-mark">✕</div>
+  `;
+  return nd;
+}
+
+function hexToRgba(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawEdges(inner,activeSet){
+  const svg=document.getElementById('n8n-edges');
+  svg.innerHTML='';
+  EDGES.forEach(([from,to])=>{
+    const fn=NODES.find(n=>n.id===from);
+    const tn=NODES.find(n=>n.id===to);
+    if(!fn||!tn)return;
+    const isAct=activeSet.has(from+'-'+to);
+    const x1=fn.x+33,y1=fn.y+33,x2=tn.x+33,y2=tn.y+33;
+    // bezier
+    const mx=(x1+x2)/2, my=(y1+y2)/2;
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} Q${mx},${y1} ${x2},${y2}`);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke',isAct?(NODES.find(n=>n.id===from)?.color||'#00d4aa'):'rgba(255,255,255,0.07)');
+    path.setAttribute('stroke-width',isAct?1.5:.75);
+    if(isAct){path.setAttribute('stroke-dasharray','5 3');path.setAttribute('opacity','.8');}
+    svg.appendChild(path);
+    if(isAct){
+      const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      dot.setAttribute('cx',x2); dot.setAttribute('cy',y2); dot.setAttribute('r',3);
+      dot.setAttribute('fill',NODES.find(n=>n.id===to)?.color||'#00d4aa');
+      svg.appendChild(dot);
+    }
+  });
+}
+
+function drawGraph(issue,isInc,isSummary){
+  animTimers.forEach(clearTimeout); animTimers=[];
+  const inner=document.getElementById('n8n-inner');
+  // Remove old nodes
+  inner.querySelectorAll('.n8n-node').forEach(n=>n.remove());
+  // Build nodes
+  NODES.forEach(n=>{
+    const el=buildNodeEl(n);
+    inner.appendChild(el);
+  });
+  // Resize SVG
+  const svgEl=document.getElementById('n8n-edges');
+  svgEl.style.width='620px'; svgEl.style.height='620px';
+
+  // Determine active path
+  const activePath=isInc
+    ?['cw','esc','db','freq','sme','inc','jag','slkb']
+    :['cw','esc','db','sch','sme','bug','plan','gath','code','crit','bbag','rev','airev','jprf'];
+
+  const activeEdgeSet=new Set();
+  for(let i=0;i<activePath.length-1;i++) activeEdgeSet.add(activePath[i]+'-'+activePath[i+1]);
+  drawEdges(inner,activeEdgeSet);
+
+  const steps=getStepDefs(issue,isInc);
+
+  if(isSummary){
+    // Show all completed instantly
+    activePath.forEach(nid=>setNodeState(nid,'done'));
+    steps.forEach(s=>{
+      addLogEntry(s.logType,s.logTitle,s.logLines,true);
+    });
+    showStepInfo(steps[steps.length-1],false);
+    return;
+  }
+
+  // Animate
+  let si=0;
+  function runStep(){
+    if(si>=activePath.length)return;
+    const nid=activePath[si];
+    const sd=steps[si];
+    setNodeState(nid,'active');
+    if(sd){ showStepInfo(sd,true); streamLogs(sd); }
+    const t=setTimeout(()=>{
+      setNodeState(nid,'done');
+      si++;
+      if(si<activePath.length){ const t2=setTimeout(runStep,600); animTimers.push(t2); }
+      else{ toast(`${issue.jiraId} execution complete`,'ok'); }
+    },sd?sd.duration:900);
+    animTimers.push(t);
+  }
+  setTimeout(runStep,400);
+}
+
+function setNodeState(nid,state){
+  const el=document.getElementById('nd-'+nid);
+  if(!el)return;
+  el.classList.remove('active','done','error');
+  el.classList.add(state);
+}
+
+function showStepInfo(sd,running){
+  document.getElementById('n8n-step-none').style.display='none';
+  document.getElementById('n8n-step-info').style.display='block';
+  document.getElementById('n8n-step-ico').textContent=sd.icon;
+  document.getElementById('n8n-step-name').textContent=sd.name;
+  const chip=document.getElementById('n8n-step-chip');
+  chip.textContent=running?'RUNNING':'COMPLETE';
+  chip.className='n8n-step-chip '+(running?'running':'done');
+  document.getElementById('n8n-step-desc').textContent=sd.desc;
+  // Clear log for new step
+  if(running) document.getElementById('n8n-log-stream').innerHTML='';
+}
+
+function streamLogs(sd){
+  const stream=document.getElementById('n8n-log-stream');
+  sd.logs.forEach((log,i)=>{
+    const t=setTimeout(()=>addLogEntry(log.type,log.title,log.lines,false),i*320);
+    animTimers.push(t);
+  });
+}
+
+function addLogEntry(type,title,lines,instant){
+  const stream=document.getElementById('n8n-log-stream');
+  const el=document.createElement('div');
+  const typeMap={think:{cls:'thinking',tc:'t',ico:'💭 THINKING'},tool:{cls:'tool-call',tc:'tc',ico:'🔧 TOOL CALL'},result:{cls:'tool-result',tc:'tr',ico:'✅ RESULT'},error:{cls:'error',tc:'er',ico:'❌ ERROR'},info:{cls:'info',tc:'inf',ico:'ℹ INFO'}};
+  const tm=typeMap[type]||typeMap.info;
+  const ts=new Date().toLocaleTimeString('en-IN',{hour12:false});
+  el.className=`log-entry ${tm.cls}${instant?'':' '}`;
+  el.innerHTML=`
+    <div class="log-type ${tm.tc}">${tm.ico}<span class="log-ts">${ts}</span></div>
+    <div class="log-content"><strong>${title}</strong>${lines?`<div class="log-code">${lines.join('\n')}</div>`:''}
+    </div>
+  `;
+  stream.appendChild(el);
+  stream.scrollTop=stream.scrollHeight;
+}
+
+function getStepDefs(issue,isInc){
+  const svc=issue.shortSvc, freq=issue.freq, jid=issue.jiraId, err=issue.err;
+  if(isInc)return[
+    {icon:'☁️',name:'CloudWatch Parser',desc:'Lambda extracts error fingerprint from log groups',duration:1200,logType:'info',logTitle:'Log stream parsed',logs:[
+      {type:'info',title:`Lambda invoked: log group /aws/lambda/${svc}`,lines:['Runtime: python:3.13','Region: ap-south-1','Event: FilteredLogEvent']},
+      {type:'think',title:`Fingerprint extraction`,lines:[`error_type: "${issue.type}"`,`service: "${svc}"`,`freq_count: ${freq}`]},
+      {type:'result',title:'Fingerprint extracted',lines:[`fp: "${issue.id.toString().padStart(8,'0')}"`,`severity: CRITICAL`]},
+    ]},
+    {icon:'⚡',name:'Escalation Agent',desc:'Issues Tracker DB updated, routing decision made',duration:1100,logType:'info',logTitle:'DB upsert complete',logs:[
+      {type:'tool',title:'DB.upsert(issue)',lines:[`INSERT INTO issues_tracking (id, service, freq, status)`,`VALUES ('${jid}', '${svc}', ${freq}, 'open')`]},
+      {type:'think',title:`Routing decision: freq=${freq} > 1000 threshold?`,lines:[`freq ${freq} > 1000: ${freq>1000}`,`criticality: CRITICAL`,`→ Route to: Incident Daddy`]},
+      {type:'result',title:`Routed to Incident Daddy`,lines:[`reason: freq=${freq} crosses threshold`]},
+    ]},
+    {icon:'📊',name:'Freq Monitor',desc:'Threshold breach confirmed — >1000 events',duration:900,logType:'info',logTitle:'Threshold breach',logs:[
+      {type:'info',title:`Monitor check: freq=${freq}`,lines:[`threshold: 1000`,`current: ${freq}`,`breach: ${freq>1000?'YES ⚡':'CRITICAL risk'}`]},
+      {type:'result',title:'Incident trigger confirmed',lines:['Dispatching to Incident Daddy...']},
+    ]},
+    {icon:'🧠',name:'SME / Knowledge Base',desc:'Vector search for past incident patterns & SOPs',duration:1200,logType:'think',logTitle:'KB semantic search',logs:[
+      {type:'think',title:`Embedding query: "${issue.type} ${svc}"`,lines:['model: text-embedding-3-small','top_k: 5','threshold: 0.78']},
+      {type:'result',title:'3 matching SOPs retrieved',lines:['SOP-001: ZeroDivisionError mitigation','SOP-004: Incident escalation runbook','PAST-032: Similar fix pattern found']},
+    ]},
+    {icon:'🚨',name:'Incident Daddy',desc:'Incident Orchestrator analyzes and delegates',duration:1400,logType:'think',logTitle:'Incident analysis',logs:[
+      {type:'think',title:`Incident Orchestrator reasoning`,lines:[`Issue: ${err.substring(0,50)}`,`Service: ${svc}`,`Impact: CRITICAL — financial ops affected`,'Plan: JIRA incident + Slack alert + owner notification']},
+      {type:'tool',title:'Analyzer invoked',lines:['classify_impact(issue)','generate_incident_brief()','→ severity: P0']},
+    ]},
+    {icon:'📌',name:'JIRA Agent',desc:'Incident ticket created and routed',duration:900,logType:'tool',logTitle:'JIRA ticket created',logs:[
+      {type:'tool',title:'jira.create_issue()',lines:[`project: GH`,`issuetype: Incident`,`summary: "[P0] ${svc}: ${issue.type}"`,`priority: Critical`,`assignee: ${issue.owner}`]},
+      {type:'result',title:`JIRA ticket: INCIDENT-${issue.id} created`,lines:['status: Open','label: p0, agentic-auto']},
+    ]},
+    {icon:'💬',name:'Slack Bot',desc:'Service owner notified via Slack incident channel',duration:800,logType:'result',logTitle:'Slack notification sent',logs:[
+      {type:'tool',title:'slack.post_message()',lines:[`channel: #incident-response`,`text: "🚨 [P0] ${svc} - ${issue.type}"`,`blocks: [incident_card, approve_btn, deny_btn]`]},
+      {type:'result',title:`@${issue.owner} notified`,lines:['Awaiting owner approval to proceed']},
+    ]},
+  ];
+  return[
+    {icon:'☁️',name:'CloudWatch Parser',desc:'Lambda extracts error fingerprint and routes to tracker',duration:1100,logType:'info',logTitle:'Log parsed',logs:[
+      {type:'info',title:`Log group: /aws/lambda/${svc}`,lines:['Event: FilteredLogEvent','Pattern: ERROR|EXCEPTION|Traceback']},
+      {type:'think',title:'Fingerprint computed',lines:[`sha256: ${issue.id.toString(16).padStart(8,'0')}...`,`type: ${issue.type}`,`freq: ${freq}`]},
+      {type:'result',title:'Issue fingerprinted & stored'},
+    ]},
+    {icon:'⚡',name:'Escalation Agent',desc:'Routing logic: freq < 1000 → Bug Daddy queue',duration:1000,logType:'info',logTitle:'Routed to Bug Daddy',logs:[
+      {type:'think',title:`Routing check: freq=${freq}`,lines:[`freq ${freq} < 1000 → Bug Daddy`,`criticality: ${issue.criticality}`,`queue_position: ${issue.id%8+1}`]},
+      {type:'tool',title:'DB.update(routing)',lines:[`UPDATE issues SET routed_to='bug_daddy', eta='${issue.eta}'`]},
+      {type:'result',title:'Queued for Bug Daddy'},
+    ]},
+    {icon:'⏱️',name:'15M Scheduler',desc:'Periodic scheduler invokes Bug Daddy orchestrator',duration:900,logType:'info',logTitle:'Scheduler invoked',logs:[
+      {type:'info',title:'15-minute scheduler triggered',lines:['CronJob: */15 * * * *',`Dequeued: ${jid}`,`Priority score: ${freq}`]},
+      {type:'result',title:'Bug Daddy invoked'},
+    ]},
+    {icon:'🧠',name:'SME / Knowledge Base',desc:'Vector DB semantic search for past fixes and SOPs',duration:1300,logType:'think',logTitle:'KB search complete',logs:[
+      {type:'think',title:`Embedding: "${issue.type} ${svc}"`,lines:['model: text-embedding-3-small','vector_dim: 1536']},
+      {type:'result',title:'4 similar past fixes retrieved',lines:['Similarity: 0.91 — identical error pattern','SOP: null-guard before arithmetic ops','PR-2831: same fix merged 3d ago']},
+    ]},
+    {icon:'🐛',name:'Bug Daddy',desc:'Orchestrator generates step-by-step resolution plan',duration:1500,logType:'think',logTitle:'Plan generated',logs:[
+      {type:'think',title:'Bug Daddy reasoning',lines:[`Root cause: ${err.substring(0,45)}...`,`Service: ${svc}`,`Fix strategy: add type validation before arithmetic`,'Tools: planner → gather → coder → critic → PR']},
+      {type:'info',title:'Execution plan dispatched',lines:['Step 1: Planner → define patch scope','Step 2: Gather → collect full stack trace','Step 3: Coder → generate patch','Step 4: Critic → review patch','Step 5: BitBucket → open PR']},
+    ]},
+    {icon:'🗺️',name:'Planner Agent',desc:'Defines the exact patch scope and target files',duration:1100,logType:'tool',logTitle:'Plan created',logs:[
+      {type:'tool',title:'planner.analyze_scope(issue)',lines:[`target_file: lambda_function.py`,`target_line: ~63-71`,`patch_type: type_guard`]},
+      {type:'think',title:'Plan: add int() guard with try-except',lines:['Before: mandate["amount"] + "100"','After: int(mandate["amount"]) + 100']},
+      {type:'result',title:'Plan approved — proceeding to Gather'},
+    ]},
+    {icon:'⛏️',name:'Gather Agent',desc:'Collects full stack trace, CloudWatch logs, git context',duration:1200,logType:'tool',logTitle:'Context gathered',logs:[
+      {type:'tool',title:'gather.collect_logs(fingerprint)',lines:[`cloudwatch.get_log_events(group=/aws/lambda/${svc})`,`git.blame(lambda_function.py:63)`]},
+      {type:'result',title:'Full context collected',lines:['stack_trace: 4 frames captured','author: last commit 2d ago','test_coverage: 74%']},
+    ]},
+    {icon:'💻',name:'Coder Agent',desc:'Generates patch, validates in sandbox environment',duration:1600,logType:'tool',logTitle:'Patch generated & validated',logs:[
+      {type:'think',title:'Generating fix for TypeError/ZeroDivisionError',lines:[`line: ${issue.id%50+55}`,`fix: add input validation + guard clause`]},
+      {type:'tool',title:'sandbox.run_tests(patch)',lines:['pytest lambda_function.py -v','Tests: 12 passed, 0 failed','Coverage: 81% (+7%)']},
+      {type:'result',title:'✅ Patch validated in sandbox',lines:['All tests green','No regressions detected']},
+    ]},
+    {icon:'🎯',name:'Critic Agent',desc:'Internal code review — scores patch quality',duration:1100,logType:'think',logTitle:'Critic review complete',logs:[
+      {type:'think',title:'Critic reviewing patch quality',lines:['readability: 9/10','correctness: 10/10','edge cases: covered (null, empty str)','score: 94/100']},
+      {type:'result',title:'Patch approved by Critic'},
+    ]},
+    {icon:'🦊',name:'BitBucket Agent',desc:'Creates branch, commits patch, opens pull request',duration:1200,logType:'tool',logTitle:'PR opened',logs:[
+      {type:'tool',title:`git.create_branch("fix/${issue.id}-${svc.toLowerCase()}")`,lines:['Branch from: main','Commit: fix: add type guard for '+issue.type]},
+      {type:'tool',title:`bitbucket.open_pr(title="fix(${svc}): ${issue.type}")`,lines:[`PR #${2840+(issue.id%60)} opened`,`reviewers: [${issue.owner}, platform-team]`]},
+      {type:'result',title:`PR #${2840+(issue.id%60)} ready for review`},
+    ]},
+    {icon:'👁️',name:'Reviewer Daddy',desc:'Reviewer Daddy orchestrates final AI review',duration:1000,logType:'info',logTitle:'Review orchestrated',logs:[
+      {type:'info',title:'Reviewer Daddy: final review phase',lines:['Invoking AI Reviewer + BitBucket approval']},
+      {type:'think',title:'AI Reviewer analysis',lines:['No security vulnerabilities','No performance regression','Type safety: improved']},
+    ]},
+    {icon:'🤖',name:'AI Reviewer',desc:'LLM-powered code review pass',duration:1100,logType:'result',logTitle:'AI review approved',logs:[
+      {type:'result',title:'AI Reviewer: APPROVED',lines:['Confidence: 96%','Comment: "Clean fix — consistent with codebase style"']},
+    ]},
+    {icon:'🏁',name:'JIRA Update',desc:'JIRA ticket closed, PR linked, DB updated',duration:900,logType:'result',logTitle:'Issue resolved',logs:[
+      {type:'tool',title:`jira.transition("${jid}", "Done")`,lines:[`resolution_pr: #${2840+(issue.id%60)}`,`resolved_by: bug-daddy-agent`,`resolved_at: ${new Date().toISOString()}`]},
+      {type:'tool',title:'DB.update(status=resolved)',lines:[`UPDATE issues SET status='resolved', resolved_at=NOW()`]},
+      {type:'result',title:`✅ ${jid} RESOLVED`,lines:['All agents completed','PR merged · JIRA closed · DB updated']},
+    ]},
+  ];
+}
+
+// ═══════════════════════════════════════════
+// MISC
+// ═══════════════════════════════════════════
+function escalateAll(){
+  const crits=ISSUES.filter(i=>i.criticality==='Critical'&&i.tab!=='resolved');
+  crits.forEach(i=>i.tab='wip');
+  buildAll(); renderTable();
+  toast(`${crits.length} critical issues escalated → Incident Daddy`,'err');
+}
+function exportCSV(){
+  const rows=[['JIRA ID','Service','Error','Freq','Criticality','Owner','Tab','ETA']];
+  ISSUES.forEach(i=>rows.push([i.jiraId,i.shortSvc,`"${i.err}"`,i.freq,i.criticality,i.owner,i.tab,i.eta]));
+  const blob=new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='grabhack_issues.csv';a.click();
+  toast('CSV exported','ok');
+}
+function setRole(role,el){
+  document.querySelectorAll('.role-btn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  toast(`View: ${role}`,'inf');
+}
+function switchView(name,el){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.removeAttribute('aria-current');});
+  document.getElementById('view-'+name).classList.add('active');
+  if(el){el.classList.add('active');el.setAttribute('aria-current','page');}
+  if(name==='issues')renderTable();
+}
+function toast(msg,type='inf'){
+  const c=document.getElementById('toastc');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span>${type==='ok'?'✓':type==='err'?'✕':'ℹ'}</span>${msg}`;
+  c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';},3000);
+  setTimeout(()=>t.remove(),3400);
+}
+
+// Close modal on backdrop
+document.getElementById('exec-modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+// ESC key
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+function buildAll(){
+  buildTopbar(); buildKPIs(); buildCharts(); buildEscQueue();
+  if(document.getElementById('nb-backlog')) document.getElementById('nb-backlog').textContent=getStats().backlog;
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  populateDropdowns(); buildAll(); buildFeed(); renderTable();
+  setInterval(buildTopbar, 30000);
+});
+</script>
+</body>
+</html>
