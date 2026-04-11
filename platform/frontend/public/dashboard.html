@@ -326,6 +326,31 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
 .act-btn.sum-btn { border-color: rgba(59,158,255,.4); color: var(--c3); }
 .act-btn.sum-btn:hover { background: var(--c3d); }
 
+.admin-grid { display:grid; grid-template-columns: 340px 1fr; gap: .875rem; padding: 1rem 1.5rem; flex: 1; overflow: hidden; }
+.admin-card { background: var(--s2); border: 1px solid var(--bd); border-radius: var(--radius); display:flex; flex-direction:column; overflow:hidden; }
+.admin-card-head { padding: .9rem 1.1rem; border-bottom:1px solid var(--bd); font-weight:700; font-size:.82rem; }
+.admin-form { padding: 1rem 1.1rem; overflow-y:auto; display:flex; flex-direction:column; gap:.75rem; }
+.admin-field { display:flex; flex-direction:column; gap:.35rem; }
+.admin-field label { font-family:var(--mono); font-size:.56rem; color:var(--t2); letter-spacing:.08em; text-transform:uppercase; }
+.admin-field input, .admin-field select {
+  width:100%; background:var(--s3); border:1px solid var(--bd); color:var(--t); border-radius:6px;
+  padding:.7rem .8rem; outline:none; font-family:var(--sans); font-size:.78rem;
+}
+.admin-field input:focus, .admin-field select:focus { border-color: var(--c1); }
+.admin-actions { display:flex; gap:.5rem; }
+.admin-list-wrap { flex:1; overflow:auto; }
+.admin-empty { padding: 1rem 1.1rem; color: var(--t3); font-family: var(--mono); font-size: .62rem; }
+.admin-table td, .admin-table th { padding: .7rem .85rem; }
+.admin-badge { display:inline-flex; padding:2px 7px; border-radius:10px; font-family:var(--mono); font-size:.52rem; }
+.admin-badge.role-admin { background: rgba(255,64,96,.14); color: var(--c2); }
+.admin-badge.role-user { background: rgba(0,212,170,.12); color: var(--c1); }
+.admin-toolbar { display:flex; gap:.5rem; align-items:center; }
+.hidden { display:none !important; }
+
+@media (max-width: 980px) {
+  .admin-grid { grid-template-columns: 1fr; overflow-y: auto; }
+}
+
 /* ═══════════════════════════════════
    EXECUTION GRAPH MODAL
 ═══════════════════════════════════ */
@@ -610,6 +635,10 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
     <span class="ni-ic" aria-hidden="true">⊞</span> Issues Table
     <span class="ni-badge r" id="nb-backlog">—</span>
   </div>
+  <div class="nav-item hidden" id="admin-nav-item" tabindex="0" role="button" data-view="admin" onclick="switchView('admin',this)" onkeydown="if(event.key==='Enter')switchView('admin',this)">
+    <span class="ni-ic" aria-hidden="true">⚙</span> User Management
+    <span class="ni-badge g">ADM</span>
+  </div>
 
   <div class="sb-sec" style="margin-top:.5rem">Filters</div>
   <div class="sb-filters">
@@ -741,6 +770,79 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   </div>
 </div>
 
+<div class="view" id="view-admin">
+  <div class="ph">
+    <div class="ph-left">
+      <h2><span aria-hidden="true">⚙</span> Admin User Management</h2>
+      <div class="ph-sub">Create users, rotate passwords, and manage roles and status</div>
+    </div>
+    <div class="ph-right admin-toolbar">
+      <button class="btn" onclick="loadUsers()">↻ Refresh Users</button>
+    </div>
+  </div>
+  <div class="admin-grid">
+    <div class="admin-card">
+      <div class="admin-card-head">Create User</div>
+      <form class="admin-form" onsubmit="createUser(event)">
+        <div class="admin-field">
+          <label for="admin-create-username">Username</label>
+          <input id="admin-create-username" required />
+        </div>
+        <div class="admin-field">
+          <label for="admin-create-email">Email</label>
+          <input id="admin-create-email" type="email" required />
+        </div>
+        <div class="admin-field">
+          <label for="admin-create-name">Full Name</label>
+          <input id="admin-create-name" />
+        </div>
+        <div class="admin-field">
+          <label for="admin-create-password">Password</label>
+          <input id="admin-create-password" type="password" minlength="8" required />
+        </div>
+        <div class="admin-field">
+          <label for="admin-create-role">Role</label>
+          <select id="admin-create-role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="admin-create-status">Status</label>
+          <select id="admin-create-status">
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+            <option value="locked">locked</option>
+          </select>
+        </div>
+        <div class="admin-actions">
+          <button class="btn pri" type="submit">Create User</button>
+          <button class="btn" type="button" onclick="resetCreateForm()">Clear</button>
+        </div>
+      </form>
+    </div>
+    <div class="admin-card">
+      <div class="admin-card-head">Users</div>
+      <div class="admin-list-wrap">
+        <table class="admin-table" aria-label="Users table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Last Login</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-users-body"></tbody>
+        </table>
+        <div class="admin-empty hidden" id="admin-empty">No users found.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main>
 </div>
 
@@ -797,9 +899,86 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
 <div class="toastc" id="toastc" aria-live="polite"></div>
 
 <script>
-// Authentication check
-if (!localStorage.getItem('bugDaddyUser')) {
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:8000'
+  : window.location.origin + '/api';
+let AUTH_USER = null;
+let ADMIN_USERS = [];
+
+function hasPermission(permission) {
+  const payload = parseJwt(localStorage.getItem('bugDaddyAccessToken'));
+  const permissions = payload && Array.isArray(payload.permissions) ? payload.permissions : [];
+  return permissions.includes(permission);
+}
+
+function parseJwt(token) {
+  if (!token) return null;
+  try {
+    const encoded = token.split('.')[0 + 1];
+    const padded = encoded + '='.repeat((4 - (encoded.length % 4)) % 4);
+    return JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch (error) {
+    return null;
+  }
+}
+
+async function apiFetch(path, options) {
+  const accessToken = localStorage.getItem('bugDaddyAccessToken');
+  const response = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options && options.headers ? options.headers : {}),
+      ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
+    },
+  });
+  if (response.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) {
+      logoutAndRedirect();
+      throw new Error('Unauthorized');
+    }
+    return fetch(API_BASE + path, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options && options.headers ? options.headers : {}),
+        Authorization: 'Bearer ' + localStorage.getItem('bugDaddyAccessToken'),
+      },
+    });
+  }
+  return response;
+}
+
+async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem('bugDaddyRefreshToken');
+  if (!refreshToken) return false;
+  const response = await fetch(API_BASE + '/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  localStorage.setItem('bugDaddyAccessToken', data.access_token);
+  localStorage.setItem('bugDaddyRefreshToken', data.refresh_token);
+  localStorage.setItem('bugDaddyUser', JSON.stringify(data.user));
+  AUTH_USER = data.user;
+  return true;
+}
+
+function logoutAndRedirect() {
+  localStorage.removeItem('bugDaddyAccessToken');
+  localStorage.removeItem('bugDaddyRefreshToken');
+  localStorage.removeItem('bugDaddyUser');
   window.location.href = '/login.html';
+}
+
+function gateAdminUi() {
+  const isAdmin = AUTH_USER && AUTH_USER.role === 'admin' && hasPermission('users.read');
+  const nav = document.getElementById('admin-nav-item');
+  if (isAdmin) nav.classList.remove('hidden');
+  else nav.classList.add('hidden');
 }
 // ═══════════════════════════════════════════
 // DATA
@@ -822,51 +1001,10 @@ function shortErr(desc) {
   return desc.substring(0,60);
 }
 
-const RAW = [
-  {id:104,service:'grabhack-BankStatementService',type:'log_exception',freq:2,status:'open',err:'ValueError: invalid literal for int() — summarizeCashflow'},
-  {id:103,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:4,status:'open',err:'ZeroDivisionError: division by zero — createLead / run_risk_checks'},
-  {id:102,service:'grabhack-KYCService',type:'log_exception',freq:38,status:'open',err:'ZeroDivisionError: division by zero — runFaceMatch score calc'},
-  {id:101,service:'grabhack-KYCService',type:'python_traceback',freq:23,status:'open',err:'ZeroDivisionError — runFaceMatch face_threshold simulation'},
-  {id:100,service:'grabhack-AutoDebitService',type:'python_traceback',freq:15,status:'open',err:'TypeError: unsupported operand int + str — executeDebit'},
-  {id:99,service:'grabhack-DisbursementService',type:'python_traceback',freq:92,status:'open',err:'ZeroDivisionError — releaseFunds disbursement / 0'},
-  {id:98,service:'grabhack-CustomerOnboardingService',type:'log_exception',freq:6,status:'open',err:'ZeroDivisionError — createLead risk check riskDenominator=0'},
-  {id:97,service:'grabhack-SupportService',type:'python_traceback',freq:110,status:'open',err:'RuntimeError: queue assignment failed for loan-ops'},
-  {id:96,service:'grabhack-SupportService',type:'python_traceback',freq:106,status:'open',err:'RuntimeError: queue assignment failed — assignTicket'},
-  {id:95,service:'grabhack-SupportService',type:'log_exception',freq:58,status:'open',err:'RuntimeError: queue assignment failed — log_exception'},
-  {id:94,service:'grabhack-BankStatementService',type:'python_traceback',freq:140,status:'open',err:'ValueError: invalid literal int() — summarizeCashflow'},
-  {id:93,service:'grabhack-BankStatementService',type:'python_traceback',freq:128,status:'open',err:'ValueError — build_transactions int("not-a-number")'},
-  {id:92,service:'grabhack-DisbursementService',type:'log_exception',freq:72,status:'open',err:'ZeroDivisionError — releaseFunds log_exception'},
-  {id:91,service:'grabhack-AutoDebitService',type:'python_traceback',freq:142,status:'open',err:'TypeError int+str — executeDebit traceback'},
-  {id:90,service:'grabhack-BankStatementService',type:'error',freq:654,status:'open',err:'ERROR BankStatementService summarizeCashflow: not-a-number'},
-  {id:89,service:'grabhack-KYCService',type:'python_traceback',freq:210,status:'open',err:'ZeroDivisionError — runFaceMatch score: 1/0'},
-  {id:88,service:'grabhack-AutoDebitService',type:'python_traceback',freq:90,status:'open',err:'TypeError int+str — executeDebit mandate amount'},
-  {id:87,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:405,status:'open',err:'ZeroDivisionError — createLead riskDenominator=0'},
-  {id:86,service:'grabhack-DisbursementService',type:'python_traceback',freq:85,status:'open',err:'ZeroDivisionError — releaseFunds amount/0'},
-  {id:85,service:'grabhack-DisbursementService',type:'error',freq:569,status:'open',err:'ERROR DisbursementService releaseFunds: division by zero'},
-  {id:84,service:'grabhack-AutoDebitService',type:'log_exception',freq:98,status:'open',err:'TypeError int+str executeDebit mandate amount+100'},
-  {id:83,service:'grabhack-SupportService',type:'error',freq:498,status:'open',err:'ERROR SupportService assignTicket: queue assignment failed'},
-  {id:82,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:329,status:'open',err:'ZeroDivisionError createLead run_risk_checks riskDenominator'},
-  {id:81,service:'grabhack-KYCService',type:'python_traceback',freq:139,status:'open',err:'ZeroDivisionError runFaceMatch score=1/0 result MATCHED'},
-  {id:80,service:'grabhack-DisbursementService',type:'python_traceback',freq:183,status:'open',err:'ZeroDivisionError releaseFunds disbursement[amount]/0'},
-  {id:79,service:'grabhack-BankStatementService',type:'python_traceback',freq:241,status:'open',err:'ValueError summarizeCashflow: int(not-a-number)'},
-  {id:78,service:'grabhack-DisbursementService',type:'python_traceback',freq:358,status:'open',err:'ZeroDivisionError releaseFunds release_zero simulation'},
-  {id:77,service:'grabhack-BankStatementService',type:'python_traceback',freq:485,status:'open',err:'ERROR BankStatementService summarizeCashflow amount_cast'},
-  {id:76,service:'grabhack-AutoDebitService',type:'error',freq:663,status:'open',err:'ERROR AutoDebitService executeDebit: int+str type error'},
-  {id:75,service:'grabhack-CustomerOnboardingService',type:'error',freq:579,status:'open',err:'ERROR CustomerOnboardingService createLead: division by zero'},
-  {id:74,service:'grabhack-AutoDebitService',type:'python_traceback',freq:441,status:'open',err:'TypeError AutoDebitService executeDebit mandate amount+100'},
-  {id:73,service:'grabhack-CustomerOnboardingService',type:'python_traceback',freq:456,status:'open',err:'ZeroDivisionError createLead riskDenominator=0 risk_division'},
-  {id:72,service:'grabhack-KYCService',type:'error',freq:544,status:'open',err:'ERROR KYCService runFaceMatch: division by zero'},
-  {id:71,service:'grabhack-SupportService',type:'python_traceback',freq:185,status:'open',err:'RuntimeError SupportService assignTicket queue loan-ops'},
-  {id:70,service:'grabhack-KYCService',type:'python_traceback',freq:589,status:'open',err:'ZeroDivisionError KYCService runFaceMatch face_threshold bug'},
-  {id:69,service:'grabhack-SupportService',type:'python_traceback',freq:332,status:'open',err:'RuntimeError SupportService assignTicket queue_failure sim'},
-];
-
-let ISSUES = RAW.map((r,i) => ({
-  ...r, jiraId:`GH-${r.id}`, owner:SVC_OWNERS[r.service]||'Unassigned',
-  shortSvc:SVC_SHORT[r.service]||r.service,
-  criticality:criticality(r.freq), eta:eta(i+1), origin:'CloudWatch',
-  tab:r.freq>600?'wip':[90,76,75,70,72,85,104,103,101,100,98].includes(r.id)?'resolved':'backlog'
-}));
+let ISSUES = [];
+let FEED_DATA = [];
+let DASHBOARD_CHARTS = { services: [], sources: [], issue_types: [] };
+let DASHBOARD_SUMMARY = { total: 0, backlog: 0, wip: 0, resolved: 0, no_action: 0, critical: 0 };
 
 let currentTab='backlog', sortKey='id', sortDir=-1;
 
@@ -874,13 +1012,7 @@ let currentTab='backlog', sortKey='id', sortDir=-1;
 // STATS
 // ═══════════════════════════════════════════
 function getStats(){
-  return {
-    total:ISSUES.length,
-    backlog:ISSUES.filter(i=>i.tab==='backlog').length,
-    wip:ISSUES.filter(i=>i.tab==='wip').length,
-    resolved:ISSUES.filter(i=>i.tab==='resolved').length,
-    critical:ISSUES.filter(i=>i.criticality==='Critical').length,
-  };
+  return DASHBOARD_SUMMARY;
 }
 
 // ═══════════════════════════════════════════
@@ -936,20 +1068,20 @@ function buildKPIs(){
 // HORIZONTAL BAR CHARTS
 // ═══════════════════════════════════════════
 function buildCharts(){
-  const s=getStats();
+  const serviceRows = DASHBOARD_CHARTS.services || [];
   const defs=[
-    {title:'Total Issues',sub:`${s.total} total`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc).length)},
-    {title:'Backlog by Service',sub:`${s.backlog} in queue`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='backlog').length)},
-    {title:'WIP by Service',sub:`${s.wip} active`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='wip').length)},
-    {title:'Resolved by Service',sub:`${s.resolved} done`,fn:()=>svcList.map(svc=>ISSUES.filter(i=>i.service===svc&&i.tab==='resolved').length)},
+    {title:'Total Issues',sub:`${DASHBOARD_SUMMARY.total} total`,key:'total'},
+    {title:'Backlog by Service',sub:`${DASHBOARD_SUMMARY.backlog} in queue`,key:'backlog'},
+    {title:'WIP by Service',sub:`${DASHBOARD_SUMMARY.wip} active`,key:'wip'},
+    {title:'Resolved by Service',sub:`${DASHBOARD_SUMMARY.resolved} done`,key:'resolved'},
   ];
   document.getElementById('hcharts-grid').innerHTML=defs.map(d=>{
-    const data=d.fn();
+    const data=serviceRows.map(row => Number(row[d.key] || 0));
     const max=Math.max(...data,1);
-    const bars=svcList.map((svc,i)=>`
+    const bars=serviceRows.map((row,i)=>`
       <div class="hbc-row">
-        <div class="hbc-label" title="${SVC_SHORT[svc]}">${SVC_SHORT[svc]}</div>
-        <div class="hbc-track" data-tip="${data[i]}" role="img" aria-label="${SVC_SHORT[svc]}: ${data[i]} issues" onclick="filterBySvc('${svc}')">
+        <div class="hbc-label" title="${row.service_name}">${(SVC_SHORT[row.service_name]||row.service_name.replace('grabhack-',''))}</div>
+        <div class="hbc-track" data-tip="${data[i]}" role="img" aria-label="${row.service_name}: ${data[i]} issues" onclick="filterBySvc('${row.service_name}')">
           <div class="hbc-fill" style="width:${data[i]?Math.max(4,(data[i]/max)*100):0}%;background:${SVC_COLORS[i]};--bar-delay:${i*0.08}s" title="${data[i]} issues"></div>
         </div>
         <div class="hbc-val" style="color:${SVC_COLORS[i]}">${data[i]}</div>
@@ -969,18 +1101,18 @@ function filterBySvc(svc){
 // ESCALATION QUEUE
 // ═══════════════════════════════════════════
 function buildEscQueue(){
-  const esc=ISSUES.filter(i=>i.freq>400).sort((a,b)=>b.freq-a.freq);
+  const esc=ISSUES.filter(i=>i.frequency>400 && i.status !== 'resolved').sort((a,b)=>b.frequency-a.frequency);
   document.getElementById('esc-count').textContent=esc.length;
   const sevColor=freq=>freq>600?'var(--c2)':freq>400?'var(--c4)':'var(--c5)';
   document.getElementById('esc-list').innerHTML=esc.length?esc.map(i=>`
-    <div class="esc-item" tabindex="0" role="listitem button" aria-label="${i.jiraId} ${i.shortSvc} frequency ${i.freq}" onclick="openExecGraph(null,${i.id},${i.tab==='resolved'})" onkeydown="if(event.key==='Enter')openExecGraph(null,${i.id},${i.tab==='resolved'})" style="--esc-color:${sevColor(i.freq)}">
-      <div class="esc-severity" style="--sev-color:${sevColor(i.freq)}"></div>
+    <div class="esc-item" tabindex="0" role="listitem button" aria-label="${i.jiraId} ${i.shortSvc} frequency ${i.frequency}" onclick="openExecGraph(null,${i.id},${i.tab==='resolved'})" onkeydown="if(event.key==='Enter')openExecGraph(null,${i.id},${i.tab==='resolved'})" style="--esc-color:${sevColor(i.frequency)}">
+      <div class="esc-severity" style="--sev-color:${sevColor(i.frequency)}"></div>
       <div class="esc-content">
         <div class="esc-svc"><span style="font-family:var(--mono);font-size:.58rem;color:var(--c3);margin-right:.4rem">${i.jiraId}</span>${i.shortSvc}</div>
         <div class="esc-err">${i.err}</div>
       </div>
       <div class="esc-right">
-        <div class="esc-freq">⚡ ${i.freq.toLocaleString()}</div>
+        <div class="esc-freq">⚡ ${i.frequency.toLocaleString()}</div>
         <div class="esc-time">${i.criticality}</div>
       </div>
       <div class="esc-arrow" aria-hidden="true">›</div>
@@ -991,19 +1123,16 @@ function buildEscQueue(){
 // ═══════════════════════════════════════════
 // LIVE FEED
 // ═══════════════════════════════════════════
-const FEED_DATA=[
-  {ico:'🚨',bg:'rgba(255,64,96,.1)',color:'var(--c2)',title:'BankStatementService freq=654 → Incident Daddy triggered',meta:'GH-90 · CloudWatch',time:'just now'},
-  {ico:'⚡',bg:'rgba(255,170,0,.1)',color:'var(--c4)',title:'AutoDebitService TypeError freq=663 → escalating',meta:'GH-76 · 2m ago',time:'2m ago'},
-  {ico:'🐛',bg:'rgba(0,212,170,.1)',color:'var(--c1)',title:'Bug Daddy invoked: KYCService ZeroDivisionError',meta:'GH-89 · 5m ago',time:'5m ago'},
-  {ico:'✅',bg:'rgba(0,212,170,.08)',color:'var(--c1)',title:'Bug Daddy resolved DisbursementService — PR #2841 merged',meta:'GH-85 · 18m ago',time:'18m ago'},
-  {ico:'🧠',bg:'rgba(182,103,255,.1)',color:'var(--c5)',title:'SME Knowledge Base: 4 SOP matches for ZeroDivisionError',meta:'Vector DB · 21m ago',time:'21m ago'},
-  {ico:'🦊',bg:'rgba(59,158,255,.1)',color:'var(--c3)',title:'Reviewer Daddy: PR review complete — AutoDebit patch approved',meta:'GH-84 · 35m ago',time:'35m ago'},
-];
-
 function buildFeed(){
+  const iconMap = {
+    escalated: { ico:'🚨', bg:'rgba(255,64,96,.1)' },
+    resolved: { ico:'✅', bg:'rgba(0,212,170,.08)' },
+    in_progress: { ico:'⚡', bg:'rgba(59,158,255,.1)' },
+    open: { ico:'🐛', bg:'rgba(255,170,0,.08)' },
+  };
   document.getElementById('live-feed').innerHTML=FEED_DATA.map((f,idx)=>`
     <div class="feed-item ${idx===0?'new':''}" tabindex="0" role="listitem button" aria-label="${f.title}" onkeydown="if(event.key==='Enter')toast('${f.title}','inf')" onclick="toast('${f.title.replace(/'/g,"\\'")}','inf')">
-      <div class="feed-ico-wrap" style="background:${f.bg}" aria-hidden="true">${f.ico}</div>
+      <div class="feed-ico-wrap" style="background:${(iconMap[f.event_type]||iconMap.open).bg}" aria-hidden="true">${(iconMap[f.event_type]||iconMap.open).ico}</div>
       <div class="feed-body">
         <div class="feed-title">${f.title}</div>
         <div class="feed-meta">${f.meta}</div>
@@ -1013,18 +1142,6 @@ function buildFeed(){
     </div>
   `).join('');
 }
-
-let feedTick=0;
-const FEED_CYCLE=[
-  {ico:'🔥',bg:'rgba(255,107,53,.1)',color:'var(--c6)',title:'CloudWatch: new error spike in CustomerOnboardingService',meta:'Freq +12 · just now',time:'now'},
-  {ico:'⏱️',bg:'rgba(0,212,170,.08)',color:'var(--c1)',title:'15M Scheduler: Bug Daddy queued 3 new issues',meta:'Orchestrator · just now',time:'now'},
-  {ico:'🛡️',bg:'rgba(255,64,96,.1)',color:'var(--c2)',title:'CVE Monitor: no new matches this cycle',meta:'NVD feed · just now',time:'now'},
-];
-setInterval(()=>{
-  FEED_DATA.unshift({...FEED_CYCLE[feedTick%FEED_CYCLE.length],time:'just now'});
-  if(FEED_DATA.length>7)FEED_DATA.pop();
-  feedTick++;buildFeed();
-},10000);
 
 // ═══════════════════════════════════════════
 // DROPDOWN POPULATION
@@ -1063,7 +1180,7 @@ function getFiltered(){
 
 function renderTable(){
   let data=getFiltered();
-  data.sort((a,b)=>sortDir*(a[sortKey]>b[sortKey]?1:-1));
+  data.sort((a,b)=>sortDir*((a[sortKey]||'')>(b[sortKey]||'')?1:-1));
   document.getElementById('tbl-count').textContent=`${data.length} issue${data.length!==1?'s':''}`;
   const actMap={
     backlog:id=>`<button class="act-btn pri-btn" onclick="prioritize(event,${id})" aria-label="Prioritize issue">Prioritize</button>`,
@@ -1075,9 +1192,9 @@ function renderTable(){
   document.getElementById('issues-tbody').innerHTML=data.map(i=>`
     <tr>
       <td class="td-id"><a href="https://jira.example.com/browse/${i.jiraId}" target="_blank" rel="noopener" title="Open in JIRA">${i.jiraId}</a></td>
-      <td class="td-eta">${i.eta}</td>
+      <td class="td-eta">${i.eta || '—'}</td>
       <td class="td-desc" title="${i.err}">${i.err}</td>
-      <td><span class="td-freq ${freqCls(i.freq)}">${i.freq.toLocaleString()}${i.freq>600?' 🚨':i.freq>400?' ⚠':''}</span></td>
+      <td><span class="td-freq ${freqCls(i.frequency)}">${i.frequency.toLocaleString()}${i.frequency>600?' 🚨':i.frequency>400?' ⚠':''}</span></td>
       <td class="td-svc" style="color:${svcColors[i.service]||'var(--t)'}">${i.shortSvc}</td>
       <td class="td-own">${i.owner}</td>
       <td><span class="badge src">${i.origin}</span></td>
@@ -1096,13 +1213,18 @@ function switchTab(tab,el){
 function sortBy(k){ sortKey=k; sortDir*=-1; renderTable(); }
 function applyFilters(){ renderTable(); }
 
-function prioritize(e,id){
+async function prioritize(e,id){
   if(e)e.stopPropagation();
-  const issue=ISSUES.find(i=>i.id===id);
-  if(!issue)return;
-  issue.tab='wip'; issue.eta='~15m';
-  buildAll(); renderTable();
-  toast(`${issue.jiraId} prioritized → WIP queue`,'ok');
+  const response = await apiFetch(`/issues/${id}/prioritize`, { method: 'POST' });
+  const data = await response.json();
+  if (!response.ok) {
+    toast(data.detail || 'Prioritize failed', 'err');
+    return;
+  }
+  await loadDashboardData();
+  buildAll();
+  renderTable();
+  toast(`${data.jiraId} prioritized → WIP queue`,'ok');
 }
 
 // ═══════════════════════════════════════════
@@ -1618,11 +1740,20 @@ function getStepDefs(issue,isInc){
 // ═══════════════════════════════════════════
 // MISC
 // ═══════════════════════════════════════════
-function escalateAll(){
+async function escalateAll(){
   const crits=ISSUES.filter(i=>i.criticality==='Critical'&&i.tab!=='resolved');
-  crits.forEach(i=>i.tab='wip');
-  buildAll(); renderTable();
-  toast(`${crits.length} critical issues escalated → Incident Daddy`,'err');
+  let updated = 0;
+  for (const issue of crits) {
+    const response = await apiFetch(`/issues/${issue.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+    if (response.ok) updated += 1;
+  }
+  await loadDashboardData();
+  buildAll();
+  renderTable();
+  toast(`${updated} critical issues escalated → Incident Daddy`,'err');
 }
 function exportCSV(){
   const rows=[['JIRA ID','Service','Error','Freq','Criticality','Owner','Tab','ETA']];
@@ -1631,17 +1762,149 @@ function exportCSV(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='grabhack_issues.csv';a.click();
   toast('CSV exported','ok');
 }
+function resetCreateForm() {
+  ['admin-create-username','admin-create-email','admin-create-name','admin-create-password'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('admin-create-role').value = 'user';
+  document.getElementById('admin-create-status').value = 'active';
+}
 function setRole(role,el){
   document.querySelectorAll('.role-btn').forEach(b=>b.classList.remove('on'));
   el.classList.add('on');
   toast(`View: ${role}`,'inf');
 }
+async function loadUsers() {
+  if (!hasPermission('users.read')) return;
+  const response = await apiFetch('/admin/users', { method: 'GET' });
+  const data = await response.json();
+  if (!response.ok) {
+    toast(data.detail || 'Failed to load users', 'err');
+    return;
+  }
+  ADMIN_USERS = data.items || [];
+  renderUsersTable();
+}
+
+async function loadDashboardData() {
+  const [summaryResp, chartsResp, feedResp, issuesResp] = await Promise.all([
+    apiFetch('/dashboard/summary', { method: 'GET' }),
+    apiFetch('/dashboard/charts', { method: 'GET' }),
+    apiFetch('/dashboard/feed?limit=12', { method: 'GET' }),
+    apiFetch('/issues?limit=200', { method: 'GET' }),
+  ]);
+  DASHBOARD_SUMMARY = summaryResp.ok ? await summaryResp.json() : DASHBOARD_SUMMARY;
+  DASHBOARD_CHARTS = chartsResp.ok ? await chartsResp.json() : DASHBOARD_CHARTS;
+  FEED_DATA = feedResp.ok ? (await feedResp.json()).items || [] : [];
+  ISSUES = issuesResp.ok ? (await issuesResp.json()).items || [] : [];
+  ISSUES = ISSUES.map((issue, index) => ({ ...issue, eta: eta(index + 1), origin: issue.source }));
+}
+
+function renderUsersTable() {
+  const tbody = document.getElementById('admin-users-body');
+  const empty = document.getElementById('admin-empty');
+  if (!ADMIN_USERS.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  tbody.innerHTML = ADMIN_USERS.map(user => `
+    <tr>
+      <td class="td-own">${user.username}</td>
+      <td class="td-desc" title="${user.email}">${user.email}</td>
+      <td><span class="admin-badge role-${user.role}">${user.role}</span></td>
+      <td><span class="badge ${user.status === 'active' ? 'med' : user.status === 'locked' ? 'crit' : 'low'}">${user.status}</span></td>
+      <td class="td-own">${user.last_login_at ? new Date(user.last_login_at).toLocaleString('en-IN') : 'Never'}</td>
+      <td>
+        <button class="act-btn sum-btn" onclick="promptResetPassword('${user.id}','${user.username}')">Reset Password</button>
+        <button class="act-btn pri-btn" onclick="toggleUserStatus('${user.id}','${user.status === 'active' ? 'inactive' : 'active'}')">${user.status === 'active' ? 'Deactivate' : 'Activate'}</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createUser(event) {
+  event.preventDefault();
+  const payload = {
+    username: document.getElementById('admin-create-username').value.trim(),
+    email: document.getElementById('admin-create-email').value.trim(),
+    full_name: document.getElementById('admin-create-name').value.trim() || null,
+    password: document.getElementById('admin-create-password').value,
+    role_name: document.getElementById('admin-create-role').value,
+    status: document.getElementById('admin-create-status').value,
+  };
+  const response = await apiFetch('/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    toast(data.detail || 'Could not create user', 'err');
+    return;
+  }
+  resetCreateForm();
+  toast(`Created user ${data.username}`, 'ok');
+  loadUsers();
+}
+
+async function toggleUserStatus(userId, status) {
+  const response = await apiFetch('/admin/users/' + userId, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    toast(data.detail || 'Status update failed', 'err');
+    return;
+  }
+  toast(`User ${data.username} is now ${data.status}`, 'ok');
+  loadUsers();
+}
+
+async function promptResetPassword(userId, username) {
+  const newPassword = window.prompt('Enter a new password for ' + username);
+  if (!newPassword) return;
+  const response = await apiFetch('/admin/users/' + userId + '/password', {
+    method: 'PATCH',
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    toast(data.detail || 'Password reset failed', 'err');
+    return;
+  }
+  toast('Password updated for ' + username, 'ok');
+}
+async function handleLogout(){
+  const refreshToken = localStorage.getItem('bugDaddyRefreshToken');
+  try {
+    if (refreshToken && localStorage.getItem('bugDaddyAccessToken')) {
+      await fetch(API_BASE + '/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + localStorage.getItem('bugDaddyAccessToken'),
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    }
+  } catch (error) {
+    // Ignore logout transport errors and clear local session anyway.
+  }
+  logoutAndRedirect();
+}
 function switchView(name,el){
+  if (name === 'admin' && !hasPermission('users.read')) {
+    toast('Admin access required', 'err');
+    return;
+  }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.removeAttribute('aria-current');});
   document.getElementById('view-'+name).classList.add('active');
   if(el){el.classList.add('active');el.setAttribute('aria-current','page');}
   if(name==='issues')renderTable();
+  if(name==='admin')loadUsers();
 }
 function toast(msg,type='inf'){
   const c=document.getElementById('toastc');
@@ -1664,15 +1927,43 @@ function buildAll(){
 }
 
 window.addEventListener('DOMContentLoaded',()=>{
-  const user = localStorage.getItem('bugDaddyUser');
-  if(user) {
-    const el = document.getElementById('tb-user');
-    el.innerHTML = '<span style="font-size:.8rem">👤</span>' + user;
-    el.style.display = 'flex';
-  }
-  populateDropdowns(); buildAll(); buildFeed(); renderTable();
-  setInterval(buildTopbar, 30000);
+  bootstrapAuth();
 });
+
+async function bootstrapAuth() {
+  try {
+    const response = await apiFetch('/auth/me', { method: 'GET' });
+    if (!response.ok) {
+      logoutAndRedirect();
+      return;
+    }
+    AUTH_USER = await response.json();
+    localStorage.setItem('bugDaddyUser', JSON.stringify(AUTH_USER));
+    gateAdminUi();
+    const el = document.getElementById('tb-user');
+    el.innerHTML =
+      '<span style="font-size:.8rem">👤</span>' +
+      AUTH_USER.username +
+      ' · ' +
+      AUTH_USER.role +
+      '<button class="btn" style="margin-left:.6rem;padding:3px 8px" onclick="handleLogout()">Logout</button>';
+    el.style.display = 'flex';
+    await loadDashboardData();
+    populateDropdowns();
+    buildAll();
+    buildFeed();
+    renderTable();
+    setInterval(buildTopbar, 30000);
+    setInterval(async () => {
+      await loadDashboardData();
+      buildAll();
+      buildFeed();
+      if (document.getElementById('view-issues').classList.contains('active')) renderTable();
+    }, 30000);
+  } catch (error) {
+    logoutAndRedirect();
+  }
+}
 </script>
 </body>
 </html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reset Password — Bug Daddy</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #030609;
+  --bd: rgba(255,255,255,0.1);
+  --bd-focus: rgba(255,255,255,0.25);
+  --c1: #00ffcc;
+  --c2: #ff00ff;
+  --ok: #00d4aa;
+  --err: #ff4060;
+  --t: #ffffff;
+  --t2: #a0aabf;
+  --t3: #5e6b82;
+  --sans: 'Plus Jakarta Sans', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(0,255,204,0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(255,0,255,0.05) 0%, transparent 40%);
+  color: var(--t);
+  font-family: var(--sans);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.card {
+  width: 100%;
+  max-width: 430px;
+  padding: 2.4rem 2.1rem;
+  background: rgba(15, 20, 25, 0.5);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+}
+.title { font-size: 1.65rem; font-weight: 800; margin-bottom: .6rem; letter-spacing: -.03em; }
+.sub { font-size: .9rem; color: var(--t2); line-height: 1.6; margin-bottom: 1.4rem; }
+.group { margin-bottom: 1rem; }
+.label { display:block; font-size:.78rem; margin-bottom:.5rem; }
+.input {
+  width:100%; background:transparent; border:1px solid var(--bd); color:var(--t);
+  border-radius:8px; padding:.85rem .95rem; outline:none; font-family:var(--sans);
+}
+.input:focus { border-color: var(--bd-focus); }
+.btn {
+  width:100%; padding:.9rem; border:none; border-radius:30px;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+  color:#fff; font-weight:700; cursor:pointer;
+}
+.msg {
+  font-family: var(--mono); font-size: .72rem; border-radius: 8px; padding: .75rem .85rem;
+  margin-bottom: 1rem; display:none; white-space: pre-wrap; line-height: 1.5;
+}
+.msg.ok { display:block; color:var(--ok); border:1px solid rgba(0,212,170,.25); background: rgba(0,212,170,.08); }
+.msg.err { display:block; color:var(--err); border:1px solid rgba(255,64,96,.25); background: rgba(255,64,96,.08); }
+.foot { margin-top: 1rem; text-align:center; font-size:.8rem; }
+.foot a { color: var(--c1); text-decoration:none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">Reset Password</div>
+    <div class="sub">Use the reset token generated from the login page. This updates the account password through the live auth API.</div>
+    <div id="msg" class="msg"></div>
+    <form onsubmit="submitReset(event)">
+      <div class="group">
+        <label class="label">Reset Token</label>
+        <input class="input" id="tokenInput" placeholder="paste reset token" required />
+      </div>
+      <div class="group">
+        <label class="label">New Password</label>
+        <input class="input" id="passwordInput" type="password" placeholder="minimum 8 characters" required />
+      </div>
+      <button class="btn" id="submitBtn" type="submit">Update Password</button>
+    </form>
+    <div class="foot"><a href="/login.html">Back to login</a></div>
+  </div>
+<script>
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:8000'
+  : window.location.origin + '/api';
+
+function setMessage(text, kind) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+function setLoading(isLoading) {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = isLoading;
+  btn.textContent = isLoading ? 'Updating...' : 'Update Password';
+}
+
+async function submitReset(event) {
+  event.preventDefault();
+  setMessage('', '');
+  const token = document.getElementById('tokenInput').value.trim();
+  const newPassword = document.getElementById('passwordInput').value;
+  try {
+    setLoading(true);
+    const response = await fetch(API_BASE + '/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || 'Password reset failed.', 'err');
+      return;
+    }
+    setMessage('Password updated successfully. Redirecting to login...', 'ok');
+    setTimeout(() => {
+      window.location.href = '/login.html';
+    }, 1200);
+  } catch (error) {
+    setMessage('Unable to reach the reset API.', 'err');
+  } finally {
+    setLoading(false);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (token) {
+    document.getElementById('tokenInput').value = token;
+  }
+});
+</script>
+</body>
+</html>

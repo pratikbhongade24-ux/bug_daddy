@@ -178,10 +178,10 @@ body {
 
   <form id="loginForm" onsubmit="handleLogin(event)">
     <div class="form-group">
-      <label class="form-label">Email Address</label>
+      <label class="form-label">Username or Email</label>
       <div class="input-wrap">
         <span class="input-icon">👤</span>
-        <input type="email" id="emailInput" class="form-input" placeholder="name@domain.com" required>
+        <input type="text" id="emailInput" class="form-input" placeholder="bug_daddy or name@domain.com" required>
       </div>
     </div>
 
@@ -194,10 +194,10 @@ body {
     </div>
 
     <div class="forgot-pwd">
-      <a href="#">Forgot Password?</a>
+      <a href="#" onclick="handleForgotPassword(event)">Forgot Password?</a>
     </div>
 
-    <button type="submit" class="btn-primary">Sign In</button>
+    <button type="submit" class="btn-primary" id="loginBtn">Sign In</button>
   </form>
 
   <div class="divider">or continue with</div>
@@ -215,20 +215,93 @@ body {
 </div>
 
 <script>
-  function handleLogin(event) {
+  const API_BASE = window.location.hostname === 'localhost'
+    ? 'http://localhost:8000'
+    : window.location.origin + '/api';
+
+  function setError(message) {
+    const el = document.getElementById('error-msg');
+    el.textContent = message;
+    el.style.display = message ? 'block' : 'none';
+  }
+
+  function setLoading(isLoading) {
+    const button = document.getElementById('loginBtn');
+    button.disabled = isLoading;
+    button.textContent = isLoading ? 'Signing In...' : 'Sign In';
+    button.style.opacity = isLoading ? '0.7' : '1';
+  }
+
+  async function handleLogin(event) {
     event.preventDefault();
-    const email = document.getElementById('emailInput').value;
-    const pwd = document.getElementById('pwdInput').value;
-    if (email && pwd) {
-      localStorage.setItem('bugDaddyUser', email);
+    setError('');
+    const identifier = document.getElementById('emailInput').value.trim();
+    const password = document.getElementById('pwdInput').value;
+    if (!identifier || !password) {
+      setError('Enter both username/email and password.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const response = await fetch(API_BASE + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.detail || 'Login failed.');
+        return;
+      }
+      localStorage.setItem('bugDaddyAccessToken', data.access_token);
+      localStorage.setItem('bugDaddyRefreshToken', data.refresh_token);
+      localStorage.setItem('bugDaddyUser', JSON.stringify(data.user));
       window.location.href = '/dashboard.html';
+    } catch (error) {
+      setError('Unable to reach the login API.');
+    } finally {
+      setLoading(false);
     }
   }
 
   function handleSSO() {
-    localStorage.setItem('bugDaddyUser', 'sso-user@microsoft.com');
-    window.location.href = '/dashboard.html';
+    setError('Microsoft SSO is not wired yet. Use the API-backed credentials.');
   }
+
+  async function handleForgotPassword(event) {
+    event.preventDefault();
+    setError('');
+    const identifier = document.getElementById('emailInput').value.trim();
+    if (!identifier) {
+      setError('Enter a username or email first.');
+      return;
+    }
+    try {
+      const response = await fetch(API_BASE + '/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.detail || 'Could not generate reset token.');
+        return;
+      }
+      setError('Reset token created. Opening reset page...');
+      setTimeout(() => {
+        window.location.href = '/reset.html?token=' + encodeURIComponent(data.reset_token);
+      }, 600);
+    } catch (error) {
+      setError('Unable to reach the password reset API.');
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedUser = localStorage.getItem('bugDaddyUser');
+    if (savedUser && localStorage.getItem('bugDaddyAccessToken')) {
+      window.location.href = '/dashboard.html';
+    }
+  });
 </script>
 
 </body>
