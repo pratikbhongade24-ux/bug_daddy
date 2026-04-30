@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from bedrock_agentcore import BedrockAgentCoreApp
 
-from agentic_solution.services.bug import build_runtime
+from agentic_solution.services.combined import build_runtime
 
 load_dotenv()
 

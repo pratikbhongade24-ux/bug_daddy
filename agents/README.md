@@ -7,7 +7,7 @@ This folder now follows the bifurcated architecture from your latest diagram:
 - `reviewer_daddy`
 - shared `sme_agent`
 
-Each folder under `apps/` is now a self-contained deployable code base. That means you can point AgentCore at `apps/incident_daddy`, `apps/bug_daddy`, `apps/reviewer_daddy`, or `apps/sme_agent` independently, and each folder already contains its own local `agentic_solution` package plus its own `pyproject.toml`.
+Each folder under `apps/` is a self-contained deployable code base. The preferred deployment for GrabHack is now a single AgentCore runtime from `apps/bug_daddy`; that entrypoint packages `incident_daddy`, `bug_daddy`, `reviewer_daddy`, and `sme_agent` together and routes requests in-process.
 
 The repo-root `src/agentic_solution/` remains as the source mirror used to keep the four app copies aligned, but it is not required at deployment time if you deploy from within an `apps/*` directory.
 
@@ -30,7 +30,7 @@ The external system boundary is still:
 ## Structure
 
 - `apps/incident_daddy/main.py`: AgentCore entrypoint for incident triage.
-- `apps/bug_daddy/main.py`: AgentCore entrypoint for remediation.
+- `apps/bug_daddy/main.py`: AgentCore entrypoint for the combined runtime. It hosts incident triage, remediation, reviewer, and SME flows in one deployed `bug_daddy` runtime.
 - `apps/reviewer_daddy/main.py`: AgentCore entrypoint for review and PR/Jira actions.
 - `apps/sme_agent/main.py`: AgentCore entrypoint for shared SME reasoning.
 - `apps/*/pyproject.toml`: Per-app dependencies for independent packaging.
@@ -59,46 +59,29 @@ Defaults:
 Populate `.env` with:
 
 - the real Slack/Jira/Bitbucket MCP server commands and tool names
-- the deployed URLs for `BUG_DADDY_URL`, `REVIEWER_DADDY_URL`, and `SME_AGENT_URL`
+- for the single-runtime deployment, peer URLs are not required because handoffs are local
 
 ## Deployable Apps
 
-Each app is deployed separately with AgentCore using its own folder as the code base. Example:
+Deploy the combined app with AgentCore using `apps/bug_daddy` as the code base:
 
 ```bash
-cd apps/sme_agent
-agentcore configure -e main.py
-agentcore deploy
-
-cd ../reviewer_daddy
-agentcore configure -e main.py
-agentcore deploy
-
-cd ../bug_daddy
-agentcore configure -e main.py
-agentcore deploy
-
-cd ../incident_daddy
+cd apps/bug_daddy
 agentcore configure -e main.py
 agentcore deploy
 ```
 
-After deployment, wire the peer URLs back into `.env` or your deployment environment:
+The combined runtime accepts an optional `target`, `agent`, or `component` field:
 
-```bash
-BUG_DADDY_URL=https://...
-REVIEWER_DADDY_URL=https://...
-SME_AGENT_URL=https://...
+```json
+{
+  "target": "incident_daddy",
+  "prompt": "P1 outage in checkout",
+  "source": "slack"
+}
 ```
 
-Recommended deployment order:
-
-1. `sme_agent`
-2. `reviewer_daddy`
-3. `bug_daddy`
-4. `incident_daddy`
-
-That order matches the dependency graph.
+If `target` is omitted, trigger-style payloads default to `incident_daddy`. Review and SME payloads are inferred from their schema shape.
 
 ## Runtime Contracts
 
@@ -145,9 +128,7 @@ That order matches the dependency graph.
 
 ## Implementation Notes
 
-- `incident_daddy` and `bug_daddy` call `sme_agent` over HTTP using `peer.py`.
-- `incident_daddy` can hand off to `bug_daddy`.
-- `bug_daddy` can hand off to `reviewer_daddy`.
+- In the combined deployment, `incident_daddy` and `bug_daddy` call `sme_agent`, `bug_daddy`, and `reviewer_daddy` in-process through `services/combined.py`.
 - In `DRY_RUN=true`, each runtime validates the payload and returns a safe simulated response without invoking peer runtimes or MCP tools.
 - The current `sme_agent` is agent-backed and contract-ready, but it does not yet connect to a real vector DB. It uses inline context until you wire a retrieval backend behind it.
 - Because each `apps/*` directory is self-contained, there are no deployment-time imports from the repo root when you package an app folder independently.

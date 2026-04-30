@@ -1221,6 +1221,22 @@ async function prioritize(e,id){
     toast(data.detail || 'Prioritize failed', 'err');
     return;
   }
+  const invokeResponse = await apiFetch('/agent/invoke', {
+    method: 'POST',
+    body: JSON.stringify({
+      target: 'incident_daddy',
+      issue_id: id,
+      source: 'platform_dashboard',
+      prompt: `Prioritized ${data.jiraId}. Triage and decide next action.`,
+      metadata: { action: 'prioritize' }
+    }),
+  });
+  if (!invokeResponse.ok) {
+    const err = await invokeResponse.json().catch(() => ({}));
+    toast(err.detail || 'Agent invocation failed after prioritize', 'err');
+  } else {
+    toast(`${data.jiraId} sent to Incident Daddy`, 'ok');
+  }
   await loadDashboardData();
   buildAll();
   renderTable();

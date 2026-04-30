@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
+import boto3
 import pymysql
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,8 @@ REFRESH_TOKEN_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "14"))
 PASSWORD_RESET_HOURS = int(os.getenv("PASSWORD_RESET_HOURS", "1"))
 EMAIL_VERIFY_HOURS = int(os.getenv("EMAIL_VERIFY_HOURS", "24"))
 PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "120000"))
+AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
+AGENTCORE_RUNTIME_ID = os.getenv("AGENTCORE_RUNTIME_ID", "bug_daddy-IV6831D6Rs")
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -89,6 +92,19 @@ class IssueUpdateRequest(BaseModel):
 
 class IssueAssignRequest(BaseModel):
     assigned_to: str = Field(min_length=1, max_length=255)
+
+
+class AgentInvokeRequest(BaseModel):
+    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
+    prompt: str | None = None
+    question: str | None = None
+    source: str = "platform"
+    service_name: str | None = None
+    issue_id: int | None = None
+    logs: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    incident_summary: str | None = None
+    repository: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -396,6 +412,30 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
         )
         row = cur.fetchone()
     return map_issue(row) if row else None
+
+
+def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
+    client = boto3.client("bedrock-agentcore-runtime", region_name=AWS_REGION)
+    response = client.invoke_agent_runtime(
+        agentRuntimeId=AGENTCORE_RUNTIME_ID,
+        runtimeSessionId=str(uuid.uuid4()),
+        payload=json.dumps(payload).encode("utf-8"),
+    )
+    body = response.get("payload")
+    if body is None:
+        return {"message": "No payload returned from AgentCore"}
+    if hasattr(body, "read"):
+        raw = body.read()
+    else:
+        raw = body
+    if isinstance(raw, (bytes, bytearray)):
+        raw_text = raw.decode("utf-8")
+    else:
+        raw_text = str(raw)
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        return {"raw": raw_text}
 
 
 def ensure_schema_and_seed_data():
@@ -1128,3 +1168,60 @@ def resolve_issue(issue_id: int, payload: IssueUpdateRequest, actor: dict[str, A
         return fetch_issue_by_id(conn, issue_id)
     finally:
         conn.close()
+
+
+@app.post("/agent/invoke")
+def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
+    issue_context: dict[str, Any] = {}
+    if payload.issue_id is not None:
+        conn = get_db()
+        try:
+            issue = fetch_issue_by_id(conn, payload.issue_id)
+            if not issue:
+                raise HTTPException(status_code=404, detail="Issue not found")
+            issue_context = {
+                "issue_id": issue["id"],
+                "jira_id": issue["jiraId"],
+                "issue_type": issue["type"],
+                "criticality": issue["criticality"],
+                "status": issue["status"],
+                "description": issue["description"],
+                "stack_trace": issue["stack_trace"],
+                "frequency": issue["frequency"],
+                "service_name": issue["service"],
+            }
+            if not payload.service_name:
+                payload.service_name = issue["service"]
+            if not payload.incident_summary:
+                payload.incident_summary = issue["description"] or issue["err"]
+            if not payload.logs and issue.get("entire_execution_logs"):
+                payload.logs = [issue["entire_execution_logs"]]
+        finally:
+            conn.close()
+
+    runtime_payload = {
+        "target": payload.target or "incident_daddy",
+        "prompt": payload.prompt or payload.incident_summary or "Investigate issue and provide next actions.",
+        "question": payload.question,
+        "source": payload.source,
+        "service_name": payload.service_name,
+        "logs": payload.logs,
+        "metadata": {
+            **payload.metadata,
+            "requested_by": actor["username"],
+            "requester_role": actor["role"],
+            "issue_context": issue_context,
+        },
+        "incident_summary": payload.incident_summary,
+        "repository": payload.repository,
+    }
+    runtime_payload = {k: v for k, v in runtime_payload.items() if v is not None}
+    try:
+        result = invoke_agentcore(runtime_payload)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AgentCore invocation failed: {exc}") from exc
+    return {
+        "runtime_id": AGENTCORE_RUNTIME_ID,
+        "request": runtime_payload,
+        "response": result,
+    }
