@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import boto3
 
 
-DEFAULT_BEDROCK_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0"
+DEFAULT_BEDROCK_MODEL_ID = "apac.amazon.nova-lite-v1:0"
 
 
 def _json_list(name: str, default: list[str]) -> list[str]:

@@ -7,6 +7,8 @@ USER="ubuntu"
 REMOTE="${USER}@${EC2_IP}"
 BRANCH="master"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
+REMOTE_BACKEND_DIR="${REMOTE_BACKEND_DIR:-/home/ubuntu/platform/backend}"
+BACKEND_SERVICE="${BACKEND_SERVICE:-bug-daddy-platform-backend.service}"
 
 echo "🚀 Deploying Bug Daddy Platform from branch ${BRANCH} to ${EC2_IP}..."
 
@@ -26,12 +28,12 @@ echo "✅ Frontend deployed."
 # 2. Deploy Backend
 echo "📦 Uploading Backend..."
 # Make sure the remote backend directory exists
-ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "mkdir -p ~/platform/backend"
-scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no platform/backend/main.py platform/backend/requirements.txt "${REMOTE}:~/platform/backend/"
+ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "mkdir -p ${REMOTE_BACKEND_DIR}"
+scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no platform/backend/main.py platform/backend/requirements.txt "${REMOTE}:${REMOTE_BACKEND_DIR}/"
 
 echo "🔄 Restarting Backend Service..."
-ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACKEND_PORT} bash -s" << 'EOF'
-  cd ~/platform/backend
+ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACKEND_PORT} REMOTE_BACKEND_DIR=${REMOTE_BACKEND_DIR} BACKEND_SERVICE=${BACKEND_SERVICE} bash -s" << 'EOF'
+  cd "${REMOTE_BACKEND_DIR}"
   
   # Setup virtualenv if it doesn't exist
   if [ ! -d "venv" ]; then
@@ -42,9 +44,23 @@ ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACK
   ./venv/bin/python -m pip install --upgrade pip > /dev/null
   ./venv/bin/python -m pip install -r requirements.txt > /dev/null
   
-  # Restart uvicorn through the venv so global packages cannot be selected.
-  pkill -f uvicorn || true
-  nohup ./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" > uvicorn.log 2>&1 &
+  if systemctl list-unit-files "${BACKEND_SERVICE}" >/dev/null 2>&1; then
+    sudo mkdir -p "/etc/systemd/system/${BACKEND_SERVICE}.d"
+    sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.d/override.conf" >/dev/null <<UNIT
+[Service]
+WorkingDirectory=${REMOTE_BACKEND_DIR}
+EnvironmentFile=
+Environment=AWS_REGION=ap-south-1
+Environment=AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs
+ExecStart=
+ExecStart=${REMOTE_BACKEND_DIR}/venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port ${BACKEND_PORT}
+UNIT
+    sudo systemctl daemon-reload
+    sudo systemctl restart "${BACKEND_SERVICE}"
+  else
+    pkill -f uvicorn || true
+    nohup ./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" > uvicorn.log 2>&1 &
+  fi
 EOF
 echo "✅ Backend deployed and restarted."
 

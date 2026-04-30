@@ -31,4 +31,4 @@ def test_config_uses_boto3_region_when_env_missing(monkeypatch):
     config = AppConfig.from_env()
 
     assert config.aws_region == "eu-west-1"
-    assert config.bedrock_model_id == "anthropic.claude-haiku-4-5-20251001-v1:0"
+    assert config.bedrock_model_id == "apac.amazon.nova-lite-v1:0"
