@@ -27,7 +27,10 @@ PASSWORD_RESET_HOURS = int(os.getenv("PASSWORD_RESET_HOURS", "1"))
 EMAIL_VERIFY_HOURS = int(os.getenv("EMAIL_VERIFY_HOURS", "24"))
 PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "120000"))
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-AGENTCORE_RUNTIME_ID = os.getenv("AGENTCORE_RUNTIME_ID", "bug_daddy-IV6831D6Rs")
+AGENTCORE_RUNTIME_ARN = os.getenv(
+    "AGENTCORE_RUNTIME_ARN",
+    "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs",
+)
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -415,9 +418,9 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
 
 
 def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
-    client = boto3.client("bedrock-agentcore-runtime", region_name=AWS_REGION)
+    client = boto3.client("bedrock-agentcore", region_name=AWS_REGION)
     response = client.invoke_agent_runtime(
-        agentRuntimeId=AGENTCORE_RUNTIME_ID,
+        agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
         runtimeSessionId=str(uuid.uuid4()),
         payload=json.dumps(payload).encode("utf-8"),
     )
@@ -1221,7 +1224,7 @@ def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(re
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"AgentCore invocation failed: {exc}") from exc
     return {
-        "runtime_id": AGENTCORE_RUNTIME_ID,
+        "runtime_arn": AGENTCORE_RUNTIME_ARN,
         "request": runtime_payload,
         "response": result,
     }
