@@ -897,32 +897,46 @@ function parseJwt(token) {
   }
 }
 
+let refreshPromise = null;
+
 async function apiFetch(path, options) {
   const accessToken = localStorage.getItem('bugDaddyAccessToken');
-  const response = await fetch(API_BASE + path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options && options.headers ? options.headers : {}),
-      ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
-    },
-  });
-  if (response.status === 401) {
-    const refreshed = await refreshAccessToken();
-    if (!refreshed) {
-      logoutAndRedirect();
-      throw new Error('Unauthorized');
-    }
-    return fetch(API_BASE + path, {
+  try {
+    const response = await fetch(API_BASE + path, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         ...(options && options.headers ? options.headers : {}),
-        Authorization: 'Bearer ' + localStorage.getItem('bugDaddyAccessToken'),
+        ...(accessToken ? { Authorization: 'Bearer ' + accessToken } : {}),
       },
     });
+    
+    if (response.status === 401) {
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+      }
+      const refreshed = await refreshPromise;
+      if (!refreshed) {
+        logoutAndRedirect();
+        throw new Error('Unauthorized');
+      }
+      return fetch(API_BASE + path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options && options.headers ? options.headers : {}),
+          Authorization: 'Bearer ' + localStorage.getItem('bugDaddyAccessToken'),
+        },
+      });
+    }
+    return response;
+  } catch (error) {
+    if (error.name === 'TypeError') {
+      console.warn('Backend connection failed - likely transient');
+      throw error;
+    }
+    throw error;
   }
-  return response;
 }
 
 async function refreshAccessToken() {
