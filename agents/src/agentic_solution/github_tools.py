@@ -109,15 +109,26 @@ def github_create_pull_request(
     })
 
 
-def get_native_github_tools() -> list[Any]:
-    """Return the list of native GitHub tools."""
+def get_native_github_read_write_tools() -> list[Any]:
+    """Return the list of native GitHub tools for reading and writing files/branches."""
     return [
         github_list_files,
         github_get_file_content,
         github_create_branch,
         github_update_file,
+    ]
+
+
+def get_native_github_pr_tools() -> list[Any]:
+    """Return the list of native GitHub tools for pull request management."""
+    return [
         github_create_pull_request,
     ]
+
+
+def get_native_github_tools() -> list[Any]:
+    """Return the full list of native GitHub tools."""
+    return get_native_github_read_write_tools() + get_native_github_pr_tools()
 
 
 def native_github_diagnostics() -> dict[str, Any]:

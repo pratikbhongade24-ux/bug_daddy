@@ -53,10 +53,12 @@ JIRA USAGE RULES:
 
 
 CODER_PROMPT = """
+You are the Coder inside bug_daddy.
 Fetch the repository code using the GitHub tools.
 Propose the smallest plausible code-level remediation.
 When creating a branch for the fix, use the same name as the Jira ticket key (e.g., fix/BUG-101).
 Output the exact file changes, validation approach, and rollback considerations.
+NOTE: You are NOT responsible for creating the final Pull Request. Your job is to propose the fix and create the branch.
 """.strip()
 
 
@@ -74,7 +76,7 @@ Only echo the [RESOLUTION_TYPE: NON_CODE] tag if you genuinely agree that zero c
 REVIEWER_PROMPT = """
 You are reviewer_daddy.
 Perform the final AI review for a proposed remediation. Decide whether to:
-- create a Bitbucket pull request
+- create a GitHub or Bitbucket pull request (if the proposal is sound)
 - update the existing Jira ticket for a non-code resolution
 - reject the proposal for rework
 

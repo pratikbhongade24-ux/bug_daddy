@@ -8,7 +8,11 @@ from mcp import StdioServerParameters, stdio_client
 from strands.tools.mcp import MCPClient
 
 from agentic_solution.config import AppConfig, MCPServerConfig
-from agentic_solution.github_tools import get_native_github_tools, native_github_diagnostics
+from agentic_solution.github_tools import (
+    get_native_github_read_write_tools,
+    get_native_github_pr_tools,
+    native_github_diagnostics
+)
 from agentic_solution.jira_tools import get_native_jira_tools, native_jira_diagnostics
 
 logger = logging.getLogger(__name__)
@@ -19,8 +23,13 @@ class MCPToolBundle:
     slack_tools: list[Any]
     jira_tools: list[Any]
     bitbucket_tools: list[Any]
-    github_tools: list[Any]
+    github_read_write_tools: list[Any]
+    github_pr_tools: list[Any]
     diagnostics: dict[str, Any]
+
+    @property
+    def github_tools(self) -> list[Any]:
+        return self.github_read_write_tools + self.github_pr_tools
 
 
 def load_mcp_tools(config: AppConfig) -> MCPToolBundle:
@@ -33,16 +42,17 @@ def load_mcp_tools(config: AppConfig) -> MCPToolBundle:
     jira_tools = jira_tools + native_jira_tools
     bitbucket_tools = _load_tools_for_server(config.bitbucket, diagnostics)
     
-    github_tools = _load_tools_for_server(config.github, diagnostics)
-    native_github_tools = get_native_github_tools()
+    github_mcp_tools = _load_tools_for_server(config.github, diagnostics)
+    native_github_rw = get_native_github_read_write_tools()
+    native_github_pr = get_native_github_pr_tools()
     diagnostics["github_native"] = native_github_diagnostics()
-    github_tools = github_tools + native_github_tools
 
     return MCPToolBundle(
         slack_tools=slack_tools,
         jira_tools=jira_tools,
         bitbucket_tools=bitbucket_tools,
-        github_tools=github_tools,
+        github_read_write_tools=github_mcp_tools + native_github_rw,
+        github_pr_tools=native_github_pr,
         diagnostics=diagnostics,
     )
 
