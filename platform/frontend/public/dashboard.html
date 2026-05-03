@@ -1509,6 +1509,7 @@ const NODE_ID_ALIASES={
 };
 let CURRENT_NODES = [];
 let CURRENT_EDGES = [];
+let CURRENT_EDGE_REVEALS = {};
 
 let animTimers=[];
 let currentStepData=null;
@@ -1739,10 +1740,11 @@ function drawEdges(inner,activeSet){
   svg.style.width='1500px'; svg.style.height='900px';
   currentActiveEdgeSet = activeSet;
   CURRENT_EDGES.forEach(([from,to])=>{
+    const edgeKey=from+'-'+to;
+    if(!activeSet.has(edgeKey))return;
     const fn=CURRENT_NODES.find(n=>n.id===from);
     const tn=CURRENT_NODES.find(n=>n.id===to);
     if(!fn||!tn)return;
-    const isAct=activeSet.has(from+'-'+to);
     const fc=getNodeCenter(fn), tc=getNodeCenter(tn);
     const fSize=getNodeSize(fn), tSize=getNodeSize(tn);
     let x1,y1,x2,y2;
@@ -1771,22 +1773,34 @@ function drawEdges(inner,activeSet){
     const path=document.createElementNS('http://www.w3.org/2000/svg','path');
     path.setAttribute('d',pathData);
     path.setAttribute('fill','none');
-    path.setAttribute('stroke', isAct ? (fn.color||'#00d4aa') : 'rgba(255,255,255,0.06)');
-    path.setAttribute('stroke-width', isAct ? 1.8 : 1);
-    path.setAttribute('stroke-dasharray', isAct ? '6 4' : '4 4');
-    if(!isAct) path.setAttribute('opacity','.5');
+    path.setAttribute('stroke', fn.color||'#00d4aa');
+    path.setAttribute('stroke-width','1.8');
+    path.setAttribute('stroke-dasharray','6 4');
     svg.appendChild(path);
-    if(isAct){
-      const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      dot.setAttribute('r','3');
-      dot.setAttribute('fill',tn.color||'#00d4aa');
-      const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion');
-      anim.setAttribute('dur','2s'); anim.setAttribute('repeatCount','indefinite');
-      anim.setAttribute('path',pathData);
-      dot.appendChild(anim);
-      svg.appendChild(dot);
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('r','3');
+    dot.setAttribute('fill',tn.color||'#00d4aa');
+    const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion');
+    anim.setAttribute('dur','2s'); anim.setAttribute('repeatCount','indefinite');
+    anim.setAttribute('path',pathData);
+    dot.appendChild(anim);
+    svg.appendChild(dot);
+  });
+}
+
+function revealEdgesForNode(nid){
+  nid=canonicalNodeId(nid);
+  const edges=CURRENT_EDGE_REVEALS[nid]||[];
+  if(!edges.length)return;
+  let changed=false;
+  edges.forEach(([from,to])=>{
+    const key=canonicalNodeId(from)+'-'+canonicalNodeId(to);
+    if(!currentActiveEdgeSet.has(key)){
+      currentActiveEdgeSet.add(key);
+      changed=true;
     }
   });
+  if(changed)drawEdges(document.getElementById('n8n-inner'),currentActiveEdgeSet);
 }
 
 function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
@@ -1796,12 +1810,13 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
   const graphModel=normalizeWorkflowGraph(graph);
   CURRENT_NODES=graphModel.nodes;
   CURRENT_EDGES=graphModel.edges;
+  currentActiveEdgeSet=new Set();
 
   // Draw group boxes (dashed borders like in the diagram)
   const groups=[
     {label:'Incident Route', x:40, y:330, w:210, h:170, color:'#ff4060'},
     {label:'Knowledge Base', x:285, y:340, w:190, h:145, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:510, y:280, w:720, h:390, color:'#00d4aa'},
+    {label:'Remediation Pipeline', x:510, y:280, w:700, h:390, color:'#00d4aa'},
     {label:'Review Pipeline', x:1220, y:280, w:210, h:160, color:'#b667ff'},
   ];
   groups.forEach(g=>{
@@ -1826,11 +1841,30 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
     ?['db','esc','jag','inc']
     :['db','esc','jag','bug','sme','strat','crit_strat','ctx','crit_ctx','code','crit_code','jprf','rev'];
   const completeNodes=[...triggerNodes,...activePath];
-  const activeEdges=isInc
-    ?[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','inc']]
-    :[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','bug'],['bug','sme'],['bug','strat'],['strat','crit_strat'],['crit_strat','strat'],['bug','ctx'],['ctx','crit_ctx'],['crit_ctx','ctx'],['bug','code'],['code','crit_code'],['crit_code','code'],['code','jprf'],['bug','rev']];
-  const activeEdgeSet=new Set(activeEdges.map(([from,to])=>from+'-'+to));
-  drawEdges(inner,activeEdgeSet);
+  const triggerEdges=[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db']];
+  CURRENT_EDGE_REVEALS=isInc
+    ?{
+      db:triggerEdges,
+      esc:[['db','esc']],
+      jag:[['esc','jag']],
+      inc:[['esc','inc']],
+    }
+    :{
+      db:triggerEdges,
+      esc:[['db','esc']],
+      jag:[['esc','jag']],
+      bug:[['esc','bug']],
+      sme:[['bug','sme']],
+      strat:[['bug','strat']],
+      crit_strat:[['strat','crit_strat'],['crit_strat','strat']],
+      ctx:[['bug','ctx']],
+      crit_ctx:[['ctx','crit_ctx'],['crit_ctx','ctx']],
+      code:[['bug','code']],
+      crit_code:[['code','crit_code'],['crit_code','code']],
+      jprf:[['code','jprf']],
+      rev:[['bug','rev']],
+    };
+  drawEdges(inner,currentActiveEdgeSet);
 
   const steps=getStepDefs(issue,isInc);
 
@@ -1880,6 +1914,7 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
 function setNodeState(nid,state){
   nid=canonicalNodeId(nid);
+  revealEdgesForNode(nid);
   const el=document.getElementById('nd-'+nid);
   if(!el)return;
   el.classList.remove('active','done','error');
