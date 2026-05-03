@@ -1332,24 +1332,27 @@ function makeNodeDraggable(el, nodeId){
 // ═══ ORCHESTRATION LAYOUT (matching architecture diagram) ═══
 const NODES=[
   // --- Triggers (top row) ---
-  {id:'cw',  x:270, y:10,  icon:'☁️',  label:'CloudWatch',    sub:'Microservices', color:'#ff6b35', type:'trigger'},
-  {id:'jira',x:460, y:10,  icon:'📋',  label:'JIRA Backlogs', sub:'Tech Debt',     color:'#b667ff', type:'trigger'},
+  {id:'cw',   x:100, y:20,  icon:'☁️', label:'CloudWatch',    sub:'Microservices', color:'#ff6b35', type:'trigger'},
+  {id:'sq',   x:250, y:20,  icon:'🔬', label:'SonarQube',     sub:'Code Quality',  color:'#3b9eff', type:'trigger'},
+  {id:'cve',  x:400, y:20,  icon:'🛡️', label:'CVE Monitor',   sub:'Security',      color:'#ff6b35', type:'trigger'},
+  {id:'jira', x:550, y:20,  icon:'📋', label:'JIRA Backlogs', sub:'Tech Debt',     color:'#b667ff', type:'trigger'},
+  {id:'slk',  x:700, y:20,  icon:'💬', label:'Slack Incident',sub:'Communication', color:'#3b9eff', type:'trigger'},
 
   // --- Classifier Agent (The Entry Point) ---
-  {id:'esc', x:365, y:90,  icon:'⚡',  label:'Classifier Agent', sub:'triage + route', color:'#3b9eff', type:'agent'},
-  {id:'db',  x:480, y:90,  icon:'🗄️',  label:'Issues Tracker', sub:'PostgreSQL', color:'#00d4aa', type:'agent'},
+  {id:'esc', x:400, y:120, icon:'⚡', label:'Classifier Agent', sub:'triage + route', color:'#3b9eff', type:'agent'},
+  {id:'db',  x:600, y:120, icon:'🗄️', label:'Issues Tracker',  sub:'PostgreSQL',     color:'#00d4aa', type:'agent'},
 
   // --- INCIDENT DADDY ---
-  {id:'inc',  x:100,  y:250, icon:'🚨', label:'Incident Daddy', sub:'Orchestrator', color:'#ff4060', type:'daddy'},
+  {id:'inc', x:100, y:360, icon:'🚨', label:'Incident Daddy', sub:'Orchestrator', color:'#ff4060', type:'daddy'},
 
   // --- SME (Mocked Knowledge Agent) ---
-  {id:'sme', x:365, y:250, icon:'🧠', label:'SME Agent', sub:'Repo Context', color:'#ffaa00', type:'agent'},
+  {id:'sme', x:400, y:260, icon:'🧠', label:'SME Agent', sub:'Repo Context', color:'#ffaa00', type:'agent'},
 
   // --- BUG DADDY ---
-  {id:'bug',   x:365, y:360, icon:'🐛', label:'Bug Daddy', sub:'Bug Orchestrator', color:'#00d4aa', type:'daddy'},
+  {id:'bug', x:600, y:260, icon:'🐛', label:'Bug Daddy', sub:'Bug Orchestrator', color:'#00d4aa', type:'daddy'},
 
   // --- REVIEWER DADDY ---
-  {id:'rev',   x:650, y:360, icon:'👷', label:'Reviewer Daddy', sub:'Code Review', color:'#b667ff', type:'daddy'},
+  {id:'rev', x:950, y:260, icon:'👷', label:'Reviewer Daddy', sub:'Code Review', color:'#b667ff', type:'daddy'},
 ];
 
 const EDGES=[
@@ -1607,9 +1610,10 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
   // Draw group boxes (dashed borders like in the diagram)
   const groups=[
-    {label:'Incident Route', x:50, y:180, w:150, h:150, color:'#ff4060'},
-    {label:'Knowledge Base', x:310, y:180, w:150, h:150, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:310, y:340, w:450, h:120, color:'#00d4aa'},
+    {label:'Incident Route', x:30, y:220, w:220, h:280, color:'#ff4060'},
+    {label:'Knowledge Base', x:350, y:220, w:180, h:150, color:'#ffaa00'},
+    {label:'Remediation Pipeline', x:560, y:220, w:240, h:420, color:'#00d4aa'},
+    {label:'Review Pipeline', x:830, y:220, w:280, h:420, color:'#b667ff'},
   ];
   groups.forEach(g=>{
     const box=document.createElement('div');

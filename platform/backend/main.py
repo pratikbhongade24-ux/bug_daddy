@@ -435,42 +435,42 @@ def route_issue_agent(issue: dict[str, Any]) -> str:
 
 def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
     common_triggers = [
-        {"id": "cw", "label": "CloudWatch", "type": "trigger", "x": 175, "y": 10},
-        {"id": "sq", "label": "SonarQube", "type": "trigger", "x": 270, "y": 10},
-        {"id": "cve", "label": "CVE Monitor", "type": "trigger", "x": 365, "y": 10},
-        {"id": "jira", "label": "Jira Backlogs", "type": "trigger", "x": 460, "y": 10},
-        {"id": "slk", "label": "Slack Incident", "type": "trigger", "x": 555, "y": 10},
-        {"id": "esc", "label": "Escalation Agent", "type": "agent", "x": 270, "y": 90},
-        {"id": "db", "label": "Issues Tracker", "type": "store", "x": 460, "y": 90},
-        {"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240},
+        {"id": "cw", "label": "CloudWatch", "type": "trigger", "x": 100, "y": 20},
+        {"id": "sq", "label": "SonarQube", "type": "trigger", "x": 250, "y": 20},
+        {"id": "cve", "label": "CVE Monitor", "type": "trigger", "x": 400, "y": 20},
+        {"id": "jira", "label": "Jira Backlogs", "type": "trigger", "x": 550, "y": 20},
+        {"id": "slk", "label": "Slack Incident", "type": "trigger", "x": 700, "y": 20},
+        {"id": "esc", "label": "Escalation Agent", "type": "agent", "x": 400, "y": 120},
+        {"id": "db", "label": "Issues Tracker", "type": "store", "x": 600, "y": 120},
+        {"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260},
     ]
     incident_nodes = [
-        {"id": "iana", "label": "Incident Analyzer", "type": "agent", "x": 25, "y": 260},
-        {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 55, "y": 350},
-        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 25, "y": 440},
-        {"id": "slkb", "label": "Slack Bot", "type": "tool", "x": 110, "y": 440},
+        {"id": "iana", "label": "Incident Analyzer", "type": "agent", "x": 100, "y": 260},
+        {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 100, "y": 360},
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 50, "y": 460},
+        {"id": "slkb", "label": "Slack Bot", "type": "tool", "x": 150, "y": 460},
     ]
     bug_nodes = [
-        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 420, "y": 220},
-        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 345, "y": 310},
-        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 345, "y": 390},
-        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 500, "y": 390},
-        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 345, "y": 470},
-        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 500, "y": 470},
+        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 600, "y": 260},
+        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 600, "y": 360},
+        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 500, "y": 460},
+        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 700, "y": 460},
+        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 500, "y": 560},
+        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 700, "y": 560},
     ]
     non_code_nodes = [
-        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 420, "y": 550},
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 600, "y": 660},
     ]
     reviewer_nodes = [
-        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 680, "y": 220},
-        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 660, "y": 320},
-        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 620, "y": 410},
-        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 720, "y": 410},
-        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 680, "y": 490},
+        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 950, "y": 260},
+        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 950, "y": 360},
+        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 850, "y": 460},
+        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 1050, "y": 460},
+        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 950, "y": 560},
     ]
 
     if workflow_key == "reviewer_daddy":
-        nodes = [{"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240}] + reviewer_nodes
+        nodes = [{"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260}] + reviewer_nodes
         edges = [
             {"from": "sme", "to": "rev"},
             {"from": "rev", "to": "airev"},
@@ -481,9 +481,9 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
         ]
     elif workflow_key == "sme_agent":
         nodes = [
-            {"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240},
-            {"id": "kb", "label": "Knowledge Base", "type": "store", "x": 250, "y": 330},
-            {"id": "refs", "label": "References", "type": "output", "x": 250, "y": 420},
+            {"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260},
+            {"id": "kb", "label": "Knowledge Base", "type": "store", "x": 400, "y": 360},
+            {"id": "refs", "label": "References", "type": "output", "x": 400, "y": 460},
         ]
         edges = [
             {"from": "sme", "to": "kb"},
