@@ -538,105 +538,123 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   background: var(--s1);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.n8n-log-stream { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 0; background: var(--bg); }
+.n8n-log-stream { flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 0; background: var(--bg); position: relative; }
 
-/* ChatGPT-like Log Connector */
+/* Elegant Vertical Timeline Connector */
 .log-connector {
-  height: 24px;
+  height: 20px;
   margin-left: 9px;
-  border-left: 2px dotted var(--t3);
-  opacity: 0.4;
+  border-left: 2px solid var(--bd);
+  opacity: 0.5;
   position: relative;
 }
-.log-connector::after {
-  content: '...';
-  position: absolute;
-  top: 50%;
-  left: -8px;
-  transform: translateY(-50%);
-  color: var(--t3);
-  font-family: var(--mono);
-  font-size: 10px;
-  background: var(--bg);
-  padding: 2px 0;
-}
 
-/* LOG ENTRY TYPES - collapsible thinking */
+/* Professional Log Entry */
 .log-entry {
   position: relative;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
   font-family: var(--sans);
-  animation: logSlide .3s ease;
+  animation: logFadeIn .4s cubic-bezier(0.4, 0, 0.2, 1);
 }
-@keyframes logSlide { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes logFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .log-entry-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   cursor: pointer;
-  padding: 0.4rem 0;
+  padding: 0.6rem 0;
   user-select: none;
+  border-radius: 8px;
+  transition: background 0.2s;
 }
-.log-entry-header:hover .log-thought-label { color: var(--t); }
+.log-entry-header:hover { background: rgba(255,255,255,0.02); }
 
 .log-status-dot {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--s3);
   border: 2px solid var(--bd);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   flex-shrink: 0;
   z-index: 2;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.log-entry.active .log-status-dot { background: var(--c3d); border-color: var(--c3); color: var(--c3); }
+.log-entry.active .log-status-dot { background: var(--c3d); border-color: var(--c3); color: var(--c3); transform: scale(1.1); box-shadow: 0 0 10px rgba(59,158,255,0.3); }
 .log-entry.done .log-status-dot { background: var(--c1d); border-color: var(--c1); color: var(--c1); }
 .log-entry.error .log-status-dot { background: var(--c2d); border-color: var(--c2); color: var(--c2); }
 
 .log-thought-label {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 500;
   color: var(--t2);
+  letter-spacing: -0.01em;
   transition: color 0.2s;
 }
-.log-entry.active .log-thought-label { color: var(--t); }
+.log-entry.active .log-thought-label { color: var(--t); font-weight: 600; }
+.log-entry.error .log-thought-label { color: var(--c2); }
 
 .log-chevron {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--t3);
-  transition: transform 0.2s;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   margin-left: auto;
+  opacity: 0.5;
 }
-.log-entry.expanded .log-chevron { transform: rotate(90deg); }
+.log-entry.expanded .log-chevron { transform: rotate(90deg); opacity: 1; }
 
+/* Non-boxy thought body */
 .log-thought-body {
-  margin-left: 27px;
+  margin-left: 10px;
   border-left: 2px solid var(--bd);
-  padding: 0.5rem 0 0.5rem 1.25rem;
+  padding: 0.5rem 0 0.8rem 1.8rem;
   display: none;
+  animation: slideDown 0.3s ease-out;
 }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .log-entry.expanded .log-thought-body { display: block; }
 
-.log-code-block {
-  background: var(--s1);
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-  padding: 0.75rem;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--t2);
-  white-space: pre-wrap;
-  line-height: 1.6;
+.log-details-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
-.log-code-block strong { color: var(--c3); }
-.log-code-block .line { margin-bottom: 0.25rem; display: block; }
-.log-code-block .label { color: var(--t3); text-transform: uppercase; font-size: 0.6rem; letter-spacing: 0.05em; margin-right: 0.5rem; }
 
-.log-ts-label { font-family: var(--mono); font-size: 0.6rem; color: var(--t3); margin-left: 0.5rem; }
+.log-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.log-detail-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--t3);
+  font-family: var(--mono);
+}
+.log-detail-value {
+  font-size: 0.8rem;
+  color: var(--t2);
+  line-height: 1.6;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-detail-item.important .log-detail-value { color: var(--c3); }
+
+.log-ts-label { 
+  font-family: var(--mono); 
+  font-size: 0.65rem; 
+  color: var(--t3); 
+  font-weight: 400;
+  margin-left: 0.4rem;
+  opacity: 0.6;
+}
 .log-ts { float: right; color: var(--t3); font-size: .44rem; margin-top: 1px; }
 
 /* ── TOAST ── */
@@ -1897,8 +1915,8 @@ function addBackendLogEntry(ev){
   
   const entries = [];
   if(ev.description) entries.push({ label: 'Description', val: ev.description });
-  if(ev.input_summary) entries.push({ label: 'Input', val: ev.input_summary });
-  if(ev.output_summary) entries.push({ label: 'Output', val: ev.output_summary });
+  if(ev.input_summary) entries.push({ label: 'Input', val: ev.input_summary, imp: true });
+  if(ev.output_summary) entries.push({ label: 'Output', val: ev.output_summary, imp: true });
   if(ev.reasoning_summary) entries.push({ label: 'Reasoning', val: ev.reasoning_summary });
   if(ev.error_message) entries.push({ label: 'Error', val: ev.error_message });
   if(ev.tool_name) entries.push({ label: 'Tool', val: ev.tool_name });
@@ -1917,8 +1935,13 @@ function addBackendLogEntry(ev){
     </div>
     ${entries.length > 0 ? `
       <div class="log-thought-body">
-        <div class="log-code-block">
-          ${entries.map(e => `<div class="line"><span class="label">${e.label}</span> ${e.val}</div>`).join('')}
+        <div class="log-details-grid">
+          ${entries.map(e => `
+            <div class="log-detail-item ${e.imp?'important':''}">
+              <div class="log-detail-label">${e.label}</div>
+              <div class="log-detail-value">${e.val}</div>
+            </div>
+          `).join('')}
         </div>
       </div>
     ` : ''}
