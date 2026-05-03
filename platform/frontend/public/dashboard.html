@@ -647,6 +647,28 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
 }
 .log-detail-item.important .log-detail-value { color: var(--c3); }
 
+/* Markdown Styles */
+.log-md-code-block {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--c1);
+  overflow-x: auto;
+}
+.log-md-inline-code {
+  background: rgba(255,255,255,0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  color: var(--c4);
+  font-size: 0.75rem;
+}
+.log-detail-value strong { color: var(--t); font-weight: 600; }
+
 .log-ts-label { 
   font-family: var(--mono); 
   font-size: 0.65rem; 
@@ -1898,6 +1920,20 @@ async function updateIssueStatus(id, status){
   }
 }
 
+function parseLogMarkdown(text) {
+  if (!text) return '';
+  // Simple bold: **text**
+  let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Fenced code blocks: ``` [lang] code ```
+  html = html.replace(/```(?:\w+)?\n([\s\S]*?)```/g, '<div class="log-md-code-block">$1</div>');
+  
+  // Inline code: `code`
+  html = html.replace(/`(.*?)`/g, '<code class="log-md-inline-code">$1</code>');
+  
+  return html;
+}
+
 function addBackendLogEntry(ev){
   const stream=document.getElementById('n8n-log-stream');
   if(!stream)return;
@@ -1939,7 +1975,7 @@ function addBackendLogEntry(ev){
           ${entries.map(e => `
             <div class="log-detail-item ${e.imp?'important':''}">
               <div class="log-detail-label">${e.label}</div>
-              <div class="log-detail-value">${e.val}</div>
+              <div class="log-detail-value">${parseLogMarkdown(e.val)}</div>
             </div>
           `).join('')}
         </div>
