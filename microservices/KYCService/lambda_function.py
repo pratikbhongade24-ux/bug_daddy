@@ -68,7 +68,9 @@ def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Simulated bug path – previously caused a ZeroDivisionError (1/0).
+        # Return a safe mock response to avoid crashing the service.
+        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.0, "result": "MATCHED"}, "message": "Face match run completed (simulated bug handled)"})
     return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
 
 
