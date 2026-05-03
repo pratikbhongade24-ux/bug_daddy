@@ -451,22 +451,22 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
         {"id": "slkb", "label": "Slack Bot", "type": "tool", "x": 150, "y": 460},
     ]
     bug_nodes = [
-        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 600, "y": 260},
-        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 600, "y": 360},
-        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 500, "y": 460},
-        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 700, "y": 460},
-        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 500, "y": 560},
-        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 700, "y": 560},
+        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 650, "y": 260},
+        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 650, "y": 360},
+        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 580, "y": 460},
+        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 750, "y": 460},
+        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 580, "y": 560},
+        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 750, "y": 560},
     ]
     non_code_nodes = [
-        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 600, "y": 660},
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 650, "y": 660},
     ]
     reviewer_nodes = [
-        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 950, "y": 260},
-        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 950, "y": 360},
-        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 850, "y": 460},
-        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 1050, "y": 460},
-        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 950, "y": 560},
+        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 1000, "y": 260},
+        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 1000, "y": 360},
+        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 920, "y": 460},
+        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 1080, "y": 460},
+        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 1000, "y": 560},
     ]
 
     if workflow_key == "reviewer_daddy":

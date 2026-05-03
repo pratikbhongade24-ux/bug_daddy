@@ -1349,10 +1349,10 @@ const NODES=[
   {id:'sme', x:400, y:260, icon:'🧠', label:'SME Agent', sub:'Repo Context', color:'#ffaa00', type:'agent'},
 
   // --- BUG DADDY ---
-  {id:'bug', x:600, y:260, icon:'🐛', label:'Bug Daddy', sub:'Bug Orchestrator', color:'#00d4aa', type:'daddy'},
+  {id:'bug', x:650, y:260, icon:'🐛', label:'Bug Daddy', sub:'Bug Orchestrator', color:'#00d4aa', type:'daddy'},
 
   // --- REVIEWER DADDY ---
-  {id:'rev', x:950, y:260, icon:'👷', label:'Reviewer Daddy', sub:'Code Review', color:'#b667ff', type:'daddy'},
+  {id:'rev', x:1000, y:260, icon:'👷', label:'Reviewer Daddy', sub:'Code Review', color:'#b667ff', type:'daddy'},
 ];
 
 const EDGES=[
@@ -1610,10 +1610,10 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
   // Draw group boxes (dashed borders like in the diagram)
   const groups=[
-    {label:'Incident Route', x:30, y:220, w:220, h:280, color:'#ff4060'},
-    {label:'Knowledge Base', x:350, y:220, w:180, h:150, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:560, y:220, w:240, h:420, color:'#00d4aa'},
-    {label:'Review Pipeline', x:830, y:220, w:280, h:420, color:'#b667ff'},
+    {label:'Incident Route', x:30, y:220, w:220, h:300, color:'#ff4060'},
+    {label:'Knowledge Base', x:330, y:220, w:180, h:240, color:'#ffaa00'},
+    {label:'Remediation Pipeline', x:540, y:220, w:280, h:480, color:'#00d4aa'},
+    {label:'Review Pipeline', x:850, y:220, w:320, h:480, color:'#b667ff'},
   ];
   groups.forEach(g=>{
     const box=document.createElement('div');
