@@ -404,6 +404,7 @@ def issue_tab(status: str) -> str:
     return {
         "open": "backlog",
         "in_progress": "wip",
+        "in_review": "review",
         "resolved": "resolved",
         "no_action": "backlog",
     }.get(status, "backlog")
@@ -1341,6 +1342,7 @@ def dashboard_summary(user: dict[str, Any] = Depends(require_permission("issues.
                   COUNT(*) AS total,
                   SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_count,
                   SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress_count,
+                  SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END) AS in_review_count,
                   SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved_count,
                   SUM(CASE WHEN status = 'no_action' THEN 1 ELSE 0 END) AS no_action_count,
                   SUM(CASE WHEN frequency > 600 THEN 1 ELSE 0 END) AS critical_count
@@ -1352,6 +1354,7 @@ def dashboard_summary(user: dict[str, Any] = Depends(require_permission("issues.
             "total": int(row.get("total") or 0),
             "backlog": int(row.get("open_count") or 0),
             "wip": int(row.get("in_progress_count") or 0),
+            "review": int(row.get("in_review_count") or 0),
             "resolved": int(row.get("resolved_count") or 0),
             "no_action": int(row.get("no_action_count") or 0),
             "critical": int(row.get("critical_count") or 0),

@@ -716,6 +716,7 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   <div class="tab-bar" role="tablist">
     <button class="tab tab-backlog active" role="tab" aria-selected="true" onclick="switchTab('backlog',this)">📥 Backlog <span class="tc" id="tc-backlog">0</span></button>
     <button class="tab tab-wip" role="tab" aria-selected="false" onclick="switchTab('wip',this)">🔄 WIP <span class="tc" id="tc-wip">0</span></button>
+    <button class="tab tab-review" role="tab" aria-selected="false" onclick="switchTab('review',this)">👷 Code Review <span class="tc" id="tc-review">0</span></button>
     <button class="tab tab-resolved" role="tab" aria-selected="false" onclick="switchTab('resolved',this)">✅ Resolved <span class="tc" id="tc-resolved">0</span></button>
   </div>
   <div class="tbl-wrap" role="tabpanel">
@@ -970,7 +971,7 @@ function shortErr(desc) {
 let ISSUES = [];
 let FEED_DATA = [];
 let DASHBOARD_CHARTS = { services: [], sources: [], issue_types: [] };
-let DASHBOARD_SUMMARY = { total: 0, backlog: 0, wip: 0, resolved: 0, no_action: 0, critical: 0 };
+let DASHBOARD_SUMMARY = { total: 0, backlog: 0, wip: 0, review: 0, resolved: 0, no_action: 0, critical: 0 };
 
 let currentTab='backlog', sortKey='id', sortDir=-1;
 let PRIORITIZE_LOADING = {};
@@ -999,12 +1000,15 @@ function buildTopbar(){
     <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
     <div class="tb-pill"><div class="tb-pill-val blu">${s.wip}</div><div class="tb-pill-lbl">WIP</div></div>
     <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
+    <div class="tb-pill"><div class="tb-pill-val" style="color:var(--c5)">${s.review}</div><div class="tb-pill-lbl">Review</div></div>
+    <div style="width:1px;height:20px;background:var(--bd);flex-shrink:0"></div>
     <div class="tb-pill"><div class="tb-pill-val grn">${s.resolved}</div><div class="tb-pill-lbl">Resolved</div></div>
   `;
   document.getElementById('nb-total').textContent=s.total;
   document.getElementById('nb-backlog').textContent=s.backlog;
   document.getElementById('tc-backlog').textContent=s.backlog;
   document.getElementById('tc-wip').textContent=s.wip;
+  document.getElementById('tc-review').textContent=s.review;
   document.getElementById('tc-resolved').textContent=s.resolved;
 }
 
@@ -1017,6 +1021,7 @@ function buildKPIs(){
     {lbl:'Total Issues',val:s.total,sub:'all microservices',trend:'↑ +3 today',tc:'up',c:'var(--c2)',cd:'rgba(255,64,96,.06)'},
     {lbl:'Backlog',val:s.backlog,sub:'awaiting Bug Daddy',trend:'↑ +2 queued',tc:'dn',c:'var(--c4)',cd:'rgba(255,170,0,.06)'},
     {lbl:'In Progress',val:s.wip,sub:'agent executing',trend:'● active now',tc:'up',c:'var(--c3)',cd:'rgba(59,158,255,.06)'},
+    {lbl:'Code Review',val:s.review,sub:'awaiting PR approval',trend:'↑ +1 today',tc:'up',c:'var(--c5)',cd:'rgba(182,103,255,.06)'},
     {lbl:'Resolved',val:s.resolved,sub:'PRs merged · closed',trend:'↑ +5 today',tc:'up',c:'var(--c1)',cd:'rgba(0,212,170,.06)'},
   ];
   document.getElementById('kpi-grid').innerHTML=cards.map(c=>`
@@ -1153,6 +1158,7 @@ function renderTable(){
       return `<button class="act-btn pri-btn ${loading?'loading':''}" onclick="prioritize(event,${id})" aria-label="${label} issue" ${loading?'disabled aria-busy="true"':''}>${loading?'<span class="btn-spin" aria-hidden="true"></span>':''}<span>${label}</span></button>`;
     },
     wip:id=>`<button class="act-btn live-btn" onclick="openExecGraph(event,${id},false)" aria-label="View live execution graph">Live Graph</button>`,
+    review:id=>`<button class="act-btn live-btn" style="border-color:var(--c5);color:var(--c5)" onclick="openExecGraph(event,${id},false)" aria-label="View live execution graph">Reviewing</button>`,
     resolved:id=>`<button class="act-btn sum-btn" onclick="openExecGraph(event,${id},true)" aria-label="View execution summary">Summary</button>`,
   };
   const freqCls=f=>f>400?'hi':f>100?'med':'low';
@@ -1792,26 +1798,26 @@ function applyExecutionEvent(ev){
   if(ev.node_name||ev.title||ev.description||ev.output_summary||ev.error_message)addBackendLogEntry(ev);
   if(ev.event_type==='session.completed'){
     stopExecutionEventPolling();
-    markIssueResolved(currentExecIssueId);
+    updateIssueStatus(currentExecIssueId, 'in_review');
   }
   if(ev.event_type==='session.failed') stopExecutionEventPolling();
 }
 
-async function markIssueResolved(id){
+async function updateIssueStatus(id, status){
   if(!id) return;
   try{
     const response = await apiFetch(`/issues/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status: 'resolved' }),
+      body: JSON.stringify({ status: status }),
     });
     if (response.ok) {
-      toast('Issue marked as resolved','ok');
+      toast(`Issue marked as ${status.replace('_', ' ')}`,'ok');
       await loadDashboardData();
       buildAll();
       renderTable();
     }
-  }catch(e){
-    console.error('Failed to mark issue resolved', e);
+  } catch(e) {
+    console.error('Failed to update issue status', e);
   }
 }
 
