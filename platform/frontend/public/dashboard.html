@@ -667,6 +667,15 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   color: var(--c4);
   font-size: 0.75rem;
 }
+.log-md-h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--t);
+  margin: 0.75rem 0 0.4rem 0;
+  border-bottom: 1px solid var(--bd);
+  padding-bottom: 0.2rem;
+  font-family: var(--sans);
+}
 .log-detail-value strong { color: var(--t); font-weight: 600; }
 
 .log-ts-label { 
@@ -1461,21 +1470,21 @@ const NODES=[
   // --- KNOWLEDGE BASE ---
   {id:'sme', x:310, y:390, icon:'🧠', label:'SME', sub:'Knowledge Base', color:'#ffaa00', type:'agent'},
 
-  // --- REMEDIATION PIPELINE (Hub & Spoke) ---
-  {id:'bug',  x:760, y:450, icon:'🐛', label:'Bug Daddy', sub:'Orchestrator', color:'#00d4aa', type:'daddy'},
+  // --- REMEDIATION PIPELINE ---
+  {id:'bug',  x:700, y:310, icon:'🐛', label:'Bug Daddy', sub:'Orchestrator', color:'#00d4aa', type:'daddy'},
   
-  {id:'ctx',  x:600, y:350, icon:'🔎', label:'Context Analyser', sub:'Analysis', color:'#ffaa00', type:'agent'},
-  {id:'crit_ctx', x:600, y:550, icon:'🎯', label:'Context Critique', sub:'Review Analysis', color:'#ff6b35', type:'agent'},
+  {id:'ctx',  x:760, y:455, icon:'🔎', label:'Context Analyser', sub:'Analysis', color:'#ffaa00', type:'agent'},
+  {id:'crit_ctx', x:760, y:595, icon:'🎯', label:'Context Critique', sub:'Review Analysis', color:'#ff6b35', type:'agent'},
   
-  {id:'strat', x:760, y:320, icon:'⚙️', label:'Planner', sub:'Plan', color:'#3b9eff', type:'agent'},
-  {id:'crit_strat', x:760, y:580, icon:'🎯', label:'Planner Critique', sub:'Review Plan', color:'#ff6b35', type:'agent'},
+  {id:'strat', x:560, y:455, icon:'⚙️', label:'Planner', sub:'Plan', color:'#3b9eff', type:'agent'},
+  {id:'crit_strat', x:560, y:595, icon:'🎯', label:'Planner Critique', sub:'Review Plan', color:'#ff6b35', type:'agent'},
   
-  {id:'code',  x:920, y:350, icon:'💻', label:'Coder', sub:'Fix + GitHub PR', color:'#00d4aa', type:'agent'},
-  {id:'crit_code', x:920, y:550, icon:'🎯', label:'Coder Critique', sub:'Review Code', color:'#ff6b35', type:'agent'},
+  {id:'code',  x:960, y:455, icon:'💻', label:'Coder', sub:'Write Fix', color:'#00d4aa', type:'agent'},
+  {id:'crit_code', x:910, y:595, icon:'🎯', label:'Coder Critique', sub:'Review Code', color:'#ff6b35', type:'agent'},
+  {id:'jprf', x:1060, y:595, icon:'⚙️', label:'GitHub', sub:'Pull Request', color:'#3b9eff', type:'agent'},
 
   // --- REVIEW PIPELINE ---
-  {id:'rev', x:1150, y:450, icon:'👷', label:'Reviewer Daddy', sub:'AI Reviewer', color:'#b667ff', type:'daddy'},
-  {id:'jprf', x:1150, y:580, icon:'⚙️', label:'PR & Update', sub:'GitHub / Bitbucket', color:'#3b9eff', type:'agent'},
+  {id:'rev', x:1240, y:310, icon:'👷', label:'Reviewer Daddy', sub:'AI Reviewer', color:'#b667ff', type:'daddy'},
 ];
 
 const EDGES=[
@@ -1484,10 +1493,11 @@ const EDGES=[
   ['esc','jag'],
   ['esc','inc'], ['esc','bug'],
   ['bug','sme'],
-  ['bug','ctx'], ['ctx','crit_ctx'], ['crit_ctx','ctx'],
   ['bug','strat'], ['strat','crit_strat'], ['crit_strat','strat'],
+  ['bug','ctx'], ['ctx','crit_ctx'], ['crit_ctx','ctx'],
   ['bug','code'], ['code','crit_code'], ['crit_code','code'],
-  ['bug','rev'], ['rev','jprf']
+  ['code','jprf'],
+  ['bug','rev']
 ];
 
 const NODE_STYLE_BY_ID = Object.fromEntries(NODES.map(n=>[n.id,{...n}]));
@@ -1744,9 +1754,22 @@ function drawEdges(inner,activeSet){
       x1=fc.x+(dx>0?fSize.w/2:-fSize.w/2); y1=fc.y;
       x2=tc.x+(dx>0?-tSize.w/2:tSize.w/2); y2=tc.y;
     }
-    const cpy1=y1+(y2-y1)*0.4, cpy2=y1+(y2-y1)*0.6;
+    let cpx1=x1, cpx2=x2;
+    let cpy1=y1+(y2-y1)*0.4, cpy2=y1+(y2-y1)*0.6;
+    const hasReturnEdge=CURRENT_EDGES.some(([rFrom,rTo])=>rFrom===to&&rTo===from);
+    if(hasReturnEdge){
+      const offset=from<to?-18:18;
+      if(Math.abs(dy) > Math.abs(dx)*0.6){
+        cpx1+=offset;
+        cpx2+=offset;
+      }else{
+        cpy1+=offset;
+        cpy2+=offset;
+      }
+    }
+    const pathData=`M${x1},${y1} C${cpx1},${cpy1} ${cpx2},${cpy2} ${x2},${y2}`;
     const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d',`M${x1},${y1} C${x1},${cpy1} ${x2},${cpy2} ${x2},${y2}`);
+    path.setAttribute('d',pathData);
     path.setAttribute('fill','none');
     path.setAttribute('stroke', isAct ? (fn.color||'#00d4aa') : 'rgba(255,255,255,0.06)');
     path.setAttribute('stroke-width', isAct ? 1.8 : 1);
@@ -1759,7 +1782,7 @@ function drawEdges(inner,activeSet){
       dot.setAttribute('fill',tn.color||'#00d4aa');
       const anim=document.createElementNS('http://www.w3.org/2000/svg','animateMotion');
       anim.setAttribute('dur','2s'); anim.setAttribute('repeatCount','indefinite');
-      anim.setAttribute('path',`M${x1},${y1} C${x1},${cpy1} ${x2},${cpy2} ${x2},${y2}`);
+      anim.setAttribute('path',pathData);
       dot.appendChild(anim);
       svg.appendChild(dot);
     }
@@ -1778,8 +1801,8 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
   const groups=[
     {label:'Incident Route', x:40, y:330, w:210, h:170, color:'#ff4060'},
     {label:'Knowledge Base', x:285, y:340, w:190, h:145, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:530, y:280, w:480, h:420, color:'#00d4aa'},
-    {label:'Review Pipeline', x:1050, y:380, w:220, h:300, color:'#b667ff'},
+    {label:'Remediation Pipeline', x:510, y:280, w:720, h:390, color:'#00d4aa'},
+    {label:'Review Pipeline', x:1220, y:280, w:210, h:160, color:'#b667ff'},
   ];
   groups.forEach(g=>{
     const box=document.createElement('div');
@@ -1801,11 +1824,11 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
   const triggerNodes=['cw','sq','cve','jira','slk'];
   const activePath=isInc
     ?['db','esc','jag','inc']
-    :['db','esc','jag','bug','sme','strat','crit_strat','ctx','crit_ctx','code','crit_code','rev','jprf'];
+    :['db','esc','jag','bug','sme','strat','crit_strat','ctx','crit_ctx','code','crit_code','jprf','rev'];
   const completeNodes=[...triggerNodes,...activePath];
   const activeEdges=isInc
     ?[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','inc']]
-    :[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','bug'],['bug','sme'],['bug','strat'],['strat','crit_strat'],['crit_strat','ctx'],['ctx','crit_ctx'],['crit_ctx','code'],['code','crit_code'],['crit_code','rev'],['rev','jprf']];
+    :[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','bug'],['bug','sme'],['bug','strat'],['strat','crit_strat'],['crit_strat','strat'],['bug','ctx'],['ctx','crit_ctx'],['crit_ctx','ctx'],['bug','code'],['code','crit_code'],['crit_code','code'],['code','jprf'],['bug','rev']];
   const activeEdgeSet=new Set(activeEdges.map(([from,to])=>from+'-'+to));
   drawEdges(inner,activeEdgeSet);
 
@@ -1982,8 +2005,11 @@ async function updateIssueStatus(id, status){
 
 function parseLogMarkdown(text) {
   if (!text) return '';
+  // Headings: ### text
+  let html = text.replace(/^### (.*$)/gm, '<h3 class="log-md-h3">$1</h3>');
+
   // Simple bold: **text**
-  let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   
   // Fenced code blocks: ``` [lang] code ```
   html = html.replace(/```(?:\w+)?\n([\s\S]*?)```/g, '<div class="log-md-code-block">$1</div>');
@@ -2098,11 +2124,11 @@ function getStepDefs(issue,isInc){
     {icon:'🎯',name:'Coder Critique',desc:'Review code fix',duration:900,logs:[
       {type:'result',title:'Code critique complete',lines:['Fix accepted']},
     ]},
+    {icon:'⚙️',name:'GitHub',desc:'Create pull request',duration:900,logs:[
+      {type:'tool',title:'github.create_pull_request()',lines:[`Linked Jira: ${jid}`]},
+    ]},
     {icon:'👷',name:'Reviewer Daddy',desc:'Final code review',duration:1000,logs:[
       {type:'result',title:'Reviewer: APPROVED',lines:['PR created and linked to Jira']},
-    ]},
-    {icon:'⚙️',name:'PR & Update',desc:'Publish remediation update',duration:900,logs:[
-      {type:'tool',title:'pull_request.create()',lines:[`Linked Jira: ${jid}`]},
     ]},
   ];
 }

@@ -450,24 +450,23 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
         {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 110, "y": 385},
     ]
     bug_nodes = [
-        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 520, "y": 390},
-        {"id": "strat", "label": "Planner", "type": "agent", "x": 610, "y": 355},
-        {"id": "crit_strat", "label": "Planner Critique", "type": "agent", "x": 610, "y": 475},
-        {"id": "ctx", "label": "Context Analyser", "type": "agent", "x": 800, "y": 355},
-        {"id": "crit_ctx", "label": "Context Critique", "type": "agent", "x": 800, "y": 475},
-        {"id": "code", "label": "Coder", "type": "agent", "x": 990, "y": 355},
-        {"id": "crit_code", "label": "Coder Critique", "type": "agent", "x": 990, "y": 475},
+        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 700, "y": 310},
+        {"id": "strat", "label": "Planner", "type": "agent", "x": 560, "y": 455},
+        {"id": "crit_strat", "label": "Planner Critique", "type": "agent", "x": 560, "y": 595},
+        {"id": "ctx", "label": "Context Analyser", "type": "agent", "x": 760, "y": 455},
+        {"id": "crit_ctx", "label": "Context Critique", "type": "agent", "x": 760, "y": 595},
+        {"id": "code", "label": "Coder", "type": "agent", "x": 960, "y": 455},
+        {"id": "crit_code", "label": "Coder Critique", "type": "agent", "x": 910, "y": 595},
+        {"id": "jprf", "label": "GitHub", "type": "tool", "x": 1060, "y": 595},
     ]
     reviewer_nodes = [
-        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 1280, "y": 385},
-        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 1240, "y": 535},
+        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 1240, "y": 310},
     ]
 
     if workflow_key == "reviewer_daddy":
         nodes = [{"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260}] + reviewer_nodes
         edges = [
             {"from": "sme", "to": "rev"},
-            {"from": "rev", "to": "jprf"},
         ]
     elif workflow_key == "sme_agent":
         nodes = [
@@ -493,12 +492,15 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "bug", "to": "sme"},
             {"from": "bug", "to": "strat"},
             {"from": "strat", "to": "crit_strat"},
-            {"from": "crit_strat", "to": "ctx"},
+            {"from": "crit_strat", "to": "strat"},
+            {"from": "bug", "to": "ctx"},
             {"from": "ctx", "to": "crit_ctx"},
-            {"from": "crit_ctx", "to": "code"},
+            {"from": "crit_ctx", "to": "ctx"},
+            {"from": "bug", "to": "code"},
             {"from": "code", "to": "crit_code"},
-            {"from": "crit_code", "to": "rev"},
-            {"from": "rev", "to": "jprf"},
+            {"from": "crit_code", "to": "code"},
+            {"from": "code", "to": "jprf"},
+            {"from": "bug", "to": "rev"},
         ]
     else:
         nodes = common_triggers + incident_nodes + bug_nodes + reviewer_nodes
@@ -515,12 +517,15 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "bug", "to": "sme"},
             {"from": "bug", "to": "strat"},
             {"from": "strat", "to": "crit_strat"},
-            {"from": "crit_strat", "to": "ctx"},
+            {"from": "crit_strat", "to": "strat"},
+            {"from": "bug", "to": "ctx"},
             {"from": "ctx", "to": "crit_ctx"},
-            {"from": "crit_ctx", "to": "code"},
+            {"from": "crit_ctx", "to": "ctx"},
+            {"from": "bug", "to": "code"},
             {"from": "code", "to": "crit_code"},
-            {"from": "crit_code", "to": "rev"},
-            {"from": "rev", "to": "jprf"},
+            {"from": "crit_code", "to": "code"},
+            {"from": "code", "to": "jprf"},
+            {"from": "bug", "to": "rev"},
         ]
     return {"nodes": nodes, "edges": edges}
 
