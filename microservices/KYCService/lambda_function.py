@@ -68,7 +68,8 @@ def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Simulated bug: return mock score without raising an exception
+        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.0, "result": "MATCHED"}, "message": "Face match simulated with mock score"})
     return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
 
 
