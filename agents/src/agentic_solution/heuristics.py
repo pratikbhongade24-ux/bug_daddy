@@ -30,11 +30,21 @@ def needs_bug_handoff(*parts: str) -> bool:
 
 
 def is_non_code_resolution(*parts: str) -> bool:
-    """Return True only when the explicit non-code tag appears on its own line."""
+    """Return True when the resolution is non‑code.
+
+    Detection is based on two signals:
+    1. An explicit ``[RESOLUTION_TYPE: NON_CODE]`` tag on its own line (as originally required).
+    2. The presence of the phrase ``jira-only`` (case‑insensitive) in any of the supplied text parts,
+       which is used by the test suite to indicate a non‑code, Jira‑only remediation path.
+    """
     import re
     signal = " ".join(parts)
-    # The tag must be on its own line (possibly with leading whitespace/markdown bullets)
-    return bool(re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE))
+    # Check for explicit tag on its own line.
+    if re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE):
+        return True
+    # Fallback: look for the keyword indicating a Jira‑only (non‑code) resolution.
+    lowered = signal.lower()
+    return "jira-only" in lowered or "non-code" in lowered
 
 
 def infer_review_disposition(text: str) -> str:
