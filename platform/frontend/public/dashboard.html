@@ -1457,21 +1457,38 @@ const NODES=[
   // --- INCIDENT DADDY ---
   {id:'inc', x:100, y:360, icon:'🚨', label:'Incident Daddy', sub:'Orchestrator', color:'#ff4060', type:'daddy'},
 
-  // --- SME (Mocked Knowledge Agent) ---
-  {id:'sme', x:400, y:260, icon:'🧠', label:'SME Agent', sub:'Repo Context', color:'#ffaa00', type:'agent'},
+  // --- KNOWLEDGE BASE ---
+  {id:'sme', x:350, y:360, icon:'🧠', label:'SME', sub:'Repo Context', color:'#ffaa00', type:'agent'},
 
-  // --- BUG DADDY ---
-  {id:'bug', x:650, y:260, icon:'🐛', label:'Bug Daddy', sub:'Bug Orchestrator', color:'#00d4aa', type:'daddy'},
+  // --- REMEDIATION PIPELINE ---
+  {id:'bug',  x:750, y:280, icon:'🐛', label:'Bug Daddy', sub:'Orchestrator', color:'#00d4aa', type:'daddy'},
+  
+  {id:'ctx',  x:600, y:380, icon:'🔎', label:'Context Analyzer', sub:'Log Analysis', color:'#ffaa00', type:'agent'},
+  {id:'crit_ctx', x:600, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Analysis', color:'#ff6b35', type:'agent'},
+  
+  {id:'strat', x:750, y:380, icon:'⚙️', label:'Strategy Planner', sub:'Logic & Plan', color:'#3b9eff', type:'agent'},
+  {id:'crit_strat', x:750, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Plan', color:'#ff6b35', type:'agent'},
+  
+  {id:'code',  x:900, y:380, icon:'💻', label:'Coder Agent', sub:'Write Fix', color:'#00d4aa', type:'agent'},
+  {id:'crit_code', x:900, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Code', color:'#ff6b35', type:'agent'},
 
-  // --- REVIEWER DADDY ---
-  {id:'rev', x:1000, y:260, icon:'👷', label:'Reviewer Daddy', sub:'Code Review', color:'#b667ff', type:'daddy'},
+  // --- REVIEW PIPELINE ---
+  {id:'rev', x:1100, y:280, icon:'👷', label:'Reviewer Daddy', sub:'AI Reviewer', color:'#b667ff', type:'daddy'},
+  {id:'rew', x:1100, y:380, icon:'🎯', label:'Rework Required', sub:'Rework Required', color:'#ff6b35', type:'agent'},
+  
+  {id:'jag', x:1000, y:600, icon:'📋', label:'Jira Agent', sub:'Jira Update', color:'#b667ff', type:'agent'},
+  {id:'jprf', x:1200, y:600, icon:'⚙️', label:'PR & Update', sub:'GitHub / Bitbucket', color:'#3b9eff', type:'agent'},
 ];
 
 const EDGES=[
   ['cw','esc'], ['jira','esc'],
   ['esc','db'],
   ['esc','inc'], ['esc','bug'],
-  ['bug','sme'], ['bug','rev'],
+  ['bug','sme'], ['bug','ctx'],
+  ['ctx','crit_ctx'], ['crit_ctx','strat'],
+  ['strat','crit_strat'], ['crit_strat','code'],
+  ['code','crit_code'], ['crit_code','rev'],
+  ['rev','rew'], ['rev','jag'], ['rev','jprf']
 ];
 
 const NODE_STYLE_BY_ID = Object.fromEntries(NODES.map(n=>[n.id,{...n}]));
@@ -1722,10 +1739,10 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
   // Draw group boxes (dashed borders like in the diagram)
   const groups=[
-    {label:'Incident Route', x:30, y:220, w:220, h:300, color:'#ff4060'},
-    {label:'Knowledge Base', x:330, y:220, w:180, h:240, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:540, y:220, w:280, h:480, color:'#00d4aa'},
-    {label:'Review Pipeline', x:850, y:220, w:320, h:480, color:'#b667ff'},
+    {label:'Incident Route', x:30, y:220, w:220, h:520, color:'#ff4060'},
+    {label:'Knowledge Base', x:280, y:220, w:220, h:520, color:'#ffaa00'},
+    {label:'Remediation Pipeline', x:530, y:220, w:480, h:520, color:'#00d4aa'},
+    {label:'Review Pipeline', x:1040, y:220, w:300, h:520, color:'#b667ff'},
   ];
   groups.forEach(g=>{
     const box=document.createElement('div');
@@ -1747,7 +1764,7 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
   // Determine active path
   const activePath=isInc
     ?['cw','esc','db','inc']
-    :['cw','esc','db','bug','sme','rev'];
+    :['cw','esc','db','bug','sme','ctx','crit_ctx','strat','crit_strat','code','crit_code','rev','jprf'];
 
   const activeEdgeSet=new Set();
   for(let i=0;i<activePath.length-1;i++) activeEdgeSet.add(activePath[i]+'-'+activePath[i+1]);
