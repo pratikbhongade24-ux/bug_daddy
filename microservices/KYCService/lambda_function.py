@@ -31,7 +31,7 @@ def parse_request(event):
     return payload.get("requestId") or "healthCheck", payload
 
 
-def response(context, request_id, operation, payload, extra=None):
+def response(context, request_id, operation, payload, extra=None, status_code=200):
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
@@ -43,7 +43,7 @@ def response(context, request_id, operation, payload, extra=None):
     }
     if extra:
         base.update(extra)
-    return {"statusCode": 200, "body": json.dumps(base)}
+    return {"statusCode": status_code, "body": json.dumps(base)}
 
 
 def normalize_identity(payload):
@@ -54,6 +54,11 @@ def normalize_identity(payload):
 
 def verify_pan(payload, context, request_id):
     identity = normalize_identity(payload)
+    # Validate PAN presence before any string operations
+    if not identity.get("pan"):
+        error_msg = "PAN is required for verification"
+        return response(context, request_id, "verifyPan", payload, {"error": error_msg}, status_code=400)
+    # Existing simulated bug path – now safe because pan is guaranteed to be a string
     if payload.get("simulateBug") == "pan_none":
         identity["pan"].strip()
     return response(context, request_id, "verifyPan", payload, {"verification": {"pan": identity["pan"], "status": "VERIFIED", "provider": "mock-pan-registry"}, "message": "PAN verification completed"})
