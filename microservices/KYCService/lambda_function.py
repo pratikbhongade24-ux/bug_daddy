@@ -68,7 +68,9 @@ def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Safe fallback instead of division by zero
+        fallback_score = float(os.getenv("SIMULATED_FACE_SCORE", "0.0"))
+        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": fallback_score, "result": "SIMULATED"}, "message": "Face match simulated"})
     return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
 
 
