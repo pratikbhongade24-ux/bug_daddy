@@ -441,44 +441,33 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
         {"id": "cve", "label": "CVE Monitor", "type": "trigger", "x": 400, "y": 20},
         {"id": "jira", "label": "Jira Backlogs", "type": "trigger", "x": 550, "y": 20},
         {"id": "slk", "label": "Slack Incident", "type": "trigger", "x": 700, "y": 20},
-        {"id": "esc", "label": "Escalation Agent", "type": "agent", "x": 400, "y": 120},
-        {"id": "db", "label": "Issues Tracker", "type": "store", "x": 600, "y": 120},
-        {"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260},
+        {"id": "db", "label": "Issues Tracker", "type": "store", "x": 380, "y": 120},
+        {"id": "esc", "label": "Escalation Agent", "type": "agent", "x": 380, "y": 220},
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 580, "y": 220},
+        {"id": "sme", "label": "SME", "type": "agent", "x": 310, "y": 390},
     ]
     incident_nodes = [
-        {"id": "iana", "label": "Incident Analyzer", "type": "agent", "x": 100, "y": 260},
-        {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 100, "y": 360},
-        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 50, "y": 460},
-        {"id": "slkb", "label": "Slack Bot", "type": "tool", "x": 150, "y": 460},
+        {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 110, "y": 385},
     ]
     bug_nodes = [
-        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 650, "y": 260},
-        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 650, "y": 360},
-        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 580, "y": 460},
-        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 750, "y": 460},
-        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 580, "y": 560},
-        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 750, "y": 560},
-    ]
-    non_code_nodes = [
-        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 650, "y": 660},
+        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 520, "y": 390},
+        {"id": "strat", "label": "Planner", "type": "agent", "x": 610, "y": 355},
+        {"id": "crit_strat", "label": "Planner Critique", "type": "agent", "x": 610, "y": 475},
+        {"id": "ctx", "label": "Context Analyser", "type": "agent", "x": 800, "y": 355},
+        {"id": "crit_ctx", "label": "Context Critique", "type": "agent", "x": 800, "y": 475},
+        {"id": "code", "label": "Coder", "type": "agent", "x": 990, "y": 355},
+        {"id": "crit_code", "label": "Coder Critique", "type": "agent", "x": 990, "y": 475},
     ]
     reviewer_nodes = [
-        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 1000, "y": 260},
-        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 1000, "y": 360},
-        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 920, "y": 460},
-        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 1080, "y": 460},
-        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 1000, "y": 560},
+        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 1280, "y": 385},
+        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 1240, "y": 535},
     ]
 
     if workflow_key == "reviewer_daddy":
         nodes = [{"id": "sme", "label": "SME", "type": "agent", "x": 400, "y": 260}] + reviewer_nodes
         edges = [
             {"from": "sme", "to": "rev"},
-            {"from": "rev", "to": "airev"},
-            {"from": "airev", "to": "crit"},
-            {"from": "airev", "to": "jrf"},
-            {"from": "airev", "to": "jprf"},
-            {"from": "jrf", "to": "jprf"},
+            {"from": "rev", "to": "jprf"},
         ]
     elif workflow_key == "sme_agent":
         nodes = [
@@ -491,56 +480,47 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "kb", "to": "refs"},
         ]
     elif workflow_key == "bug_daddy":
-        nodes = common_triggers + bug_nodes + non_code_nodes + reviewer_nodes
+        nodes = common_triggers + bug_nodes + reviewer_nodes
         edges = [
-            {"from": "cw", "to": "esc"},
-            {"from": "sq", "to": "esc"},
-            {"from": "cve", "to": "esc"},
-            {"from": "jira", "to": "esc"},
-            {"from": "slk", "to": "esc"},
-            {"from": "esc", "to": "db"},
-            {"from": "db", "to": "sme"},
-            {"from": "sme", "to": "bug"},
-            {"from": "bug", "to": "ctx"},
-            {"from": "ctx", "to": "strat"},
-            {"from": "strat", "to": "crit1"},
-            {"from": "crit1", "to": "code"},
-            {"from": "crit1", "to": "jag"},
-            {"from": "code", "to": "crit2"},
-            {"from": "crit2", "to": "rev"},
-            {"from": "rev", "to": "airev"},
-            {"from": "airev", "to": "crit"},
-            {"from": "airev", "to": "jrf"},
-            {"from": "airev", "to": "jprf"},
-            {"from": "jrf", "to": "jprf"},
+            {"from": "cw", "to": "db"},
+            {"from": "sq", "to": "db"},
+            {"from": "cve", "to": "db"},
+            {"from": "jira", "to": "db"},
+            {"from": "slk", "to": "db"},
+            {"from": "db", "to": "esc"},
+            {"from": "esc", "to": "jag"},
+            {"from": "esc", "to": "bug"},
+            {"from": "bug", "to": "sme"},
+            {"from": "bug", "to": "strat"},
+            {"from": "strat", "to": "crit_strat"},
+            {"from": "crit_strat", "to": "ctx"},
+            {"from": "ctx", "to": "crit_ctx"},
+            {"from": "crit_ctx", "to": "code"},
+            {"from": "code", "to": "crit_code"},
+            {"from": "crit_code", "to": "rev"},
+            {"from": "rev", "to": "jprf"},
         ]
     else:
         nodes = common_triggers + incident_nodes + bug_nodes + reviewer_nodes
         edges = [
-            {"from": "cw", "to": "esc"},
-            {"from": "sq", "to": "esc"},
-            {"from": "cve", "to": "esc"},
-            {"from": "jira", "to": "esc"},
-            {"from": "slk", "to": "esc"},
-            {"from": "esc", "to": "db"},
-            {"from": "db", "to": "sme"},
-            {"from": "sme", "to": "iana"},
-            {"from": "iana", "to": "inc"},
-            {"from": "iana", "to": "jag"},
-            {"from": "iana", "to": "slkb"},
-            {"from": "inc", "to": "bug"},
-            {"from": "sme", "to": "bug"},
-            {"from": "bug", "to": "ctx"},
-            {"from": "ctx", "to": "strat"},
-            {"from": "strat", "to": "crit1"},
-            {"from": "crit1", "to": "code"},
-            {"from": "code", "to": "crit2"},
-            {"from": "crit2", "to": "rev"},
-            {"from": "rev", "to": "airev"},
-            {"from": "airev", "to": "crit"},
-            {"from": "airev", "to": "jrf"},
-            {"from": "airev", "to": "jprf"},
-            {"from": "jrf", "to": "jprf"},
+            {"from": "cw", "to": "db"},
+            {"from": "sq", "to": "db"},
+            {"from": "cve", "to": "db"},
+            {"from": "jira", "to": "db"},
+            {"from": "slk", "to": "db"},
+            {"from": "db", "to": "esc"},
+            {"from": "esc", "to": "jag"},
+            {"from": "esc", "to": "inc"},
+            {"from": "esc", "to": "bug"},
+            {"from": "bug", "to": "sme"},
+            {"from": "bug", "to": "strat"},
+            {"from": "strat", "to": "crit_strat"},
+            {"from": "crit_strat", "to": "ctx"},
+            {"from": "ctx", "to": "crit_ctx"},
+            {"from": "crit_ctx", "to": "code"},
+            {"from": "code", "to": "crit_code"},
+            {"from": "crit_code", "to": "rev"},
+            {"from": "rev", "to": "jprf"},
         ]
     return {"nodes": nodes, "edges": edges}
 

@@ -390,7 +390,7 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   background-size: 24px 24px;
 }
 .n8n-canvas-inner {
-  position: relative; min-width: 900px; min-height: 620px; padding: 40px;
+  position: relative; min-width: 1500px; min-height: 900px; padding: 40px;
   transform-origin: 0 0; transition: transform .12s ease;
   cursor: grab;
 }
@@ -1450,48 +1450,53 @@ const NODES=[
   {id:'jira', x:550, y:20,  icon:'📋', label:'JIRA Backlogs', sub:'Tech Debt',     color:'#b667ff', type:'trigger'},
   {id:'slk',  x:700, y:20,  icon:'💬', label:'Slack Incident',sub:'Communication', color:'#3b9eff', type:'trigger'},
 
-  // --- Classifier Agent (The Entry Point) ---
-  {id:'esc', x:400, y:120, icon:'⚡', label:'Classifier Agent', sub:'triage + route', color:'#3b9eff', type:'agent'},
-  {id:'db',  x:600, y:120, icon:'🗄️', label:'Issues Tracker',  sub:'PostgreSQL',     color:'#00d4aa', type:'agent'},
+  // --- Intake & escalation ---
+  {id:'db',  x:380, y:120, icon:'🗄️', label:'Issues Tracker',   sub:'PostgreSQL',     color:'#00d4aa', type:'agent'},
+  {id:'esc', x:380, y:220, icon:'⚡', label:'Escalation Agent', sub:'triage + route', color:'#3b9eff', type:'agent'},
+  {id:'jag', x:580, y:220, icon:'📋', label:'Jira Agent',       sub:'Jira Update',    color:'#b667ff', type:'agent'},
 
   // --- INCIDENT DADDY ---
-  {id:'inc', x:100, y:360, icon:'🚨', label:'Incident Daddy', sub:'Orchestrator', color:'#ff4060', type:'daddy'},
+  {id:'inc', x:110, y:385, icon:'🚨', label:'Incident Daddy', sub:'Orchestrator', color:'#ff4060', type:'daddy'},
 
   // --- KNOWLEDGE BASE ---
-  {id:'sme', x:350, y:360, icon:'🧠', label:'SME', sub:'Repo Context', color:'#ffaa00', type:'agent'},
+  {id:'sme', x:310, y:390, icon:'🧠', label:'SME', sub:'Knowledge Base', color:'#ffaa00', type:'agent'},
 
-  // --- REMEDIATION PIPELINE ---
-  {id:'bug',  x:750, y:280, icon:'🐛', label:'Bug Daddy', sub:'Orchestrator', color:'#00d4aa', type:'daddy'},
+  // --- REMEDIATION PIPELINE (Hub & Spoke) ---
+  {id:'bug',  x:760, y:450, icon:'🐛', label:'Bug Daddy', sub:'Orchestrator', color:'#00d4aa', type:'daddy'},
   
-  {id:'ctx',  x:600, y:380, icon:'🔎', label:'Context Analyzer', sub:'Log Analysis', color:'#ffaa00', type:'agent'},
-  {id:'crit_ctx', x:600, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Analysis', color:'#ff6b35', type:'agent'},
+  {id:'ctx',  x:600, y:350, icon:'🔎', label:'Context Analyser', sub:'Analysis', color:'#ffaa00', type:'agent'},
+  {id:'crit_ctx', x:600, y:550, icon:'🎯', label:'Context Critique', sub:'Review Analysis', color:'#ff6b35', type:'agent'},
   
-  {id:'strat', x:750, y:380, icon:'⚙️', label:'Strategy Planner', sub:'Logic & Plan', color:'#3b9eff', type:'agent'},
-  {id:'crit_strat', x:750, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Plan', color:'#ff6b35', type:'agent'},
+  {id:'strat', x:760, y:320, icon:'⚙️', label:'Planner', sub:'Plan', color:'#3b9eff', type:'agent'},
+  {id:'crit_strat', x:760, y:580, icon:'🎯', label:'Planner Critique', sub:'Review Plan', color:'#ff6b35', type:'agent'},
   
-  {id:'code',  x:900, y:380, icon:'💻', label:'Coder Agent', sub:'Write Fix', color:'#00d4aa', type:'agent'},
-  {id:'crit_code', x:900, y:460, icon:'🎯', label:'Critic Agent', sub:'Audit Code', color:'#ff6b35', type:'agent'},
+  {id:'code',  x:920, y:350, icon:'💻', label:'Coder', sub:'Fix + GitHub PR', color:'#00d4aa', type:'agent'},
+  {id:'crit_code', x:920, y:550, icon:'🎯', label:'Coder Critique', sub:'Review Code', color:'#ff6b35', type:'agent'},
 
   // --- REVIEW PIPELINE ---
-  {id:'rev', x:1100, y:280, icon:'👷', label:'Reviewer Daddy', sub:'AI Reviewer', color:'#b667ff', type:'daddy'},
-  {id:'rew', x:1100, y:380, icon:'🎯', label:'Rework Required', sub:'Rework Required', color:'#ff6b35', type:'agent'},
-  
-  {id:'jag', x:1000, y:600, icon:'📋', label:'Jira Agent', sub:'Jira Update', color:'#b667ff', type:'agent'},
-  {id:'jprf', x:1200, y:600, icon:'⚙️', label:'PR & Update', sub:'GitHub / Bitbucket', color:'#3b9eff', type:'agent'},
+  {id:'rev', x:1150, y:450, icon:'👷', label:'Reviewer Daddy', sub:'AI Reviewer', color:'#b667ff', type:'daddy'},
+  {id:'jprf', x:1150, y:580, icon:'⚙️', label:'PR & Update', sub:'GitHub / Bitbucket', color:'#3b9eff', type:'agent'},
 ];
 
 const EDGES=[
-  ['cw','esc'], ['jira','esc'],
-  ['esc','db'],
+  ['cw','db'], ['sq','db'], ['cve','db'], ['jira','db'], ['slk','db'],
+  ['db','esc'],
+  ['esc','jag'],
   ['esc','inc'], ['esc','bug'],
-  ['bug','sme'], ['bug','ctx'],
-  ['ctx','crit_ctx'], ['crit_ctx','strat'],
-  ['strat','crit_strat'], ['crit_strat','code'],
-  ['code','crit_code'], ['crit_code','rev'],
-  ['rev','rew'], ['rev','jag'], ['rev','jprf']
+  ['bug','sme'],
+  ['bug','ctx'], ['ctx','crit_ctx'], ['crit_ctx','ctx'],
+  ['bug','strat'], ['strat','crit_strat'], ['crit_strat','strat'],
+  ['bug','code'], ['code','crit_code'], ['crit_code','code'],
+  ['bug','rev'], ['rev','jprf']
 ];
 
 const NODE_STYLE_BY_ID = Object.fromEntries(NODES.map(n=>[n.id,{...n}]));
+const NODE_ID_ALIASES={
+  crit1:'crit_strat',
+  crit2:'crit_code',
+  airev:'rev',
+  jrf:'jag',
+};
 let CURRENT_NODES = [];
 let CURRENT_EDGES = [];
 
@@ -1515,7 +1520,6 @@ async function openExecGraph(e,id,isSummary,explicitSessionId){
   document.getElementById('modal-mode-ico').textContent=isSummary?'📋':workflowIcon(workflowKey);
   document.getElementById('modal-title-text').textContent=mode+' —';
   document.getElementById('modal-issue-id').textContent=issue.jiraId;
-  document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
   document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
   document.getElementById('n8n-log-stream').innerHTML='';
   currentStepGroup=null;
@@ -1635,21 +1639,54 @@ function hexToRgba(hex,a){
 function normalizeWorkflowGraph(graph){
   const rawNodes=Array.isArray(graph&&graph.nodes)?graph.nodes:NODES;
   const rawEdges=Array.isArray(graph&&graph.edges)?graph.edges:EDGES;
-  const nodes=rawNodes.map(node=>{
-    const style=NODE_STYLE_BY_ID[node.id]||{};
-    return {
-      ...style,
-      ...node,
-      type: normalizeNodeType(node.type||style.type),
-      icon: node.icon||style.icon||iconForNode(node),
-      color: node.color||style.color||colorForNode(node),
-      sub: node.sub||style.sub,
-      x: Number.isFinite(Number(node.x))?Number(node.x):(style.x||0),
-      y: Number.isFinite(Number(node.y))?Number(node.y):(style.y||0),
-    };
+  const removedNodeIds=new Set(['rew','crit']);
+  const architectureGraph=rawNodes.some(node=>['esc','db','bug','inc','rev'].includes(canonicalNodeId(node.id)));
+  if(architectureGraph){
+    const rawById=new Map(rawNodes.map(node=>[canonicalNodeId(node.id),node]));
+    const nodes=NODES.map(style=>{
+      const node=rawById.get(style.id)||{};
+      return normalizeNodeModel({...node,...style});
+    });
+    const nodeIds=new Set(nodes.map(n=>n.id));
+    const edges=EDGES.filter(([from,to])=>nodeIds.has(from)&&nodeIds.has(to));
+    return {nodes,edges:uniqueEdges(edges)};
+  }
+  const nodes=rawNodes.map(normalizeNodeModel).filter(node=>!removedNodeIds.has(node.id));
+  const nodeIds=new Set(nodes.map(n=>n.id));
+  const edges=rawEdges
+    .map(edge=>Array.isArray(edge)?edge:[edge.from,edge.to])
+    .map(([from,to])=>[canonicalNodeId(from),canonicalNodeId(to)])
+    .filter(([from,to])=>nodeIds.has(from)&&nodeIds.has(to)&&!removedNodeIds.has(from)&&!removedNodeIds.has(to));
+  return {nodes,edges:uniqueEdges(edges)};
+}
+
+function normalizeNodeModel(node){
+  const canonicalId=canonicalNodeId(node.id);
+  const style=NODE_STYLE_BY_ID[canonicalId]||{};
+  const merged={...node,...style,id:canonicalId};
+  return {
+    ...merged,
+    type: normalizeNodeType(style.type||node.type),
+    icon: style.icon||node.icon||iconForNode(merged),
+    color: style.color||node.color||colorForNode(merged),
+    sub: style.sub||node.sub,
+    x: Number.isFinite(Number(style.x))?Number(style.x):(Number.isFinite(Number(node.x))?Number(node.x):0),
+    y: Number.isFinite(Number(style.y))?Number(style.y):(Number.isFinite(Number(node.y))?Number(node.y):0),
+  };
+}
+
+function canonicalNodeId(id){
+  return NODE_ID_ALIASES[id]||id;
+}
+
+function uniqueEdges(edges){
+  const seen=new Set();
+  return edges.filter(([from,to])=>{
+    const key=from+'-'+to;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
   });
-  const edges=rawEdges.map(edge=>Array.isArray(edge)?edge:[edge.from,edge.to]).filter(edge=>edge[0]&&edge[1]);
-  return {nodes,edges};
 }
 
 function normalizeNodeType(type){
@@ -1689,7 +1726,7 @@ function colorForNode(node){
 function drawEdges(inner,activeSet){
   const svg=document.getElementById('n8n-edges');
   svg.innerHTML='';
-  svg.style.width='900px'; svg.style.height='650px';
+  svg.style.width='1500px'; svg.style.height='900px';
   currentActiveEdgeSet = activeSet;
   CURRENT_EDGES.forEach(([from,to])=>{
     const fn=CURRENT_NODES.find(n=>n.id===from);
@@ -1739,10 +1776,10 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
   // Draw group boxes (dashed borders like in the diagram)
   const groups=[
-    {label:'Incident Route', x:30, y:220, w:220, h:520, color:'#ff4060'},
-    {label:'Knowledge Base', x:280, y:220, w:220, h:520, color:'#ffaa00'},
-    {label:'Remediation Pipeline', x:530, y:220, w:480, h:520, color:'#00d4aa'},
-    {label:'Review Pipeline', x:1040, y:220, w:300, h:520, color:'#b667ff'},
+    {label:'Incident Route', x:40, y:330, w:210, h:170, color:'#ff4060'},
+    {label:'Knowledge Base', x:285, y:340, w:190, h:145, color:'#ffaa00'},
+    {label:'Remediation Pipeline', x:530, y:280, w:480, h:420, color:'#00d4aa'},
+    {label:'Review Pipeline', x:1050, y:380, w:220, h:300, color:'#b667ff'},
   ];
   groups.forEach(g=>{
     const box=document.createElement('div');
@@ -1761,13 +1798,15 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
     inner.appendChild(el);
   });
 
-  // Determine active path
+  const triggerNodes=['cw','sq','cve','jira','slk'];
   const activePath=isInc
-    ?['cw','esc','db','inc']
-    :['cw','esc','db','bug','sme','ctx','crit_ctx','strat','crit_strat','code','crit_code','rev','jprf'];
-
-  const activeEdgeSet=new Set();
-  for(let i=0;i<activePath.length-1;i++) activeEdgeSet.add(activePath[i]+'-'+activePath[i+1]);
+    ?['db','esc','jag','inc']
+    :['db','esc','jag','bug','sme','strat','crit_strat','ctx','crit_ctx','code','crit_code','rev','jprf'];
+  const completeNodes=[...triggerNodes,...activePath];
+  const activeEdges=isInc
+    ?[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','inc']]
+    :[['cw','db'],['sq','db'],['cve','db'],['jira','db'],['slk','db'],['db','esc'],['esc','jag'],['esc','bug'],['bug','sme'],['bug','strat'],['strat','crit_strat'],['crit_strat','ctx'],['ctx','crit_ctx'],['crit_ctx','code'],['code','crit_code'],['crit_code','rev'],['rev','jprf']];
+  const activeEdgeSet=new Set(activeEdges.map(([from,to])=>from+'-'+to));
   drawEdges(inner,activeEdgeSet);
 
   const steps=getStepDefs(issue,isInc);
@@ -1785,15 +1824,18 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 
   if(isSummary){
     // Show all completed instantly
-    activePath.forEach(nid=>setNodeState(nid,'done'));
-    steps.forEach(s=>{
-      addLogEntry(s.logType,s.logTitle,s.logLines,true);
+    completeNodes.forEach(nid=>setNodeState(nid,'done'));
+    steps.forEach((s,idx)=>{
+      showStepInfo(s,true);
+      (s.logs||[]).forEach(log=>addLogEntry(log.type,log.title,log.lines,true));
+      markCurrentGroupDone();
+      if(currentStepGroup && idx<steps.length-1) currentStepGroup.classList.add('collapsed');
     });
-    showStepInfo(steps[steps.length-1],false);
     return;
   }
 
   // Animate
+  triggerNodes.forEach(nid=>setNodeState(nid,'done'));
   let si=0;
   function runStep(){
     if(si>=activePath.length)return;
@@ -1814,6 +1856,7 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
 }
 
 function setNodeState(nid,state){
+  nid=canonicalNodeId(nid);
   const el=document.getElementById('nd-'+nid);
   if(!el)return;
   el.classList.remove('active','done','error');
@@ -2007,15 +2050,14 @@ function addBackendLogEntry(ev){
 function getStepDefs(issue,isInc){
   const svc=issue.shortSvc, freq=issue.freq, jid=issue.jiraId;
   if(isInc)return[
-    {icon:'☁️',name:'CloudWatch Parser',desc:'Extracts error fingerprint',duration:1200,logs:[
-      {type:'info',title:`Log group: /aws/lambda/${svc}`,lines:['Runtime: python:3.13']},
-      {type:'result',title:'Fingerprint extracted',lines:[`fp: "${issue.id.toString().padStart(8,'0')}"`]},
+    {icon:'🗄️',name:'Issues Tracker',desc:'Stores trigger signals',duration:900,logs:[
+      {type:'tool',title:'issue_tracker.upsert()',lines:[`sources: CloudWatch, SonarQube, CVE Monitor, JIRA, Slack`,`issue: ${jid}`]},
     ]},
-    {icon:'⚡',name:'Classifier Agent',desc:'Triage and routing decision',duration:1100,logs:[
+    {icon:'⚡',name:'Escalation Agent',desc:'Triage and routing decision',duration:1100,logs:[
       {type:'think',title:`Routing: freq=${freq} > threshold?`,lines:[`Result: ROUTE_INCIDENT`]},
     ]},
-    {icon:'🗄️',name:'Issues Tracker',desc:'Jira state initialization',duration:900,logs:[
-      {type:'tool',title:'jira.create_issue()',lines:[`project: BUG`,`summary: "[INCIDENT] ${svc}"`]},
+    {icon:'📋',name:'Jira Agent',desc:'Jira context sync',duration:800,logs:[
+      {type:'tool',title:'jira.update_issue()',lines:[`project: BUG`,`summary: "[INCIDENT] ${svc}"`]},
     ]},
     {icon:'🚨',name:'Incident Daddy',desc:'Primary analysis and notification',duration:1400,logs:[
       {type:'think',title:`Impact Analysis`,lines:['Severity: CRITICAL']},
@@ -2023,24 +2065,44 @@ function getStepDefs(issue,isInc){
     ]},
   ];
   return[
-    {icon:'☁️',name:'CloudWatch Parser',desc:'Extracts error fingerprint',duration:1100,logs:[
-      {type:'info',title:`Log group: /aws/lambda/${svc}`},
-      {type:'result',title:'Issue fingerprinted & stored'},
+    {icon:'🗄️',name:'Issues Tracker',desc:'Stores trigger signals',duration:900,logs:[
+      {type:'tool',title:'issue_tracker.upsert()',lines:[`sources: CloudWatch, SonarQube, CVE Monitor, JIRA, Slack`,`issue: ${jid}`]},
     ]},
-    {icon:'⚡',name:'Classifier Agent',desc:'Triage and routing decision',duration:1000,logs:[
+    {icon:'⚡',name:'Escalation Agent',desc:'Triage and routing decision',duration:1000,logs:[
       {type:'think',title:`Routing: freq=${freq} < threshold?`,lines:[`Result: ROUTE_BUG`]},
     ]},
-    {icon:'🗄️',name:'Issues Tracker',desc:'Jira state initialization',duration:900,logs:[
+    {icon:'📋',name:'Jira Agent',desc:'Jira context sync',duration:800,logs:[
       {type:'tool',title:'jira.create_issue()',lines:[`project: BUG`,`summary: "[BUG] ${svc}"`]},
     ]},
     {icon:'🐛',name:'Bug Daddy',desc:'Remediation orchestration',duration:1500,logs:[
-      {type:'think',title:'Planning fix strategy...',lines:['Step 1: SME Context','Step 2: Coder Fix','Step 3: Reviewer']},
+      {type:'think',title:'Dispatching remediation agents',lines:['Planner','Context Analyser','Coder']},
     ]},
     {icon:'🧠',name:'SME Agent',desc:'Knowledge retrieval',duration:1300,logs:[
       {type:'result',title:'Repository context retrieved',lines:['Repo: pratikbhongade24-ux/bug_daddy','Branch: master']},
     ]},
+    {icon:'⚙️',name:'Planner',desc:'Plan remediation',duration:1000,logs:[
+      {type:'think',title:'Strategy plan drafted',lines:['Resolution path selected']},
+    ]},
+    {icon:'🎯',name:'Planner Critique',desc:'Review plan',duration:900,logs:[
+      {type:'result',title:'Plan critique complete',lines:['Plan accepted']},
+    ]},
+    {icon:'🔎',name:'Context Analyser',desc:'Analyse context',duration:1000,logs:[
+      {type:'think',title:'Context analysed',lines:['Logs and repository signals merged']},
+    ]},
+    {icon:'🎯',name:'Context Critique',desc:'Review context analysis',duration:900,logs:[
+      {type:'result',title:'Context critique complete',lines:['Context accepted']},
+    ]},
+    {icon:'💻',name:'Coder',desc:'Write fix',duration:1200,logs:[
+      {type:'think',title:'Code remediation drafted',lines:['Patch proposal ready']},
+    ]},
+    {icon:'🎯',name:'Coder Critique',desc:'Review code fix',duration:900,logs:[
+      {type:'result',title:'Code critique complete',lines:['Fix accepted']},
+    ]},
     {icon:'👷',name:'Reviewer Daddy',desc:'Final code review',duration:1000,logs:[
       {type:'result',title:'Reviewer: APPROVED',lines:['PR created and linked to Jira']},
+    ]},
+    {icon:'⚙️',name:'PR & Update',desc:'Publish remediation update',duration:900,logs:[
+      {type:'tool',title:'pull_request.create()',lines:[`Linked Jira: ${jid}`]},
     ]},
   ];
 }
