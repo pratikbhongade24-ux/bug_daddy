@@ -60,7 +60,13 @@ def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
+        # Fixed bug: ensure numeric addition instead of string concatenation
+        # Increment the mandate amount by 100 (as intended by the original test flag)
+        try:
+            mandate["amount"] = int(mandate["amount"]) + 100
+        except (ValueError, TypeError):
+            # Fallback: if amount is not convertible, keep original value
+            mandate["amount"] = mandate["amount"]
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
