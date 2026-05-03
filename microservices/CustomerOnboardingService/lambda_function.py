@@ -66,7 +66,13 @@ def load_customer(payload):
 def run_risk_checks(profile, payload):
     log("run_risk_checks", {"customerId": profile["customerId"]})
     if payload.get("simulateBug") == "risk_division":
-        return 100 / int(payload.get("riskDenominator", 0))
+        # Guard against missing or zero denominator to avoid ZeroDivisionError
+        denom = int(payload.get("riskDenominator", 1))
+        if denom == 0:
+            # Fallback to safe divisor of 1 and log the anomaly
+            print(f"WARNING {SERVICE_NAME}: riskDenominator was zero; defaulting to 1")
+            denom = 1
+        return 100 / denom
     return {"kycScore": 82, "fraudScore": 11, "bureauScore": 741}
 
 
