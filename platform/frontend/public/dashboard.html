@@ -538,22 +538,7 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   background: var(--s1);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.n8n-step-header {
-  padding: .75rem 1.1rem; border-bottom: 1px solid var(--bd); flex-shrink: 0;
-}
-.n8n-step-none {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  flex-direction: column; gap: .75rem;
-  color: var(--t3); font-family: var(--mono); font-size: .65rem; text-align: center; padding: 2rem;
-}
-.n8n-step-active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
-.n8n-step-title { font-family: var(--sans); font-weight: 700; font-size: .82rem; color: var(--t); display: flex; align-items: center; gap: .5rem; }
-.n8n-step-chip { font-family: var(--mono); font-size: .48rem; padding: 2px 6px; border-radius: 3px; }
-.n8n-step-chip.running { background: rgba(255,170,0,.15); color: var(--c4); }
-.n8n-step-chip.done { background: rgba(0,212,170,.15); color: var(--c1); }
-.n8n-step-chip.error { background: rgba(255,64,96,.15); color: var(--c2); }
-.n8n-step-desc { font-family: var(--mono); font-size: .55rem; color: var(--t3); margin-top: 3px; }
-.n8n-log-stream { flex: 1; overflow-y: auto; padding: .6rem .9rem; display: flex; flex-direction: column; gap: 0; }
+.n8n-log-stream { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0; }
 
 /* STEP GROUP in execution trail */
 .log-step-group { margin-bottom: .4rem; border-left: 2px solid var(--step-color, var(--bd)); padding-left: .65rem; }
@@ -880,20 +865,6 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
       </div>
       <!-- Right Panel -->
       <div class="n8n-right">
-        <div class="n8n-step-header" id="n8n-step-hdr">
-          <div class="n8n-step-none" id="n8n-step-none">
-            <span style="font-size:2rem;opacity:.2">◈</span>
-            <span>Execution starting…</span>
-          </div>
-          <div style="display:none" id="n8n-step-info">
-            <div class="n8n-step-title">
-              <span id="n8n-step-ico"></span>
-              <span id="n8n-step-name"></span>
-              <span class="n8n-step-chip running" id="n8n-step-chip">RUNNING</span>
-            </div>
-            <div class="n8n-step-desc" id="n8n-step-desc"></div>
-          </div>
-        </div>
         <div class="n8n-log-stream" id="n8n-log-stream"></div>
       </div>
     </div>
@@ -1397,9 +1368,11 @@ let currentStepData=null;
 let executionPollTimer=null;
 let currentExecutionSessionId=null;
 let lastExecutionEventId=0;
+let currentExecIssueId=null;
 
 async function openExecGraph(e,id,isSummary){
   if(e)e.stopPropagation();
+  currentExecIssueId=id;
   const issue=ISSUES.find(i=>i.id===id);
   if(!issue)return;
   stopExecutionEventPolling();
@@ -1411,8 +1384,7 @@ async function openExecGraph(e,id,isSummary){
   document.getElementById('modal-title-text').textContent=mode+' —';
   document.getElementById('modal-issue-id').textContent=issue.jiraId;
   document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
-  document.getElementById('n8n-step-none').style.display='flex';
-  document.getElementById('n8n-step-info').style.display='none';
+  document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
   document.getElementById('n8n-log-stream').innerHTML='';
   currentStepGroup=null;
   canvasZoom=0.85; panX=0; panY=0;
@@ -1668,8 +1640,6 @@ function drawGraph(issue,isInc,isSummary,useBackendEvents=false,graph=null){
   const steps=getStepDefs(issue,isInc);
 
   if(useBackendEvents){
-    document.getElementById('n8n-step-none').style.display='flex';
-    document.getElementById('n8n-step-info').style.display='none';
     addBackendLogEntry({
       event_type:'session.attached',
       level:'info',
@@ -1720,15 +1690,7 @@ function setNodeState(nid,state){
 let currentStepGroup=null;
 
 function showStepInfo(sd,running){
-  document.getElementById('n8n-step-none').style.display='none';
-  document.getElementById('n8n-step-info').style.display='block';
-  document.getElementById('n8n-step-ico').textContent=sd.icon;
-  document.getElementById('n8n-step-name').textContent=sd.name;
-  const chip=document.getElementById('n8n-step-chip');
-  chip.textContent=running?'RUNNING':'COMPLETE';
-  chip.className='n8n-step-chip '+(running?'running':'done');
-  document.getElementById('n8n-step-desc').textContent=sd.desc;
-  // DO NOT clear logs - keep them as a persistent trail
+  // Header elements removed; only managing step groups now.
   // Collapse previous step group
   if(currentStepGroup && running) currentStepGroup.classList.add('collapsed');
   // Create new step group
@@ -1817,7 +1779,29 @@ function applyExecutionEvent(ev){
     if(ev.event_type.endsWith('.failed')||ev.status==='failed')setNodeState(ev.node_id,'error');
   }
   if(ev.node_name||ev.title||ev.description||ev.output_summary||ev.error_message)addBackendLogEntry(ev);
-  if(ev.event_type==='session.completed'||ev.event_type==='session.failed')stopExecutionEventPolling();
+  if(ev.event_type==='session.completed'){
+    stopExecutionEventPolling();
+    markIssueResolved(currentExecIssueId);
+  }
+  if(ev.event_type==='session.failed') stopExecutionEventPolling();
+}
+
+async function markIssueResolved(id){
+  if(!id) return;
+  try{
+    const response = await apiFetch(`/issues/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'resolved' }),
+    });
+    if (response.ok) {
+      toast('Issue marked as resolved','ok');
+      await loadDashboardData();
+      buildAll();
+      renderTable();
+    }
+  }catch(e){
+    console.error('Failed to mark issue resolved', e);
+  }
 }
 
 function addBackendLogEntry(ev){
