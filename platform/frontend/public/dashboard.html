@@ -1247,13 +1247,21 @@ async function prioritize(e,id){
         metadata: { action: 'prioritize' }
       }),
     });
+    
     if (!invokeResponse.ok) {
       const err = await invokeResponse.json().catch(() => ({}));
       toast(err.detail || 'Agent invocation failed after prioritize', 'err');
     } else {
       const invokeData = await invokeResponse.json().catch(() => ({}));
-      const routedTo = invokeData.request && invokeData.request.target ? invokeData.request.target : data.agent_target;
+      const routedTo = invokeData.target || data.agent_target;
+      const sid = invokeData.session_id;
+      
       toast(`${data.jiraId} sent to ${agentLabel(routedTo)}`, 'ok');
+      
+      // Open execution graph immediately using the new session ID
+      if (sid) {
+        openExecGraph(null, id, false);
+      }
     }
 
     setPrioritizeLoading(id,'refresh');

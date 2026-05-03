@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import boto3
 import pymysql
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -1866,8 +1866,79 @@ def get_agent_execution_graph(session_id: str, user: dict[str, Any] = Depends(re
         conn.close()
 
 
+def run_agent_background(session_id: str, runtime_payload: dict[str, Any], target: str):
+    try:
+        result = invoke_agentcore(runtime_payload)
+        summary = str(result.get("summary") or result.get("message") or result.get("raw") or "")[:4000]
+        conn = get_db()
+        try:
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "node.completed",
+                    "node_id": "esc",
+                    "node_name": "AgentCore Runtime",
+                    "agent_name": target,
+                    "status": "succeeded",
+                    "level": "info",
+                    "title": "AgentCore invocation completed",
+                    "output_summary": summary,
+                    "result": result,
+                },
+            )
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.completed",
+                    "status": "succeeded",
+                    "level": "info",
+                    "title": "Execution completed",
+                    "output_summary": summary,
+                },
+            )
+            update_execution_session(conn, session_id, status_value="succeeded", summary=summary, ended=True)
+        finally:
+            conn.close()
+    except Exception as exc:
+        conn = get_db()
+        try:
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "node.failed",
+                    "node_id": "esc",
+                    "node_name": "AgentCore Runtime",
+                    "agent_name": target,
+                    "status": "failed",
+                    "level": "error",
+                    "title": "AgentCore invocation failed",
+                    "error_message": str(exc),
+                },
+            )
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.failed",
+                    "status": "failed",
+                    "level": "error",
+                    "title": "Execution failed",
+                    "error_message": str(exc),
+                },
+            )
+            update_execution_session(conn, session_id, status_value="failed", error_message=str(exc), ended=True)
+        finally:
+            conn.close()
+
 @app.post("/agent/invoke")
-def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
+def agent_invoke(
+    payload: AgentInvokeRequest,
+    bg_tasks: BackgroundTasks,
+    actor: dict[str, Any] = Depends(require_permission("issues.update"))
+):
     issue_context: dict[str, Any] = {}
     if payload.issue_id is not None:
         conn = get_db()
@@ -1989,79 +2060,12 @@ def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(re
     finally:
         conn.close()
 
-    try:
-        result = invoke_agentcore(runtime_payload)
-    except Exception as exc:
-        conn = get_db()
-        try:
-            append_execution_event(
-                conn,
-                session_id,
-                {
-                    "event_type": "node.failed",
-                    "node_id": "esc",
-                    "node_name": "AgentCore Runtime",
-                    "agent_name": target,
-                    "status": "failed",
-                    "level": "error",
-                    "title": "AgentCore invocation failed",
-                    "error_message": str(exc),
-                },
-            )
-            append_execution_event(
-                conn,
-                session_id,
-                {
-                    "event_type": "session.failed",
-                    "status": "failed",
-                    "level": "error",
-                    "title": "Execution failed",
-                    "error_message": str(exc),
-                },
-            )
-            update_execution_session(conn, session_id, status_value="failed", error_message=str(exc), ended=True)
-        finally:
-            conn.close()
-        raise HTTPException(status_code=502, detail=f"AgentCore invocation failed: {exc}") from exc
-
-    summary = str(result.get("summary") or result.get("message") or result.get("raw") or "")[:4000]
-    conn = get_db()
-    try:
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "node.completed",
-                "node_id": "esc",
-                "node_name": "AgentCore Runtime",
-                "agent_name": target,
-                "status": "succeeded",
-                "level": "info",
-                "title": "AgentCore invocation completed",
-                "output_summary": summary,
-                "result": result,
-            },
-        )
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "session.completed",
-                "status": "succeeded",
-                "level": "info",
-                "title": "Execution completed",
-                "output_summary": summary,
-            },
-        )
-        update_execution_session(conn, session_id, status_value="succeeded", summary=summary, ended=True)
-    finally:
-        conn.close()
+    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, target)
 
     return {
+        "message": "Agent orchestration started in background",
         "session_id": session_id,
-        "runtime_arn": AGENTCORE_RUNTIME_ARN,
-        "events_url": f"/agent/executions/{session_id}/events",
-        "graph_url": f"/agent/executions/{session_id}/graph",
-        "request": runtime_payload,
-        "response": result,
+        "workflow_key": workflow_key,
+        "target": target,
+        "request": runtime_payload
     }
