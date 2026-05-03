@@ -1519,7 +1519,7 @@ async function openExecGraph(e,id,isSummary,explicitSessionId){
   document.getElementById('modal-sub').textContent=`${issue.shortSvc} · freq=${issue.freq} · ${issue.criticality} · ${issue.owner}`;
   document.getElementById('n8n-log-stream').innerHTML='';
   currentStepGroup=null;
-  canvasZoom=0.85; panX=0; panY=0;
+  canvasZoom=0.65; panX=0; panY=0;
   applyTransform();
   const sessionId=explicitSessionId || issue.latest_execution_session_id || issue.execution_session_id;
   const useBackendEvents=Boolean(sessionId);
