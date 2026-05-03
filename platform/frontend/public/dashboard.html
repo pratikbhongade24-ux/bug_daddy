@@ -1186,8 +1186,19 @@ function renderTable(){
 
 function switchTab(tab,el){
   currentTab=tab;
+  localStorage.setItem('bugDaddyTab', tab);
   document.querySelectorAll('.tab').forEach(t=>{t.classList.remove('active');t.setAttribute('aria-selected','false');});
-  el.classList.add('active'); el.setAttribute('aria-selected','true');
+  if(el){
+    el.classList.add('active'); el.setAttribute('aria-selected','true');
+  } else {
+    // If called without element (e.g. from init), find the correct tab element
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(t => {
+      if(t.textContent.toLowerCase().includes(tab)) {
+         t.classList.add('active'); t.setAttribute('aria-selected','true');
+      }
+    });
+  }
   renderTable();
 }
 function sortBy(k){ sortKey=k; sortDir*=-1; renderTable(); }
@@ -2036,10 +2047,24 @@ function switchView(name,el){
     toast('Admin access required', 'err');
     return;
   }
+  localStorage.setItem('bugDaddyView', name);
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.removeAttribute('aria-current');});
-  document.getElementById('view-'+name).classList.add('active');
-  if(el){el.classList.add('active');el.setAttribute('aria-current','page');}
+  const viewEl = document.getElementById('view-'+name);
+  if(viewEl) viewEl.classList.add('active');
+  
+  if(el){
+    el.classList.add('active');el.setAttribute('aria-current','page');
+  } else {
+    // If called without element, find nav-item
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(n => {
+       if(n.textContent.toLowerCase().includes(name)) {
+         n.classList.add('active'); n.setAttribute('aria-current','page');
+       }
+    });
+  }
+
   if(name==='issues')renderTable();
   if(name==='admin')loadUsers();
 }
@@ -2089,6 +2114,13 @@ async function bootstrapAuth() {
     populateDropdowns();
     buildAll();
     buildFeed();
+    
+    // Restore state
+    const savedView = localStorage.getItem('bugDaddyView');
+    const savedTab = localStorage.getItem('bugDaddyTab');
+    if(savedView) switchView(savedView);
+    if(savedTab) switchTab(savedTab);
+    
     renderTable();
     setInterval(buildTopbar, 30000);
     setInterval(async () => {
