@@ -538,46 +538,105 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
   background: var(--s1);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.n8n-log-stream { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0; }
+.n8n-log-stream { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 0; background: var(--bg); }
 
-/* STEP GROUP in execution trail */
-.log-step-group { margin-bottom: .4rem; border-left: 2px solid var(--step-color, var(--bd)); padding-left: .65rem; }
-.log-step-header {
-  display: flex; align-items: center; gap: .4rem; cursor: pointer;
-  padding: .4rem 0; font-family: var(--mono); font-size: .58rem; color: var(--t2);
-  transition: color .15s; user-select: none;
+/* ChatGPT-like Log Connector */
+.log-connector {
+  height: 24px;
+  margin-left: 9px;
+  border-left: 2px dotted var(--t3);
+  opacity: 0.4;
+  position: relative;
 }
-.log-step-header:hover { color: var(--t); }
-.log-step-header .step-chevron { font-size: .5rem; transition: transform .2s; display: inline-block; }
-.log-step-group.collapsed .step-chevron { transform: rotate(-90deg); }
-.log-step-group.collapsed .log-step-body { display: none; }
-.log-step-header .step-icon { font-size: .8rem; }
-.log-step-header .step-name { font-weight: 600; color: var(--t); }
-.log-step-header .step-status { font-size: .48rem; padding: 1px 5px; border-radius: 3px; margin-left: auto; }
-.log-step-body { display: flex; flex-direction: column; gap: .35rem; padding: .25rem 0; }
+.log-connector::after {
+  content: '...';
+  position: absolute;
+  top: 50%;
+  left: -8px;
+  transform: translateY(-50%);
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--bg);
+  padding: 2px 0;
+}
 
 /* LOG ENTRY TYPES - collapsible thinking */
-.log-entry { border-radius: 5px; padding: .4rem .55rem; font-family: var(--mono); font-size: .58rem; animation: logSlide .3s ease; }
+.log-entry {
+  position: relative;
+  margin-bottom: 0.5rem;
+  font-family: var(--sans);
+  animation: logSlide .3s ease;
+}
 @keyframes logSlide { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.log-entry.thinking { background: rgba(255,170,0,.05); border: 1px solid rgba(255,170,0,.1); }
-.log-entry.tool-call { background: rgba(59,158,255,.05); border: 1px solid rgba(59,158,255,.1); }
-.log-entry.tool-result { background: rgba(0,212,170,.05); border: 1px solid rgba(0,212,170,.1); }
-.log-entry.error { background: rgba(255,64,96,.05); border: 1px solid rgba(255,64,96,.1); }
-.log-entry.info { background: rgba(255,255,255,.02); border: 1px solid var(--bd); }
 
-/* Collapsible thinking block */
-.log-entry.thinking .log-content { cursor: pointer; }
-.log-entry .log-code { color: var(--c1); background: var(--bg); padding: .3rem .5rem; border-radius: 3px; margin-top: .25rem; font-size: .55rem; white-space: pre-wrap; }
-.log-entry.collapsed .log-code { display: none; }
-.log-entry.collapsed .log-content strong::after { content: '  ▸ click to expand'; font-weight: 400; color: var(--t3); font-size: .5rem; }
+.log-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.4rem 0;
+  user-select: none;
+}
+.log-entry-header:hover .log-thought-label { color: var(--t); }
 
-.log-type { font-size: .46rem; letter-spacing: .1em; text-transform: uppercase; margin-bottom: .2rem; font-weight: 600; display: flex; align-items: center; gap: .3rem; }
-.log-type.t { color: var(--c4); }
-.log-type.tc { color: var(--c3); }
-.log-type.tr { color: var(--c1); }
-.log-type.er { color: var(--c2); }
-.log-type.inf { color: var(--t3); }
-.log-content { color: var(--t); line-height: 1.5; }
+.log-status-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--s3);
+  border: 2px solid var(--bd);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+.log-entry.active .log-status-dot { background: var(--c3d); border-color: var(--c3); color: var(--c3); }
+.log-entry.done .log-status-dot { background: var(--c1d); border-color: var(--c1); color: var(--c1); }
+.log-entry.error .log-status-dot { background: var(--c2d); border-color: var(--c2); color: var(--c2); }
+
+.log-thought-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--t2);
+  transition: color 0.2s;
+}
+.log-entry.active .log-thought-label { color: var(--t); }
+
+.log-chevron {
+  font-size: 0.7rem;
+  color: var(--t3);
+  transition: transform 0.2s;
+  margin-left: auto;
+}
+.log-entry.expanded .log-chevron { transform: rotate(90deg); }
+
+.log-thought-body {
+  margin-left: 27px;
+  border-left: 2px solid var(--bd);
+  padding: 0.5rem 0 0.5rem 1.25rem;
+  display: none;
+}
+.log-entry.expanded .log-thought-body { display: block; }
+
+.log-code-block {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--t2);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.log-code-block strong { color: var(--c3); }
+.log-code-block .line { margin-bottom: 0.25rem; display: block; }
+.log-code-block .label { color: var(--t3); text-transform: uppercase; font-size: 0.6rem; letter-spacing: 0.05em; margin-right: 0.5rem; }
+
+.log-ts-label { font-family: var(--mono); font-size: 0.6rem; color: var(--t3); margin-left: 0.5rem; }
 .log-ts { float: right; color: var(--t3); font-size: .44rem; margin-top: 1px; }
 
 /* ── TOAST ── */
@@ -1824,24 +1883,47 @@ async function updateIssueStatus(id, status){
 function addBackendLogEntry(ev){
   const stream=document.getElementById('n8n-log-stream');
   if(!stream)return;
+
+  // Add connector if not the first entry
+  if (stream.children.length > 0) {
+    const conn = document.createElement('div');
+    conn.className = 'log-connector';
+    stream.appendChild(conn);
+  }
+
   const level=ev.level||'info';
-  const cls=level==='error'?'error':level==='warning'?'info':ev.event_type&&ev.event_type.includes('tool')?'tool-call':'info';
-  const tc=level==='error'?'er':ev.event_type&&ev.event_type.includes('tool')?'tc':'inf';
-  const ico=level==='error'?'❌ ERROR':level==='warning'?'⚠ WARN':ev.event_type&&ev.event_type.includes('tool')?'🔧 TOOL':'ℹ EVENT';
+  const status = ev.status === 'running' ? 'active' : (ev.status === 'failed' ? 'error' : 'done');
   const ts=ev.created_at?new Date(ev.created_at).toLocaleTimeString('en-IN',{hour12:false}):new Date().toLocaleTimeString('en-IN',{hour12:false});
-  const lines=[];
-  if(ev.description)lines.push(ev.description);
-  if(ev.input_summary)lines.push('input: '+ev.input_summary);
-  if(ev.output_summary)lines.push('output: '+ev.output_summary);
-  if(ev.reasoning_summary)lines.push('reasoning: '+ev.reasoning_summary);
-  if(ev.error_message)lines.push('error: '+ev.error_message);
-  if(ev.tool_name)lines.push('tool: '+ev.tool_name);
+  
+  const entries = [];
+  if(ev.description) entries.push({ label: 'Description', val: ev.description });
+  if(ev.input_summary) entries.push({ label: 'Input', val: ev.input_summary });
+  if(ev.output_summary) entries.push({ label: 'Output', val: ev.output_summary });
+  if(ev.reasoning_summary) entries.push({ label: 'Reasoning', val: ev.reasoning_summary });
+  if(ev.error_message) entries.push({ label: 'Error', val: ev.error_message });
+  if(ev.tool_name) entries.push({ label: 'Tool', val: ev.tool_name });
+
   const el=document.createElement('div');
-  el.className=`log-entry ${cls}`;
+  el.className=`log-entry ${status}`;
+  if (entries.length > 0) el.classList.add('has-details');
+
+  const title = ev.node_name ? `${ev.node_name}: ${ev.title||ev.event_type}` : (ev.title||ev.event_type||'Execution event');
+
   el.innerHTML=`
-    <div class="log-type ${tc}">${ico}<span class="log-ts">${ts}</span></div>
-    <div class="log-content"><strong>${ev.node_name?ev.node_name+' · ':''}${ev.title||ev.event_type||'Execution event'}</strong>${lines.length?`<div class="log-code">${lines.join('\n')}</div>`:''}</div>
+    <div class="log-entry-header" onclick="this.parentElement.classList.toggle('expanded')">
+      <div class="log-status-dot">${status === 'active' ? '●' : (status === 'error' ? '×' : '✓')}</div>
+      <div class="log-thought-label">${title} <span class="log-ts-label">${ts}</span></div>
+      ${entries.length > 0 ? '<div class="log-chevron">❯</div>' : ''}
+    </div>
+    ${entries.length > 0 ? `
+      <div class="log-thought-body">
+        <div class="log-code-block">
+          ${entries.map(e => `<div class="line"><span class="label">${e.label}</span> ${e.val}</div>`).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
+  
   stream.appendChild(el);
   stream.scrollTop=stream.scrollHeight;
 }
