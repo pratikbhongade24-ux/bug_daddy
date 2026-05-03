@@ -9,6 +9,8 @@ BRANCH="master"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 REMOTE_BACKEND_DIR="${REMOTE_BACKEND_DIR:-/home/ubuntu/platform/backend}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-bug-daddy-platform-backend.service}"
+AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL:-http://${EC2_IP}/api}"
+AGENT_EXECUTION_LOG_SECRET="${AGENT_EXECUTION_LOG_SECRET:-}"
 
 echo "🚀 Deploying Bug Daddy Platform from branch ${BRANCH} to ${EC2_IP}..."
 
@@ -32,7 +34,7 @@ ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "mkdir -p ${REMOTE_B
 scp -i "${SSH_KEY}" -o StrictHostKeyChecking=no platform/backend/main.py platform/backend/requirements.txt "${REMOTE}:${REMOTE_BACKEND_DIR}/"
 
 echo "🔄 Restarting Backend Service..."
-ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACKEND_PORT} REMOTE_BACKEND_DIR=${REMOTE_BACKEND_DIR} BACKEND_SERVICE=${BACKEND_SERVICE} bash -s" << 'EOF'
+ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACKEND_PORT} REMOTE_BACKEND_DIR=${REMOTE_BACKEND_DIR} BACKEND_SERVICE=${BACKEND_SERVICE} AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL} AGENT_EXECUTION_LOG_SECRET=${AGENT_EXECUTION_LOG_SECRET} bash -s" << 'EOF'
   cd "${REMOTE_BACKEND_DIR}"
   
   # Setup virtualenv if it doesn't exist
@@ -52,6 +54,8 @@ WorkingDirectory=${REMOTE_BACKEND_DIR}
 EnvironmentFile=
 Environment=AWS_REGION=ap-south-1
 Environment=AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs
+Environment=AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL}
+Environment=AGENT_EXECUTION_LOG_SECRET=${AGENT_EXECUTION_LOG_SECRET}
 ExecStart=
 ExecStart=${REMOTE_BACKEND_DIR}/venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port ${BACKEND_PORT}
 UNIT
@@ -59,7 +63,7 @@ UNIT
     sudo systemctl restart "${BACKEND_SERVICE}"
   else
     pkill -f uvicorn || true
-    nohup ./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" > uvicorn.log 2>&1 &
+    AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL}" AGENT_EXECUTION_LOG_SECRET="${AGENT_EXECUTION_LOG_SECRET}" nohup ./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port "${BACKEND_PORT}" > uvicorn.log 2>&1 &
   fi
 EOF
 echo "✅ Backend deployed and restarted."

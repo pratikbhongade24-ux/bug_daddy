@@ -30,9 +30,11 @@ def needs_bug_handoff(*parts: str) -> bool:
 
 
 def is_non_code_resolution(*parts: str) -> bool:
-    signal = " ".join(parts).lower()
-    markers = ["runbook", "configuration only", "manual remediation", "non-code", "jira-only"]
-    return any(marker in signal for marker in markers)
+    """Return True only when the explicit non-code tag appears on its own line."""
+    import re
+    signal = " ".join(parts)
+    # The tag must be on its own line (possibly with leading whitespace/markdown bullets)
+    return bool(re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE))
 
 
 def infer_review_disposition(text: str) -> str:

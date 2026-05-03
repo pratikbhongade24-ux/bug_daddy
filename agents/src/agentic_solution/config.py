@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import boto3
 
 
-DEFAULT_BEDROCK_MODEL_ID = "apac.amazon.nova-lite-v1:0"
+DEFAULT_BEDROCK_MODEL_ID = "openai.gpt-oss-120b-1:0"
 
 
 def _json_list(name: str, default: list[str]) -> list[str]:
@@ -65,6 +65,7 @@ class AppConfig:
     slack: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="slack"))
     jira: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="jira"))
     bitbucket: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="bitbucket"))
+    github: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="github"))
     bug_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="bug_daddy"))
     reviewer_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="reviewer_daddy"))
     sme_agent: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="sme_agent"))
@@ -88,6 +89,7 @@ class AppConfig:
             slack=_mcp_config_from_env("SLACK_MCP", "slack"),
             jira=_mcp_config_from_env("JIRA_MCP", "jira"),
             bitbucket=_mcp_config_from_env("BITBUCKET_MCP", "bitbucket"),
+            github=_mcp_config_from_env("GITHUB_MCP", "github"),
             bug_daddy=_peer_config_from_env("BUG_DADDY", "bug_daddy"),
             reviewer_daddy=_peer_config_from_env("REVIEWER_DADDY", "reviewer_daddy"),
             sme_agent=_peer_config_from_env("SME_AGENT", "sme_agent"),

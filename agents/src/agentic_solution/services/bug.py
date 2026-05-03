@@ -6,6 +6,7 @@ from typing import Any
 from agentic_solution.agents import BugAgentBundle, build_bug_agents
 from agentic_solution.config import AppConfig
 from agentic_solution.contracts import BugRequest, BugResponse, IssueContext, ReviewRequest
+from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import is_non_code_resolution
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
@@ -15,14 +16,30 @@ from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
 class BugDaddyRuntime:
     config: AppConfig
     tools: MCPToolBundle
-    agents: BugAgentBundle
     peers: PeerRuntimeClient
 
+    def _build_agents(self) -> BugAgentBundle:
+        """Build fresh agent instances per invocation — Strands Agents are stateful and not concurrency-safe."""
+        return build_bug_agents(
+            self.config,
+            tools={
+                "slack": self.tools.slack_tools, 
+                "jira": self.tools.jira_tools, 
+                "bitbucket": self.tools.bitbucket_tools,
+                "github": self.tools.github_tools
+            },
+        )
+
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agents = self._build_agents()
+        logger = ExecutionLogger.from_payload(payload, "bug_daddy")
         request = BugRequest.model_validate(payload)
+        started = logger.node_started("sme", "SME", "Query SME remediation guidance", request.prompt)
         sme_summary, sme_diagnostics = self._query_sme(request)
+        logger.node_completed("sme", "SME", "SME remediation guidance returned", started, sme_summary, sme_diagnostics)
 
         if self.config.dry_run:
+            started = logger.node_started("bug", "Bug Daddy", "Dry-run remediation orchestration")
             response = BugResponse(
                 summary=(
                     "Dry run only. bug_daddy would plan the remediation, gather evidence, "
@@ -31,26 +48,38 @@ class BugDaddyRuntime:
                 resolution_kind="review_required",
                 diagnostics={**self.tools.diagnostics, "sme_agent": sme_diagnostics},
             )
+            logger.node_completed("bug", "Bug Daddy", "Dry-run remediation orchestration complete", started, response.summary)
             return response.model_dump()
 
-        orchestration = str(self.agents.orchestrator(_orchestrator_prompt(request, sme_summary)))
-        planner = str(self.agents.planner(_planner_prompt(request, orchestration)))
-        gatherer = str(self.agents.gatherer(_gatherer_prompt(request, orchestration, sme_summary)))
-        log_analysis = str(self.agents.log_analyser(_log_prompt(request, gatherer)))
-        coder = str(self.agents.coder(_coder_prompt(request, planner, gatherer, sme_summary, log_analysis)))
-        critic = str(self.agents.critic(_critic_prompt(request, coder)))
+        started = logger.node_started("ctx", "Context Analyzer", "Gather context and analyze logs", request.prompt)
+        context = str(agents.context_analyzer(_context_prompt(request, "", sme_summary)))
+        logger.node_completed("ctx", "Context Analyzer", "Context gathered", started, context)
+
+        started = logger.node_started("strat", "Strategy Planner", "Create remediation strategy and plan", request.prompt)
+        strategy = str(agents.strategy_planner(_strategy_prompt(request, context, sme_summary)))
+        logger.node_completed("strat", "Strategy Planner", "Remediation strategy complete", started, strategy)
+
+        started = logger.node_started("crit1", "Critic Agent", "Critique strategy", strategy)
+        critic_strategy = str(agents.critic(_critic_step_prompt(request, "Strategy Planner", strategy)))
+        logger.node_completed("crit1", "Critic Agent", "Critique strategy complete", started, critic_strategy)
 
         diagnostics: dict[str, Any] = {**self.tools.diagnostics, "sme_agent": sme_diagnostics}
         artifacts: list[dict[str, Any]] = [
-            {"type": "bug_orchestration", "system": "bug_daddy", "content": orchestration},
-            {"type": "remediation_plan", "system": "bug_daddy", "content": planner},
-            {"type": "gathered_context", "system": "bug_daddy", "content": gatherer},
-            {"type": "log_analysis", "system": "bug_daddy", "content": log_analysis},
-            {"type": "fix_proposal", "system": "bug_daddy", "content": coder},
-            {"type": "critique", "system": "bug_daddy", "content": critic},
+            {"type": "context_analysis", "system": "bug_daddy", "content": context},
+            {"type": "strategy_plan", "system": "bug_daddy", "content": strategy},
+            {"type": "critic_strategy", "system": "bug_daddy", "content": critic_strategy},
         ]
 
-        if is_non_code_resolution(orchestration, coder, critic):
+        if is_non_code_resolution(strategy, critic_strategy):
+            logger.emit(
+                "node.completed",
+                node_id="jag",
+                node_name="Jira Agent",
+                status="succeeded",
+                level="info",
+                title="Jira-only resolution selected",
+                output_summary="Non-code resolution identified; Jira ticket should carry the operational action.",
+            )
             summary = (
                 "Non-code resolution identified. Create or update Jira with the operational action "
                 "instead of sending the issue to reviewer_daddy."
@@ -64,6 +93,19 @@ class BugDaddyRuntime:
             )
             return response.model_dump()
 
+        started = logger.node_started("code", "Coder Agent", "Propose code remediation", context)
+        coder = str(agents.coder(_coder_prompt(request, strategy, context, sme_summary)))
+        logger.node_completed("code", "Coder Agent", "Code remediation proposed", started, coder)
+
+        started = logger.node_started("crit2", "Critic Agent", "Critique code proposal", coder)
+        critic_coder = str(agents.critic(_critic_step_prompt(request, "Coder Agent", coder)))
+        logger.node_completed("crit2", "Critic Agent", "Critique code complete", started, critic_coder)
+
+        artifacts.extend([
+            {"type": "fix_proposal", "system": "bug_daddy", "content": coder},
+            {"type": "critic_coder", "system": "bug_daddy", "content": critic_coder},
+        ])
+
         review_request = ReviewRequest(
             issue=IssueContext(
                 prompt=request.prompt,
@@ -75,12 +117,11 @@ class BugDaddyRuntime:
                 kb_context=request.kb_context,
                 metadata=request.metadata,
             ),
-            plan=planner,
-            context_summary=gatherer,
+            strategy_plan=strategy,
+            context_analysis=context,
             sme_guidance=sme_summary,
-            log_analysis=log_analysis,
             fix_proposal=coder,
-            critique=critic,
+            critique=critic_coder,
             metadata={
                 "incident_summary": request.incident_summary,
                 "incident_severity": request.incident_severity,
@@ -104,7 +145,16 @@ class BugDaddyRuntime:
             return response.model_dump()
 
         try:
+            started = logger.node_started("rev", "Reviewer Daddy", "Hand off remediation package to reviewer_daddy")
             review_response = self.peers.invoke(self.config.reviewer_daddy, review_payload)
+            logger.node_completed(
+                "rev",
+                "Reviewer Daddy",
+                "reviewer_daddy handoff complete",
+                started,
+                str(review_response.get("summary", "")),
+                review_response,
+            )
             artifacts.append(
                 {
                     "type": "review_handoff_response",
@@ -124,6 +174,7 @@ class BugDaddyRuntime:
             )
             return response.model_dump()
         except PeerInvocationError as exc:
+            logger.node_failed("rev", "Reviewer Daddy", "reviewer_daddy handoff failed", started, exc)
             diagnostics["reviewer_daddy"] = {"status": "error", "error": str(exc)}
             response = BugResponse(
                 summary="Technical remediation prepared, but reviewer_daddy could not be reached.",
@@ -162,21 +213,16 @@ class BugDaddyRuntime:
 def build_runtime(config: AppConfig | None = None) -> BugDaddyRuntime:
     cfg = config or AppConfig.from_env()
     tools = load_mcp_tools(cfg)
-    agents = build_bug_agents(
-        cfg,
-        tools={"slack": tools.slack_tools, "jira": tools.jira_tools, "bitbucket": tools.bitbucket_tools},
-    )
     return BugDaddyRuntime(
         config=cfg,
         tools=tools,
-        agents=agents,
         peers=PeerRuntimeClient(cfg),
     )
 
 
-def _orchestrator_prompt(request: BugRequest, sme_summary: str) -> str:
+def _strategy_prompt(request: BugRequest, context: str, sme_summary: str) -> str:
     return f"""
-Decide the remediation strategy for this issue.
+Decide the remediation strategy and create the plan.
 
 Prompt:
 {request.prompt}
@@ -187,29 +233,20 @@ Incident summary:
 Service:
 {request.service_name}
 
+Repository:
+{request.repository}
+
+Gathered Context:
+{context}
+
 SME guidance:
 {sme_summary}
 """.strip()
 
 
-def _planner_prompt(request: BugRequest, orchestration: str) -> str:
+def _context_prompt(request: BugRequest, strategy: str, sme_summary: str) -> str:
     return f"""
-Create the remediation plan.
-
-Prompt:
-{request.prompt}
-
-Repository:
-{request.repository}
-
-Orchestrator brief:
-{orchestration}
-""".strip()
-
-
-def _gatherer_prompt(request: BugRequest, orchestration: str, sme_summary: str) -> str:
-    return f"""
-Gather the best available technical context.
+Gather technical context and analyze logs.
 
 Prompt:
 {request.prompt}
@@ -223,35 +260,19 @@ Logs:
 Telemetry:
 {request.telemetry}
 
-Orchestrator brief:
-{orchestration}
+Strategy:
+{strategy}
 
 SME guidance:
 {sme_summary}
 """.strip()
 
 
-def _log_prompt(request: BugRequest, gatherer: str) -> str:
-    return f"""
-Analyze the logs and error patterns.
-
-Prompt:
-{request.prompt}
-
-Logs:
-{_joined(request.logs)}
-
-Gathered context:
-{gatherer}
-""".strip()
-
-
 def _coder_prompt(
     request: BugRequest,
-    planner: str,
-    gatherer: str,
+    strategy: str,
+    context: str,
     sme_summary: str,
-    log_analysis: str,
 ) -> str:
     return f"""
 Propose the code-level remediation if justified.
@@ -262,29 +283,26 @@ Prompt:
 Repository:
 {request.repository}
 
-Plan:
-{planner}
+Strategy & Plan:
+{strategy}
 
-Gathered context:
-{gatherer}
+Gathered Context & Log Analysis:
+{context}
 
 SME guidance:
 {sme_summary}
-
-Log analysis:
-{log_analysis}
 """.strip()
 
 
-def _critic_prompt(request: BugRequest, coder: str) -> str:
+def _critic_step_prompt(request: BugRequest, step_name: str, content: str) -> str:
     return f"""
-Critique the proposed remediation.
+Critique the output of the '{step_name}' step.
 
 Prompt:
 {request.prompt}
 
-Proposed remediation:
-{coder}
+Step Output:
+{content}
 """.strip()
 
 

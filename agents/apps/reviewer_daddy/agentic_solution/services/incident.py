@@ -6,6 +6,7 @@ from typing import Any
 from agentic_solution.agents import IncidentAgentBundle, build_incident_agents
 from agentic_solution.config import AppConfig
 from agentic_solution.contracts import BugRequest, IncidentRequest, IncidentResponse, IssueContext
+from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_incident_severity, needs_bug_handoff
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
@@ -15,14 +16,30 @@ from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
 class IncidentDaddyRuntime:
     config: AppConfig
     tools: MCPToolBundle
-    agents: IncidentAgentBundle
     peers: PeerRuntimeClient
 
+    def _build_agents(self) -> IncidentAgentBundle:
+        """Build fresh agent instances per invocation — Strands Agents are stateful and not concurrency-safe."""
+        return build_incident_agents(
+            self.config,
+            tools={
+                "slack": self.tools.slack_tools, 
+                "jira": self.tools.jira_tools, 
+                "bitbucket": self.tools.bitbucket_tools,
+                "github": self.tools.github_tools
+            },
+        )
+
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agents = self._build_agents()
+        logger = ExecutionLogger.from_payload(payload, "incident_daddy")
         request = IncidentRequest.model_validate(payload)
+        started = logger.node_started("sme", "SME", "Query SME guidance", request.prompt)
         sme_summary, sme_diagnostics = self._query_sme(request)
+        logger.node_completed("sme", "SME", "SME guidance returned", started, sme_summary, sme_diagnostics)
 
         if self.config.dry_run:
+            started = logger.node_started("inc", "Incident Daddy", "Dry-run incident orchestration")
             summary = (
                 "Dry run only. incident_daddy would analyze the trigger, open Slack/Jira updates, "
                 "and decide whether to hand off to bug_daddy."
@@ -34,10 +51,15 @@ class IncidentDaddyRuntime:
                 handoff_to_bug=needs_bug_handoff(request.prompt, *request.logs),
                 diagnostics={**self.tools.diagnostics, "sme_agent": sme_diagnostics},
             )
+            logger.node_completed("inc", "Incident Daddy", "Dry-run incident orchestration complete", started, summary)
             return response.model_dump()
 
-        analysis = str(self.agents.analyzer(_analysis_prompt(request, sme_summary)))
-        orchestration = str(self.agents.orchestrator(_orchestrator_prompt(request, analysis, sme_summary)))
+        started = logger.node_started("iana", "Incident Analyzer", "Analyze incident trigger", request.prompt)
+        analysis = str(agents.analyzer(_analysis_prompt(request, sme_summary)))
+        logger.node_completed("iana", "Incident Analyzer", "Incident analysis complete", started, analysis)
+        started = logger.node_started("inc", "Incident Daddy", "Coordinate incident orchestration", analysis)
+        orchestration = str(agents.orchestrator(_orchestrator_prompt(request, analysis, sme_summary)))
+        logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration)
         severity = infer_incident_severity(f"{request.prompt}\n{analysis}\n{orchestration}")
         handoff = needs_bug_handoff(request.prompt, analysis, orchestration, *request.logs)
 
@@ -61,8 +83,17 @@ class IncidentDaddyRuntime:
             next_action = "Hand off to bug_daddy for remediation."
 
             if self.config.bug_daddy.enabled:
+                started = logger.node_started("bug", "Bug Daddy", "Hand off to bug_daddy", orchestration)
                 try:
                     bug_response = self.peers.invoke(self.config.bug_daddy, bug_request_payload)
+                    logger.node_completed(
+                        "bug",
+                        "Bug Daddy",
+                        "bug_daddy handoff complete",
+                        started,
+                        str(bug_response.get("summary", "")),
+                        bug_response,
+                    )
                     artifacts.append(
                         {
                             "type": "bug_handoff_response",
@@ -71,6 +102,7 @@ class IncidentDaddyRuntime:
                         }
                     )
                 except PeerInvocationError as exc:
+                    logger.node_failed("bug", "Bug Daddy", "bug_daddy handoff failed", started, exc)
                     diagnostics["bug_daddy"] = {"status": "error", "error": str(exc)}
             else:
                 diagnostics["bug_daddy"] = {"status": "disabled"}
@@ -128,14 +160,9 @@ class IncidentDaddyRuntime:
 def build_runtime(config: AppConfig | None = None) -> IncidentDaddyRuntime:
     cfg = config or AppConfig.from_env()
     tools = load_mcp_tools(cfg)
-    agents = build_incident_agents(
-        cfg,
-        tools={"slack": tools.slack_tools, "jira": tools.jira_tools, "bitbucket": tools.bitbucket_tools},
-    )
     return IncidentDaddyRuntime(
         config=cfg,
         tools=tools,
-        agents=agents,
         peers=PeerRuntimeClient(cfg),
     )
 

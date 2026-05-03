@@ -31,6 +31,8 @@ AGENTCORE_RUNTIME_ARN = os.getenv(
     "AGENTCORE_RUNTIME_ARN",
     "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs",
 )
+AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
+AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -98,6 +100,7 @@ class IssueAssignRequest(BaseModel):
 
 
 class AgentInvokeRequest(BaseModel):
+    session_id: str | None = None
     target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
     prompt: str | None = None
     question: str | None = None
@@ -108,6 +111,36 @@ class AgentInvokeRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     incident_summary: str | None = None
     repository: str | None = None
+
+
+class AgentExecutionCreateRequest(BaseModel):
+    issue_id: int | None = None
+    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] = "incident_daddy"
+    workflow_key: str | None = None
+    workflow_version: str = "v1"
+    input_payload: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentExecutionEventCreate(BaseModel):
+    event_type: str = Field(min_length=1, max_length=50)
+    node_id: str | None = Field(default=None, max_length=100)
+    node_name: str | None = Field(default=None, max_length=255)
+    agent_name: str | None = Field(default=None, max_length=100)
+    status: str | None = Field(default=None, max_length=30)
+    level: str | None = Field(default="info", max_length=20)
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+    reasoning_summary: str | None = None
+    input_summary: str | None = None
+    output_summary: str | None = None
+    result: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    tool_name: str | None = Field(default=None, max_length=100)
+    tool_input: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    tool_output: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    error_code: str | None = Field(default=None, max_length=100)
+    error_message: str | None = None
+    duration_ms: int | None = None
 
 
 class UserResponse(BaseModel):
@@ -142,6 +175,12 @@ def dt_to_str(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.replace(tzinfo=timezone.utc).isoformat()
     return str(value)
+
+
+def json_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value)
 
 
 def get_db():
@@ -370,8 +409,163 @@ def issue_tab(status: str) -> str:
     }.get(status, "backlog")
 
 
+def route_issue_agent(issue: dict[str, Any]) -> str:
+    frequency = int(issue.get("frequency") or 0)
+    text = " ".join(
+        str(issue.get(key) or "")
+        for key in ("issue_type", "source", "description", "stack_trace", "criticality")
+    ).lower()
+    incident_markers = (
+        "incident",
+        "outage",
+        "sev1",
+        "sev2",
+        "p0",
+        "p1",
+        "critical",
+        "all customers",
+        "partial outage",
+        "degraded",
+        "service down",
+    )
+    if frequency > 600 or any(marker in text for marker in incident_markers):
+        return "incident_daddy"
+    return "bug_daddy"
+
+
+def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
+    common_triggers = [
+        {"id": "cw", "label": "CloudWatch", "type": "trigger", "x": 175, "y": 10},
+        {"id": "sq", "label": "SonarQube", "type": "trigger", "x": 270, "y": 10},
+        {"id": "cve", "label": "CVE Monitor", "type": "trigger", "x": 365, "y": 10},
+        {"id": "jira", "label": "Jira Backlogs", "type": "trigger", "x": 460, "y": 10},
+        {"id": "slk", "label": "Slack Incident", "type": "trigger", "x": 555, "y": 10},
+        {"id": "esc", "label": "Escalation Agent", "type": "agent", "x": 270, "y": 90},
+        {"id": "db", "label": "Issues Tracker", "type": "store", "x": 460, "y": 90},
+        {"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240},
+    ]
+    incident_nodes = [
+        {"id": "iana", "label": "Incident Analyzer", "type": "agent", "x": 25, "y": 260},
+        {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 55, "y": 350},
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 25, "y": 440},
+        {"id": "slkb", "label": "Slack Bot", "type": "tool", "x": 110, "y": 440},
+    ]
+    bug_nodes = [
+        {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 420, "y": 220},
+        {"id": "ctx", "label": "Context Analyzer", "type": "agent", "x": 345, "y": 310},
+        {"id": "strat", "label": "Strategy Planner", "type": "agent", "x": 345, "y": 390},
+        {"id": "crit1", "label": "Critic Agent", "type": "agent", "x": 500, "y": 390},
+        {"id": "code", "label": "Coder Agent", "type": "agent", "x": 345, "y": 470},
+        {"id": "crit2", "label": "Critic Agent", "type": "agent", "x": 500, "y": 470},
+    ]
+    non_code_nodes = [
+        {"id": "jag", "label": "Jira Agent", "type": "tool", "x": 420, "y": 550},
+    ]
+    reviewer_nodes = [
+        {"id": "rev", "label": "Reviewer Daddy", "type": "agent", "x": 680, "y": 220},
+        {"id": "airev", "label": "AI Reviewer", "type": "agent", "x": 660, "y": 320},
+        {"id": "crit", "label": "Rework Required", "type": "agent", "x": 620, "y": 410},
+        {"id": "jrf", "label": "Jira Update", "type": "tool", "x": 720, "y": 410},
+        {"id": "jprf", "label": "PR & Update", "type": "output", "x": 680, "y": 490},
+    ]
+
+    if workflow_key == "reviewer_daddy":
+        nodes = [{"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240}] + reviewer_nodes
+        edges = [
+            {"from": "sme", "to": "rev"},
+            {"from": "rev", "to": "airev"},
+            {"from": "airev", "to": "crit"},
+            {"from": "airev", "to": "jrf"},
+            {"from": "airev", "to": "jprf"},
+            {"from": "jrf", "to": "jprf"},
+        ]
+    elif workflow_key == "sme_agent":
+        nodes = [
+            {"id": "sme", "label": "SME", "type": "agent", "x": 250, "y": 240},
+            {"id": "kb", "label": "Knowledge Base", "type": "store", "x": 250, "y": 330},
+            {"id": "refs", "label": "References", "type": "output", "x": 250, "y": 420},
+        ]
+        edges = [
+            {"from": "sme", "to": "kb"},
+            {"from": "kb", "to": "refs"},
+        ]
+    elif workflow_key == "bug_daddy":
+        nodes = common_triggers + bug_nodes + non_code_nodes + reviewer_nodes
+        edges = [
+            {"from": "cw", "to": "esc"},
+            {"from": "sq", "to": "esc"},
+            {"from": "cve", "to": "esc"},
+            {"from": "jira", "to": "esc"},
+            {"from": "slk", "to": "esc"},
+            {"from": "esc", "to": "db"},
+            {"from": "db", "to": "sme"},
+            {"from": "sme", "to": "bug"},
+            {"from": "bug", "to": "ctx"},
+            {"from": "ctx", "to": "strat"},
+            {"from": "strat", "to": "crit1"},
+            {"from": "crit1", "to": "code"},
+            {"from": "crit1", "to": "jag"},
+            {"from": "code", "to": "crit2"},
+            {"from": "crit2", "to": "rev"},
+            {"from": "rev", "to": "airev"},
+            {"from": "airev", "to": "crit"},
+            {"from": "airev", "to": "jrf"},
+            {"from": "airev", "to": "jprf"},
+            {"from": "jrf", "to": "jprf"},
+        ]
+    else:
+        nodes = common_triggers + incident_nodes + bug_nodes + reviewer_nodes
+        edges = [
+            {"from": "cw", "to": "esc"},
+            {"from": "sq", "to": "esc"},
+            {"from": "cve", "to": "esc"},
+            {"from": "jira", "to": "esc"},
+            {"from": "slk", "to": "esc"},
+            {"from": "esc", "to": "db"},
+            {"from": "db", "to": "sme"},
+            {"from": "sme", "to": "iana"},
+            {"from": "iana", "to": "inc"},
+            {"from": "iana", "to": "jag"},
+            {"from": "iana", "to": "slkb"},
+            {"from": "inc", "to": "bug"},
+            {"from": "sme", "to": "bug"},
+            {"from": "bug", "to": "ctx"},
+            {"from": "ctx", "to": "strat"},
+            {"from": "strat", "to": "crit1"},
+            {"from": "crit1", "to": "code"},
+            {"from": "code", "to": "crit2"},
+            {"from": "crit2", "to": "rev"},
+            {"from": "rev", "to": "airev"},
+            {"from": "airev", "to": "crit"},
+            {"from": "airev", "to": "jrf"},
+            {"from": "airev", "to": "jprf"},
+            {"from": "jrf", "to": "jprf"},
+        ]
+    return {"nodes": nodes, "edges": edges}
+
+
+def workflow_key_for_target(target: str | None) -> str:
+    normalized = (target or "incident_daddy").strip().lower().replace("-", "_")
+    if normalized in {"bug", "bug_daddy"}:
+        return "bug_daddy"
+    if normalized in {"reviewer", "reviewer_daddy"}:
+        return "reviewer_daddy"
+    if normalized in {"sme", "sme_agent"}:
+        return "sme_agent"
+    return "incident_daddy"
+
+
 def map_issue(row: dict[str, Any]) -> dict[str, Any]:
     frequency = int(row.get("frequency") or 0)
+    latest_session_id = row.get("latest_execution_session_id")
+    criticality = issue_criticality(frequency)
+    agent_target = route_issue_agent(
+        {
+            **row,
+            "frequency": frequency,
+            "criticality": criticality,
+        }
+    )
     return {
         "id": int(row["id"]),
         "jiraId": f"GH-{row['id']}",
@@ -385,7 +579,9 @@ def map_issue(row: dict[str, Any]) -> dict[str, Any]:
         "stack_trace": row.get("stack_trace"),
         "frequency": frequency,
         "freq": frequency,
-        "criticality": issue_criticality(frequency),
+        "criticality": criticality,
+        "agent_target": agent_target,
+        "workflow_key": workflow_key_for_target(agent_target),
         "status": row["status"],
         "tab": issue_tab(row["status"]),
         "owner": row.get("assigned_to") or "Unassigned",
@@ -397,6 +593,8 @@ def map_issue(row: dict[str, Any]) -> dict[str, Any]:
         "last_seen": dt_to_str(row.get("last_seen")),
         "created_at": dt_to_str(row.get("created_at")),
         "resolved_at": dt_to_str(row.get("resolved_at")),
+        "latest_execution_session_id": latest_session_id,
+        "execution_session_id": latest_session_id,
     }
 
 
@@ -404,11 +602,18 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, fingerprint, service_name, issue_type, source, description, stack_trace,
+            SELECT sel.id, fingerprint, service_name, issue_type, source, description, stack_trace,
                    frequency, first_seen, last_seen, status, assigned_to, resolution_pr,
-                   resolution_jira, created_at, resolved_at, entire_execution_logs, request_id
-            FROM service_exception_log
-            WHERE id = %s
+                   resolution_jira, created_at, resolved_at, entire_execution_logs, request_id,
+                   (
+                     SELECT aes.session_id
+                     FROM agent_execution_sessions aes
+                     WHERE aes.issue_id = sel.id
+                     ORDER BY aes.created_at DESC
+                     LIMIT 1
+                   ) AS latest_execution_session_id
+            FROM service_exception_log sel
+            WHERE sel.id = %s
             LIMIT 1
             """,
             (issue_id,),
@@ -441,9 +646,277 @@ def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
         return {"raw": raw_text}
 
 
+def ensure_execution_schema(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_workflow_definitions (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              workflow_key VARCHAR(100) NOT NULL,
+              workflow_version VARCHAR(50) NOT NULL,
+              name VARCHAR(255) NOT NULL,
+              description TEXT NULL,
+              graph_json JSON NOT NULL,
+              is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_workflow_version (workflow_key, workflow_version)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_execution_sessions (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              session_id CHAR(36) NOT NULL UNIQUE,
+              issue_id BIGINT NULL,
+              workflow_key VARCHAR(100) NOT NULL,
+              workflow_version VARCHAR(50) NOT NULL,
+              status VARCHAR(30) NOT NULL,
+              next_sequence_no BIGINT NOT NULL DEFAULT 0,
+              started_by VARCHAR(255) NULL,
+              started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              ended_at DATETIME NULL,
+              agent_target VARCHAR(100) NULL,
+              input_payload JSON NULL,
+              summary TEXT NULL,
+              error_message TEXT NULL,
+              metadata JSON NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_execution_sessions_issue (issue_id),
+              INDEX idx_execution_sessions_status (status),
+              INDEX idx_execution_sessions_created (created_at)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_execution_logs (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              session_id CHAR(36) NOT NULL,
+              sequence_no BIGINT NOT NULL,
+              event_type VARCHAR(50) NOT NULL,
+              node_id VARCHAR(100) NULL,
+              node_name VARCHAR(255) NULL,
+              agent_name VARCHAR(100) NULL,
+              status VARCHAR(30) NULL,
+              level VARCHAR(20) NULL,
+              title VARCHAR(255) NULL,
+              description TEXT NULL,
+              reasoning_summary TEXT NULL,
+              input_summary TEXT NULL,
+              output_summary TEXT NULL,
+              result JSON NULL,
+              tool_name VARCHAR(100) NULL,
+              tool_input JSON NULL,
+              tool_output JSON NULL,
+              error_code VARCHAR(100) NULL,
+              error_message TEXT NULL,
+              duration_ms INT NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_session_sequence (session_id, sequence_no),
+              INDEX idx_execution_logs_session_id (session_id, id),
+              INDEX idx_execution_logs_session_node (session_id, node_id),
+              INDEX idx_execution_logs_session_created (session_id, created_at),
+              CONSTRAINT fk_execution_logs_session
+                FOREIGN KEY (session_id) REFERENCES agent_execution_sessions(session_id)
+                ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute("SHOW COLUMNS FROM agent_execution_sessions LIKE 'next_sequence_no'")
+        if not cur.fetchone():
+            cur.execute(
+                "ALTER TABLE agent_execution_sessions ADD COLUMN next_sequence_no BIGINT NOT NULL DEFAULT 0 AFTER status"
+            )
+    seed_workflow_definitions(conn)
+
+
+def seed_workflow_definitions(conn):
+    workflows = {
+        "incident_daddy": "Incident Daddy Flow",
+        "bug_daddy": "Bug Daddy Flow",
+        "reviewer_daddy": "Reviewer Daddy Flow",
+        "sme_agent": "SME Agent Flow",
+    }
+    with conn.cursor() as cur:
+        for key, name in workflows.items():
+            graph = default_workflow_graph(key)
+            cur.execute(
+                """
+                INSERT INTO agent_workflow_definitions
+                  (workflow_key, workflow_version, name, description, graph_json, is_active)
+                VALUES (%s, 'v1', %s, %s, %s, TRUE)
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  description = VALUES(description),
+                  graph_json = VALUES(graph_json),
+                  is_active = VALUES(is_active)
+                """,
+                (
+                    key,
+                    name,
+                    f"Default {name} graph used by the platform execution view.",
+                    json.dumps(graph),
+                ),
+            )
+
+
+def create_execution_session(
+    conn,
+    *,
+    issue_id: int | None,
+    workflow_key: str,
+    workflow_version: str,
+    agent_target: str | None,
+    started_by: str | None,
+    input_payload: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    status_value: str = "queued",
+) -> str:
+    session_id = str(uuid.uuid4())
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO agent_execution_sessions
+              (session_id, issue_id, workflow_key, workflow_version, status, started_by,
+               agent_target, input_payload, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                session_id,
+                issue_id,
+                workflow_key,
+                workflow_version,
+                status_value,
+                started_by,
+                agent_target,
+                json_or_none(input_payload),
+                json_or_none(metadata),
+            ),
+        )
+    return session_id
+
+
+def append_execution_event(conn, session_id: str, payload: AgentExecutionEventCreate | dict[str, Any]) -> dict[str, Any]:
+    event = payload if isinstance(payload, AgentExecutionEventCreate) else AgentExecutionEventCreate.model_validate(payload)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE agent_execution_sessions
+            SET next_sequence_no = LAST_INSERT_ID(next_sequence_no + 1), updated_at = %s
+            WHERE session_id = %s
+            """,
+            (utc_now().strftime("%Y-%m-%d %H:%M:%S"), session_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        cur.execute("SELECT LAST_INSERT_ID() AS sequence_no")
+        sequence_no = int(cur.fetchone()["sequence_no"])
+        cur.execute(
+            """
+            INSERT INTO agent_execution_logs (
+              session_id, sequence_no, event_type, node_id, node_name, agent_name, status, level,
+              title, description, reasoning_summary, input_summary, output_summary, result,
+              tool_name, tool_input, tool_output, error_code, error_message, duration_ms
+            )
+            VALUES (
+              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                session_id,
+                sequence_no,
+                event.event_type,
+                event.node_id,
+                event.node_name,
+                event.agent_name,
+                event.status,
+                event.level,
+                event.title,
+                event.description,
+                event.reasoning_summary,
+                event.input_summary,
+                event.output_summary,
+                json_or_none(event.result),
+                event.tool_name,
+                json_or_none(event.tool_input),
+                json_or_none(event.tool_output),
+                event.error_code,
+                event.error_message,
+                event.duration_ms,
+            ),
+        )
+        event_id = cur.lastrowid
+    return {
+        "id": event_id,
+        "session_id": session_id,
+        "sequence_no": sequence_no,
+        **event.model_dump(),
+    }
+
+
+def update_execution_session(
+    conn,
+    session_id: str,
+    *,
+    status_value: str,
+    summary: str | None = None,
+    error_message: str | None = None,
+    ended: bool = False,
+):
+    fields = ["status = %s", "updated_at = %s"]
+    values: list[Any] = [status_value, utc_now().strftime("%Y-%m-%d %H:%M:%S")]
+    if summary is not None:
+        fields.append("summary = %s")
+        values.append(summary)
+    if error_message is not None:
+        fields.append("error_message = %s")
+        values.append(error_message)
+    if ended:
+        fields.append("ended_at = %s")
+        values.append(utc_now().strftime("%Y-%m-%d %H:%M:%S"))
+    with conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE agent_execution_sessions SET {', '.join(fields)} WHERE session_id = %s",
+            (*values, session_id),
+        )
+
+
+def map_execution_session(row: dict[str, Any]) -> dict[str, Any]:
+    mapped = dict(row)
+    for key in ("started_at", "ended_at", "created_at", "updated_at"):
+        mapped[key] = dt_to_str(mapped.get(key))
+    for key in ("input_payload", "metadata"):
+        if isinstance(mapped.get(key), str):
+            try:
+                mapped[key] = json.loads(mapped[key])
+            except json.JSONDecodeError:
+                pass
+    return mapped
+
+
+def map_execution_event(row: dict[str, Any]) -> dict[str, Any]:
+    mapped = dict(row)
+    mapped["created_at"] = dt_to_str(mapped.get("created_at"))
+    for key in ("result", "tool_input", "tool_output"):
+        if isinstance(mapped.get(key), str):
+            try:
+                mapped[key] = json.loads(mapped[key])
+            except json.JSONDecodeError:
+                pass
+    return mapped
+
+
+def verify_execution_log_secret(x_agent_execution_secret: str | None = Header(default=None)):
+    if AGENT_EXECUTION_LOG_SECRET and x_agent_execution_secret != AGENT_EXECUTION_LOG_SECRET:
+        raise HTTPException(status_code=401, detail="Invalid execution log secret")
+
+
 def ensure_schema_and_seed_data():
     conn = get_db()
     try:
+        ensure_execution_schema(conn)
         with conn.cursor() as cur:
             cur.execute("SHOW COLUMNS FROM users LIKE 'username'")
             if not cur.fetchone():
@@ -941,10 +1414,17 @@ def dashboard_escalations(limit: int = 10, user: dict[str, Any] = Depends(requir
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, fingerprint, service_name, issue_type, source, description, stack_trace,
+                SELECT sel.id, fingerprint, service_name, issue_type, source, description, stack_trace,
                        frequency, first_seen, last_seen, status, assigned_to, resolution_pr,
-                       resolution_jira, created_at, resolved_at, entire_execution_logs, request_id
-                FROM service_exception_log
+                       resolution_jira, created_at, resolved_at, entire_execution_logs, request_id,
+                       (
+                         SELECT aes.session_id
+                         FROM agent_execution_sessions aes
+                         WHERE aes.issue_id = sel.id
+                         ORDER BY aes.created_at DESC
+                         LIMIT 1
+                       ) AS latest_execution_session_id
+                FROM service_exception_log sel
                 WHERE status IN ('open', 'in_progress') AND frequency > 400
                 ORDER BY frequency DESC, last_seen DESC
                 LIMIT %s
@@ -1044,10 +1524,17 @@ def list_issues(
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT id, fingerprint, service_name, issue_type, source, description, stack_trace,
+                SELECT sel.id, fingerprint, service_name, issue_type, source, description, stack_trace,
                        frequency, first_seen, last_seen, status, assigned_to, resolution_pr,
-                       resolution_jira, created_at, resolved_at, entire_execution_logs, request_id
-                FROM service_exception_log
+                       resolution_jira, created_at, resolved_at, entire_execution_logs, request_id,
+                       (
+                         SELECT aes.session_id
+                         FROM agent_execution_sessions aes
+                         WHERE aes.issue_id = sel.id
+                         ORDER BY aes.created_at DESC
+                         LIMIT 1
+                       ) AS latest_execution_session_id
+                FROM service_exception_log sel
                 WHERE {' AND '.join(where_parts)}
                 ORDER BY {sort_col} {direction}
                 LIMIT %s
@@ -1173,6 +1660,212 @@ def resolve_issue(issue_id: int, payload: IssueUpdateRequest, actor: dict[str, A
         conn.close()
 
 
+@app.post("/agent/executions")
+def create_agent_execution(payload: AgentExecutionCreateRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
+    conn = get_db()
+    try:
+        if payload.issue_id is not None and not fetch_issue_by_id(conn, payload.issue_id):
+            raise HTTPException(status_code=404, detail="Issue not found")
+        workflow_key = payload.workflow_key or workflow_key_for_target(payload.target)
+        session_id = create_execution_session(
+            conn,
+            issue_id=payload.issue_id,
+            workflow_key=workflow_key,
+            workflow_version=payload.workflow_version,
+            agent_target=payload.target,
+            started_by=actor["username"],
+            input_payload=payload.input_payload,
+            metadata=payload.metadata,
+            status_value="queued",
+        )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "session.created",
+                "status": "queued",
+                "level": "info",
+                "title": "Execution session created",
+                "description": f"Workflow {workflow_key} is queued.",
+                "agent_name": payload.target,
+            },
+        )
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
+            return map_execution_session(cur.fetchone())
+    finally:
+        conn.close()
+
+
+@app.get("/agent/executions")
+def list_agent_executions(
+    issue_id: int | None = None,
+    limit: int = 50,
+    user: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        limit = max(1, min(limit, 200))
+        where = []
+        params: list[Any] = []
+        if issue_id is not None:
+            where.append("issue_id = %s")
+            params.append(issue_id)
+        where_sql = "WHERE " + " AND ".join(where) if where else ""
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT *
+                FROM agent_execution_sessions
+                {where_sql}
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (*params, limit),
+            )
+            return {"items": [map_execution_session(row) for row in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
+@app.get("/agent/executions/{session_id}")
+def get_agent_execution(session_id: str, user: dict[str, Any] = Depends(require_permission("issues.read"))):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        return map_execution_session(row)
+    finally:
+        conn.close()
+
+
+@app.get("/agent/executions/{session_id}/events")
+def list_agent_execution_events(
+    session_id: str,
+    after_id: int = 0,
+    limit: int = 500,
+    user: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        limit = max(1, min(limit, 1000))
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Execution session not found")
+            cur.execute(
+                """
+                SELECT *
+                FROM agent_execution_logs
+                WHERE session_id = %s AND id > %s
+                ORDER BY id ASC
+                LIMIT %s
+                """,
+                (session_id, after_id, limit),
+            )
+            return {"items": [map_execution_event(row) for row in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
+@app.post("/agent/executions/{session_id}/events")
+def append_agent_execution_event(
+    session_id: str,
+    payload: AgentExecutionEventCreate,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    conn = get_db()
+    try:
+        return append_execution_event(conn, session_id, payload)
+    finally:
+        conn.close()
+
+
+@app.get("/agent/workflows/{workflow_key}")
+def get_agent_workflow(
+    workflow_key: str,
+    workflow_version: str | None = None,
+    user: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            if workflow_version:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM agent_workflow_definitions
+                    WHERE workflow_key = %s AND workflow_version = %s
+                    LIMIT 1
+                    """,
+                    (workflow_key, workflow_version),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM agent_workflow_definitions
+                    WHERE workflow_key = %s AND is_active = TRUE
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (workflow_key,),
+                )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Workflow definition not found")
+        if isinstance(row.get("graph_json"), str):
+            row["graph_json"] = json.loads(row["graph_json"])
+        row["created_at"] = dt_to_str(row["created_at"])
+        return row
+    finally:
+        conn.close()
+
+
+@app.get("/agent/executions/{session_id}/graph")
+def get_agent_execution_graph(session_id: str, user: dict[str, Any] = Depends(require_permission("issues.read"))):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
+            session = cur.fetchone()
+            if not session:
+                raise HTTPException(status_code=404, detail="Execution session not found")
+            cur.execute(
+                """
+                SELECT *
+                FROM agent_workflow_definitions
+                WHERE workflow_key = %s AND workflow_version = %s
+                LIMIT 1
+                """,
+                (session["workflow_key"], session["workflow_version"]),
+            )
+            workflow = cur.fetchone()
+            cur.execute(
+                """
+                SELECT *
+                FROM agent_execution_logs
+                WHERE session_id = %s
+                ORDER BY id ASC
+                LIMIT 1000
+                """,
+                (session_id,),
+            )
+            events = cur.fetchall()
+        if workflow and isinstance(workflow.get("graph_json"), str):
+            workflow["graph_json"] = json.loads(workflow["graph_json"])
+        return {
+            "session": map_execution_session(session),
+            "workflow": workflow,
+            "events": [map_execution_event(row) for row in events],
+        }
+    finally:
+        conn.close()
+
+
 @app.post("/agent/invoke")
 def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
     issue_context: dict[str, Any] = {}
@@ -1202,29 +1895,173 @@ def agent_invoke(payload: AgentInvokeRequest, actor: dict[str, Any] = Depends(re
         finally:
             conn.close()
 
+    target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
+    workflow_key = workflow_key_for_target(target)
+    metadata = {
+        **payload.metadata,
+        "requested_by": actor["username"],
+        "requester_role": actor["role"],
+        "issue_context": issue_context,
+        "agent_target": target,
+        "workflow_key": workflow_key,
+        "routing_source": "explicit_target" if payload.target else "backend_policy",
+    }
+    session_id = payload.session_id
+
     runtime_payload = {
-        "target": payload.target or "incident_daddy",
+        "target": target,
         "prompt": payload.prompt or payload.incident_summary or "Investigate issue and provide next actions.",
         "question": payload.question,
         "source": payload.source,
         "service_name": payload.service_name,
         "logs": payload.logs,
-        "metadata": {
-            **payload.metadata,
-            "requested_by": actor["username"],
-            "requester_role": actor["role"],
-            "issue_context": issue_context,
-        },
+        "metadata": metadata,
         "incident_summary": payload.incident_summary,
         "repository": payload.repository,
     }
     runtime_payload = {k: v for k, v in runtime_payload.items() if v is not None}
+
+    conn = get_db()
+    try:
+        if not session_id:
+            session_id = create_execution_session(
+                conn,
+                issue_id=payload.issue_id,
+                workflow_key=workflow_key,
+                workflow_version="v1",
+                agent_target=target,
+                started_by=actor["username"],
+                input_payload=runtime_payload,
+                metadata=metadata,
+                status_value="queued",
+            )
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.created",
+                    "status": "queued",
+                    "level": "info",
+                    "title": "Execution session created",
+                    "description": f"Workflow {workflow_key} was created for issue {payload.issue_id}.",
+                    "agent_name": target,
+                },
+            )
+
+        runtime_payload["session_id"] = session_id
+        runtime_payload["metadata"] = {
+            **runtime_payload.get("metadata", {}),
+            "execution_session_id": session_id,
+        }
+        if AGENT_EXECUTION_CALLBACK_URL:
+            runtime_payload["execution_log_endpoint"] = AGENT_EXECUTION_CALLBACK_URL.rstrip("/")
+        if AGENT_EXECUTION_LOG_SECRET:
+            runtime_payload["execution_log_secret"] = AGENT_EXECUTION_LOG_SECRET
+
+        update_execution_session(conn, session_id, status_value="running")
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "session.started",
+                "status": "running",
+                "level": "info",
+                "title": "Agent orchestration started",
+                "description": f"Invoking {target} through AgentCore.",
+                "agent_name": target,
+                "result": {"runtime_arn": AGENTCORE_RUNTIME_ARN},
+            },
+        )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "node.started",
+                "node_id": "esc",
+                "node_name": "AgentCore Runtime",
+                "agent_name": target,
+                "status": "running",
+                "level": "info",
+                "title": "AgentCore invocation started",
+                "input_summary": runtime_payload.get("prompt"),
+            },
+        )
+    finally:
+        conn.close()
+
     try:
         result = invoke_agentcore(runtime_payload)
     except Exception as exc:
+        conn = get_db()
+        try:
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "node.failed",
+                    "node_id": "esc",
+                    "node_name": "AgentCore Runtime",
+                    "agent_name": target,
+                    "status": "failed",
+                    "level": "error",
+                    "title": "AgentCore invocation failed",
+                    "error_message": str(exc),
+                },
+            )
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.failed",
+                    "status": "failed",
+                    "level": "error",
+                    "title": "Execution failed",
+                    "error_message": str(exc),
+                },
+            )
+            update_execution_session(conn, session_id, status_value="failed", error_message=str(exc), ended=True)
+        finally:
+            conn.close()
         raise HTTPException(status_code=502, detail=f"AgentCore invocation failed: {exc}") from exc
+
+    summary = str(result.get("summary") or result.get("message") or result.get("raw") or "")[:4000]
+    conn = get_db()
+    try:
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "node.completed",
+                "node_id": "esc",
+                "node_name": "AgentCore Runtime",
+                "agent_name": target,
+                "status": "succeeded",
+                "level": "info",
+                "title": "AgentCore invocation completed",
+                "output_summary": summary,
+                "result": result,
+            },
+        )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "session.completed",
+                "status": "succeeded",
+                "level": "info",
+                "title": "Execution completed",
+                "output_summary": summary,
+            },
+        )
+        update_execution_session(conn, session_id, status_value="succeeded", summary=summary, ended=True)
+    finally:
+        conn.close()
+
     return {
+        "session_id": session_id,
         "runtime_arn": AGENTCORE_RUNTIME_ARN,
+        "events_url": f"/agent/executions/{session_id}/events",
+        "graph_url": f"/agent/executions/{session_id}/graph",
         "request": runtime_payload,
         "response": result,
     }

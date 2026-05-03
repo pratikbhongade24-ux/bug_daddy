@@ -53,7 +53,7 @@ cp .env.example .env
 
 Defaults:
 
-- model: `apac.amazon.nova-lite-v1:0`
+- model: `openai.gpt-oss-120b-1:0`
 - region resolution order: `AWS_REGION` -> `AWS_DEFAULT_REGION` -> local boto3/AWS CLI session -> `us-west-2`
 
 Populate `.env` with:

@@ -8,16 +8,15 @@ from strands.models import BedrockModel
 
 from agentic_solution.config import AppConfig
 from agentic_solution.prompts import (
-    BUG_ORCHESTRATOR_PROMPT,
+    STRATEGY_PLANNER_PROMPT,
+    CONTEXT_ANALYZER_PROMPT,
     CODER_PROMPT,
     CRITIC_PROMPT,
-    GATHERER_PROMPT,
     INCIDENT_ANALYSER_PROMPT,
     INCIDENT_ORCHESTRATOR_PROMPT,
-    LOG_ANALYSER_PROMPT,
-    PLANNER_PROMPT,
     REVIEWER_PROMPT,
     SME_AGENT_PROMPT,
+    CLASSIFIER_PROMPT,
 )
 
 
@@ -29,10 +28,8 @@ class IncidentAgentBundle:
 
 @dataclass(slots=True)
 class BugAgentBundle:
-    orchestrator: Agent
-    planner: Agent
-    gatherer: Agent
-    log_analyser: Agent
+    strategy_planner: Agent
+    context_analyzer: Agent
     coder: Agent
     critic: Agent
 
@@ -61,32 +58,41 @@ def build_incident_agents(config: AppConfig, tools: dict[str, list[Any]]) -> Inc
 
 def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgentBundle:
     model = _build_model(config)
+    all_repo_tools = tools["bitbucket"] + tools.get("github", [])
     return BugAgentBundle(
-        orchestrator=Agent(
+        strategy_planner=Agent(
             model=model,
-            system_prompt=BUG_ORCHESTRATOR_PROMPT,
-            tools=tools["jira"] + tools["bitbucket"],
+            system_prompt=STRATEGY_PLANNER_PROMPT,
+            tools=tools["jira"] + all_repo_tools,
         ),
-        planner=Agent(model=model, system_prompt=PLANNER_PROMPT, tools=[]),
-        gatherer=Agent(
+        context_analyzer=Agent(
             model=model,
-            system_prompt=GATHERER_PROMPT,
-            tools=tools["jira"] + tools["bitbucket"],
+            system_prompt=CONTEXT_ANALYZER_PROMPT,
+            tools=tools["jira"] + all_repo_tools,
         ),
-        log_analyser=Agent(model=model, system_prompt=LOG_ANALYSER_PROMPT, tools=[]),
-        coder=Agent(model=model, system_prompt=CODER_PROMPT, tools=tools["bitbucket"]),
+        coder=Agent(model=model, system_prompt=CODER_PROMPT, tools=all_repo_tools),
         critic=Agent(model=model, system_prompt=CRITIC_PROMPT, tools=[]),
     )
 
 
 def build_reviewer_agents(config: AppConfig, tools: dict[str, list[Any]]) -> ReviewerAgentBundle:
     model = _build_model(config)
+    all_repo_tools = tools["bitbucket"] + tools.get("github", [])
     return ReviewerAgentBundle(
         reviewer=Agent(
             model=model,
             system_prompt=REVIEWER_PROMPT,
-            tools=tools["jira"] + tools["bitbucket"],
+            tools=tools["jira"] + all_repo_tools,
         )
+    )
+
+
+def build_classifier_agent(config: AppConfig, tools: dict[str, list[Any]]) -> Agent:
+    model = _build_model(config)
+    return Agent(
+        model=model,
+        system_prompt=CLASSIFIER_PROMPT,
+        tools=tools["jira"],
     )
 
 

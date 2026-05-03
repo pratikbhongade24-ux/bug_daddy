@@ -58,10 +58,9 @@ class BugRequest(IssueContext):
 
 class ReviewRequest(BaseModel):
     issue: IssueContext
-    plan: str
-    context_summary: str
+    strategy_plan: str
+    context_analysis: str
     sme_guidance: str
-    log_analysis: str
     fix_proposal: str
     critique: str
     metadata: dict[str, Any] = Field(default_factory=dict)

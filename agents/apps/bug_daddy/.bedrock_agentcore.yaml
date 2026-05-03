@@ -1,0 +1,62 @@
+default_agent: bug_daddy
+agents:
+  bug_daddy:
+    name: bug_daddy
+    language: python
+    node_version: '20'
+    entrypoint: main.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: none
+    source_path: /Users/danishgada/vscode/personal/bug_daddy/agents/apps/bug_daddy
+    aws:
+      execution_role: arn:aws:iam::105028893980:role/AmazonBedrockAgentCoreSDKRuntime-ap-south-1-9bda9d5386
+      execution_role_auto_create: false
+      account: '105028893980'
+      region: ap-south-1
+      ecr_repository: 105028893980.dkr.ecr.ap-south-1.amazonaws.com/bug-daddy-agentcore
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: bug_daddy-IV6831D6Rs
+      agent_arn: arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-bug_daddy-builder
+      execution_role: arn:aws:iam::105028893980:role/AmazonBedrockAgentCoreSDKCodeBuild-ap-south-1-9bda9d5386
+      source_bucket: bedrock-agentcore-codebuild-sources-105028893980-ap-south-1
+    memory:
+      mode: STM_ONLY
+      memory_id: bug_daddy_mem-hb8BxtG0NI
+      memory_arn: arn:aws:bedrock-agentcore:ap-south-1:105028893980:memory/bug_daddy_mem-hb8BxtG0NI
+      memory_name: bug_daddy_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: true
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false

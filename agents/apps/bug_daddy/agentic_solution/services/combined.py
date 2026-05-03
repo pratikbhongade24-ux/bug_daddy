@@ -5,7 +5,7 @@ from typing import Any
 
 from agentic_solution.config import AppConfig, PeerAgentConfig
 from agentic_solution.peer import PeerInvocationError
-from agentic_solution.services import bug, incident, reviewer, sme
+from agentic_solution.services import bug, incident, reviewer, sme, classifier
 
 
 @dataclass(slots=True)
@@ -26,6 +26,7 @@ class CombinedBugDaddyRuntime:
     bug_daddy: bug.BugDaddyRuntime
     reviewer_daddy: reviewer.ReviewerDaddyRuntime
     sme_agent: sme.SMEAgentRuntime
+    classifier: classifier.ClassifierRuntime
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         target = _target_from_payload(payload)
@@ -36,6 +37,8 @@ class CombinedBugDaddyRuntime:
             return self.reviewer_daddy.handle(payload)
         if target == "bug_daddy":
             return self.bug_daddy.handle(payload)
+        if target == "classifier":
+            return self.classifier.handle(payload)
         return self.incident_daddy.handle(payload)
 
 
@@ -47,6 +50,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
     reviewer_runtime = reviewer.build_runtime(cfg)
     bug_runtime = bug.build_runtime(cfg)
     incident_runtime = incident.build_runtime(cfg)
+    classifier_runtime = classifier.build_runtime(cfg)
 
     local_peers = LocalPeerRuntimeClient(
         {
@@ -65,6 +69,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
         bug_daddy=bug_runtime,
         reviewer_daddy=reviewer_runtime,
         sme_agent=sme_runtime,
+        classifier=classifier_runtime,
     )
 
 
@@ -97,4 +102,6 @@ def _target_from_payload(payload: dict[str, Any]) -> str:
         return "reviewer_daddy"
     if "incident_summary" in payload or "incident_artifacts" in payload:
         return "bug_daddy"
+    if "fingerprint" in payload or "stack_trace" in payload:
+        return "classifier"
     return "incident_daddy"

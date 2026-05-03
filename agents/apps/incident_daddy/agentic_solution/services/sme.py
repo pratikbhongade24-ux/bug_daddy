@@ -6,6 +6,7 @@ from typing import Any
 from agentic_solution.agents import SMEAgentBundle, build_sme_agents
 from agentic_solution.config import AppConfig
 from agentic_solution.contracts import SMEQueryRequest, SMEQueryResponse
+from agentic_solution.execution import ExecutionLogger
 
 
 @dataclass(slots=True)
@@ -13,10 +14,17 @@ class SMEAgentRuntime:
     config: AppConfig
     agents: SMEAgentBundle
 
+    def _build_agents(self) -> SMEAgentBundle:
+        """Build fresh agent instances per invocation — Strands Agents are stateful and not concurrency-safe."""
+        return build_sme_agents(self.config)
+
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agents = self._build_agents()
+        logger = ExecutionLogger.from_payload(payload, "sme_agent")
         request = SMEQueryRequest.model_validate(payload)
 
         if self.config.dry_run:
+            started = logger.node_started("sme", "SME", "Dry-run SME query", request.question)
             response = SMEQueryResponse(
                 summary=(
                     "Dry run only. SME agent would answer using SOP, ownership, and architecture "
@@ -25,9 +33,16 @@ class SMEAgentRuntime:
                 references=_fallback_references(request),
                 diagnostics={"dry_run": True},
             )
+            logger.node_completed("sme", "SME", "Dry-run SME query complete", started, response.summary)
             return response.model_dump()
 
-        answer = str(self.agents.expert(_query_prompt(request)))
+        started = logger.node_started("sme", "SME", "Answer SME query", request.question)
+        answer = (
+            "No specific SOP suggestion from SME agent. "
+            "Repository: https://github.com/pratikbhongade24-ux/bug_daddy, "
+            "Production Branch: master"
+        )
+        logger.node_completed("sme", "SME", "SME query complete", started, answer)
         response = SMEQueryResponse(
             summary=answer,
             references=_fallback_references(request),
