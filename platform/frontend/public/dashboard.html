@@ -629,29 +629,6 @@ td { padding: .6rem 1rem; font-size: .76rem; vertical-align: middle; }
     <span class="ni-badge g">ADM</span>
   </div>
 
-  <div class="sb-sec" style="margin-top:.5rem">Filters</div>
-  <div class="sb-filters">
-    <div class="sf-grp">
-      <label class="sf-lbl" for="gl-search">Search</label>
-      <input class="sb-inp" id="gl-search" type="search" placeholder="ID or description…" oninput="applyFilters()" autocomplete="off"/>
-    </div>
-    <div class="sf-grp">
-      <label class="sf-lbl" for="gl-svc">Service</label>
-      <select class="sb-sel" id="gl-svc" onchange="applyFilters()" aria-label="Filter by service"><option value="">All Services</option></select>
-    </div>
-    <div class="sf-grp">
-      <label class="sf-lbl" for="gl-crit">Criticality</label>
-      <select class="sb-sel" id="gl-crit" onchange="applyFilters()">
-        <option value="">All</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
-      </select>
-    </div>
-    <div class="sf-grp">
-      <label class="sf-lbl" for="gl-orig">Origin</label>
-      <select class="sb-sel" id="gl-orig" onchange="applyFilters()">
-        <option value="">All Origins</option><option>CloudWatch</option><option>CVE</option><option>SonarQube</option><option>JIRA</option>
-      </select>
-    </div>
-  </div>
 
   <div class="sb-foot">
     <div class="sb-health-row"><span class="sb-health-lbl">Pipeline</span><span class="sb-health-val" style="color:var(--c1)">97%</span></div>
@@ -1138,8 +1115,9 @@ function buildFeed(){
 // ═══════════════════════════════════════════
 function populateDropdowns(){
   const svcs=[...new Set(ISSUES.map(i=>i.service))].sort();
-  ['gl-svc','tbl-svc'].forEach(id=>{
+  ['tbl-svc'].forEach(id=>{
     const sel=document.getElementById(id);
+    if(!sel) return;
     svcs.forEach(s=>{
       const o=document.createElement('option');
       o.value=s; o.textContent=SVC_SHORT[s]||s; sel.appendChild(o);
@@ -1154,17 +1132,13 @@ function getFiltered(){
   const q=(document.getElementById('tbl-srch')||{value:''}).value.toLowerCase();
   const svc=(document.getElementById('tbl-svc')||{value:''}).value;
   const crit=(document.getElementById('tbl-crit')||{value:''}).value;
-  const gs=document.getElementById('gl-search').value.toLowerCase();
-  const gsvc=document.getElementById('gl-svc').value;
-  const gcrit=document.getElementById('gl-crit').value;
+  const orig=(document.getElementById('tbl-orig')||{value:''}).value;
   return ISSUES.filter(i=>{
     const mQ=!q||(i.jiraId.toLowerCase().includes(q)||i.err.toLowerCase().includes(q)||i.shortSvc.toLowerCase().includes(q));
     const mS=!svc||i.service===svc;
     const mC=!crit||i.criticality===crit;
-    const mGQ=!gs||(i.jiraId.toLowerCase().includes(gs)||i.err.toLowerCase().includes(gs));
-    const mGS=!gsvc||i.service===gsvc;
-    const mGC=!gcrit||i.criticality===gcrit;
-    return mQ&&mS&&mC&&mGQ&&mGS&&mGC&&i.tab===currentTab;
+    const mO=!orig||i.origin===orig;
+    return mQ&&mS&&mC&&mO&&i.tab===currentTab;
   });
 }
 
@@ -1260,7 +1234,7 @@ async function prioritize(e,id){
       
       // Open execution graph immediately using the new session ID
       if (sid) {
-        openExecGraph(null, id, false);
+        openExecGraph(null, id, false, sid);
       }
     }
 
@@ -1406,7 +1380,7 @@ let currentExecutionSessionId=null;
 let lastExecutionEventId=0;
 let currentExecIssueId=null;
 
-async function openExecGraph(e,id,isSummary){
+async function openExecGraph(e,id,isSummary,explicitSessionId){
   if(e)e.stopPropagation();
   currentExecIssueId=id;
   const issue=ISSUES.find(i=>i.id===id);
@@ -1425,7 +1399,7 @@ async function openExecGraph(e,id,isSummary){
   currentStepGroup=null;
   canvasZoom=0.85; panX=0; panY=0;
   applyTransform();
-  const sessionId=issue.latest_execution_session_id||issue.execution_session_id;
+  const sessionId=explicitSessionId || issue.latest_execution_session_id || issue.execution_session_id;
   const useBackendEvents=Boolean(sessionId);
   const graph=await loadWorkflowGraph(issue,sessionId,workflowKey);
   drawGraph(issue,isInc,isSummary,useBackendEvents,graph);
