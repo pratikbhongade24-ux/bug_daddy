@@ -32,28 +32,74 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
-    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "db": {
+            "host": os.environ.get("DB_HOST"),
+            "port": os.environ.get("DB_PORT"),
+            "name": os.environ.get("DB_NAME"),
+            "user": os.environ.get("DB_USER")
+        },
+        "payload": payload
+    }
     if extra:
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
+def error_response(context, request_id, operation, payload, error_msg):
+    """Return a structured 500 error payload.
+
+    The shape mirrors the successful ``response`` payload but includes an
+    ``error`` block and a ``statusCode`` of 500.  This prevents the Lambda from
+    exiting with an unhandled exception, which would otherwise trigger retries
+    and obscure the root cause in logs.
+    """
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "error": {
+            "type": "RuntimeError",
+            "message": str(error_msg)
+        },
+        "payload": payload
+    }
+    return {"statusCode": 500, "body": json.dumps(base)}
+
+
 def load_ticket(payload):
-    ticket = {"ticketId": payload.get("ticketId", "SUP-001"), "priority": payload.get("priority", "medium"), "assignedQueue": payload.get("assignedQueue", "loan-ops")}
+    ticket = {
+        "ticketId": payload.get("ticketId", "SUP-001"),
+        "priority": payload.get("priority", "medium"),
+        "assignedQueue": payload.get("assignedQueue", "loan-ops")
+    }
     log("load_ticket", ticket)
     return ticket
 
 
 def create_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
-    return response(context, request_id, "createTicket", payload, {"ticket": {"ticketId": ticket["ticketId"], "priority": ticket["priority"], "status": "OPEN"}, "message": "Support ticket created"})
+    return response(context, request_id, "createTicket", payload, {
+        "ticket": {"ticketId": ticket["ticketId"], "priority": ticket["priority"], "status": "OPEN"},
+        "message": "Support ticket created"
+    })
 
 
 def assign_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
     if payload.get("simulateBug") == "queue_failure":
         raise RuntimeError(f"queue assignment failed for {ticket['assignedQueue']}")
-    return response(context, request_id, "assignTicket", payload, {"assignment": {"ticketId": ticket["ticketId"], "assignedQueue": ticket["assignedQueue"], "status": "ASSIGNED"}, "message": "Support ticket assigned"})
+    return response(context, request_id, "assignTicket", payload, {
+        "assignment": {"ticketId": ticket["ticketId"], "assignedQueue": ticket["assignedQueue"], "status": "ASSIGNED"},
+        "message": "Support ticket assigned"
+    })
 
 
 def update_ticket(payload, context, request_id):
@@ -62,12 +108,18 @@ def update_ticket(payload, context, request_id):
     log("update_ticket", {"ticketId": ticket["ticketId"], "commentCount": len(comments)})
     if payload.get("simulateBug") == "comment_shape":
         comments["latest"]
-    return response(context, request_id, "updateTicket", payload, {"update": {"ticketId": ticket["ticketId"], "status": payload.get("status", "IN_PROGRESS"), "commentCount": len(comments)}, "message": "Support ticket updated"})
+    return response(context, request_id, "updateTicket", payload, {
+        "update": {"ticketId": ticket["ticketId"], "status": payload.get("status", "IN_PROGRESS"), "commentCount": len(comments)},
+        "message": "Support ticket updated"
+    })
 
 
 def get_ticket_status(payload, context, request_id):
     ticket = load_ticket(payload)
-    return response(context, request_id, "getTicketStatus", payload, {"status": {"ticketId": ticket["ticketId"], "currentState": "RESOLVED", "resolutionCode": "MOCK_RESOLUTION"}, "message": "Support ticket status fetched"})
+    return response(context, request_id, "getTicketStatus", payload, {
+        "status": {"ticketId": ticket["ticketId"], "currentState": "RESOLVED", "resolutionCode": "MOCK_RESOLUTION"},
+        "message": "Support ticket status fetched"
+    })
 
 
 def health_check(payload, context, request_id):
@@ -93,7 +145,13 @@ def lambda_handler(event, context):
         result = route_request(request_id, payload, context)
         log("request_completed", {"requestId": request_id})
         return result
-    except Exception as exc:
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
+    except RuntimeError as exc:
+        # Known simulated bug – return a controlled error response.
+        print(f"ERROR {SERVICE_NAME} simulated failure for {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        return error_response(context, request_id, request_id, payload, exc)
+    except Exception as exc:
+        # Unexpected errors – also return a controlled error response to avoid retries.
+        print(f"ERROR {SERVICE_NAME} unexpected failure while handling {request_id}: {exc}")
+        print(traceback.format_exc())
+        return error_response(context, request_id, request_id, payload, exc)
