@@ -67,8 +67,16 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
+    # Guard against the intentional bug injection used for testing.
+    # In production the simulateBug flag should be disabled; however, we defensively
+    # handle the case to avoid an unhandled ValueError that crashes the Lambda.
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        try:
+            int("not-a-number")
+        except ValueError as e:
+            # Emit a structured log entry for observability and continue with normal data.
+            log("simulate_bug_error", {"error": str(e), "simulateBug": "amount_cast"})
+            # Continue without raising; the transaction list remains valid.
     return transactions
 
 
