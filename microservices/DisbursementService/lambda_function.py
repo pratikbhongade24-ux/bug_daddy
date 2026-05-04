@@ -15,6 +15,17 @@ def log(stage, payload):
     print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
 
 
+def log_env_vars():
+    """Log presence (True/False) of required DB environment variables without exposing values."""
+    env_presence = {
+        "DB_HOST": bool(os.environ.get("DB_HOST")),
+        "DB_PORT": bool(os.environ.get("DB_PORT")),
+        "DB_NAME": bool(os.environ.get("DB_NAME")),
+        "DB_USER": bool(os.environ.get("DB_USER")),
+    }
+    log("env_vars_presence", env_presence)
+
+
 def parse_request(event):
     body = event.get("body")
     if isinstance(body, str):
@@ -32,28 +43,70 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
-    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "db": {
+            "host": os.environ.get("DB_HOST"),
+            "port": os.environ.get("DB_PORT"),
+            "name": os.environ.get("DB_NAME"),
+            "user": os.environ.get("DB_USER"),
+        },
+        "payload": payload,
+    }
     if extra:
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
 def prepare_disbursement(payload):
-    disbursement = {"disbursementId": payload.get("disbursementId", "DISB-001"), "amount": payload.get("amount", 0), "destinationBank": payload.get("destinationBank", "MOCKBANK")}
+    disbursement = {
+        "disbursementId": payload.get("disbursementId", "DISB-001"),
+        "amount": payload.get("amount", 0),
+        "destinationBank": payload.get("destinationBank", "MOCKBANK"),
+    }
     log("prepare_disbursement", disbursement)
     return disbursement
 
 
 def create_disbursement(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
-    return response(context, request_id, "createDisbursement", payload, {"disbursement": {"disbursementId": disbursement["disbursementId"], "status": "CREATED", "amount": disbursement["amount"]}, "message": "Disbursement created"})
+    return response(
+        context,
+        request_id,
+        "createDisbursement",
+        payload,
+        {
+            "disbursement": {
+                "disbursementId": disbursement["disbursementId"],
+                "status": "CREATED",
+                "amount": disbursement["amount"],
+            },
+            "message": "Disbursement created",
+        },
+    )
 
 
 def validate_account(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     if payload.get("simulateBug") == "account_mask":
         payload["accountNumberMasked"].split("-")[10]
-    return response(context, request_id, "validateAccount", payload, {"accountValidation": {"accountNumberMasked": payload.get("accountNumberMasked", "XXXXXX1234"), "status": "VERIFIED"}, "message": "Beneficiary account validated"})
+    return response(
+        context,
+        request_id,
+        "validateAccount",
+        payload,
+        {
+            "accountValidation": {
+                "accountNumberMasked": payload.get("accountNumberMasked", "XXXXXX1234"),
+                "status": "VERIFIED",
+            },
+            "message": "Beneficiary account validated",
+        },
+    )
 
 
 def release_funds(payload, context, request_id):
@@ -61,16 +114,48 @@ def release_funds(payload, context, request_id):
     log("release_funds", disbursement)
     if payload.get("simulateBug") == "release_zero":
         disbursement["amount"] / 0
-    return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
+    return response(
+        context,
+        request_id,
+        "releaseFunds",
+        payload,
+        {
+            "release": {
+                "utr": payload.get("utr", "UTR-001"),
+                "status": "PROCESSING",
+                "destination": disbursement["destinationBank"],
+            },
+            "message": "Funds release initiated",
+        },
+    )
 
 
 def get_disbursement_status(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
-    return response(context, request_id, "getDisbursementStatus", payload, {"status": {"disbursementId": disbursement["disbursementId"], "state": "SUCCESS", "settlementWindow": "T+0"}, "message": "Disbursement status fetched"})
+    return response(
+        context,
+        request_id,
+        "getDisbursementStatus",
+        payload,
+        {
+            "status": {
+                "disbursementId": disbursement["disbursementId"],
+                "state": "SUCCESS",
+                "settlementWindow": "T+0",
+            },
+            "message": "Disbursement status fetched",
+        },
+    )
 
 
 def health_check(payload, context, request_id):
-    return response(context, request_id, "healthCheck", payload, {"message": "Disbursement service is healthy"})
+    return response(
+        context,
+        request_id,
+        "healthCheck",
+        payload,
+        {"message": "Disbursement service is healthy"},
+    )
 
 
 def route_request(request_id, payload, context):
@@ -86,10 +171,16 @@ def route_request(request_id, payload, context):
 
 
 def lambda_handler(event, context):
+    # Log the raw incoming event for full observability
+    log("raw_event", {"rawEvent": event})
     request_id, payload = parse_request(event)
     log("request_received", {"requestId": request_id, "payload": payload})
+    # Verify required environment variables are present (masked)
+    log_env_vars()
     try:
         result = route_request(request_id, payload, context)
+        # Log the full response before returning it
+        log("response", {"requestId": request_id, "response": result})
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
