@@ -51,6 +51,22 @@ def response(context, request_id, operation, payload, extra=None):
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
+def error_response(context, request_id, operation, payload, error_msg):
+    """Return a 400‑level error payload with a consistent structure.
+    This is used when we deliberately catch known simulated‑bug errors.
+    """
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "error": error_msg,
+        "payload": payload,
+    }
+    return {"statusCode": 400, "body": json.dumps(base)}
+
+
 def parse_statement(payload):
     pages = int(payload.get("pages", 3))
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
@@ -67,7 +83,9 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
+    # Simulated bug – now guarded so it produces a controlled error response
     if payload.get("simulateBug") == "amount_cast":
+        # This will raise a ValueError; we let it propagate to be caught by the top‑level handler
         int("not-a-number")
     return transactions
 
@@ -126,6 +144,8 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
+        # Known simulated bug – return a controlled 400 response
+        error_msg = str(exc)
+        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {error_msg}")
         print(traceback.format_exc())
-        raise
+        return error_response(context, request_id, request_id, payload, error_msg)
