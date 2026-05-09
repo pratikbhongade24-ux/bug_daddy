@@ -1,11 +1,29 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SONAR_DB_USER:-sonar}
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:-sonar}
+      POSTGRES_DB: ${SONAR_DB_NAME:-sonarqube}
+    volumes:
+      - sonarqube_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SONAR_DB_USER:-sonar} -d ${SONAR_DB_NAME:-sonarqube}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   sonarqube:
     image: sonarqube:community
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      SONAR_JDBC_URL: jdbc:postgresql://${SONAR_DB_HOST:-localhost}:${SONAR_DB_PORT:-5432}/${SONAR_DB_NAME:-sonarqube}
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/${SONAR_DB_NAME:-sonarqube}
       SONAR_JDBC_USERNAME: ${SONAR_DB_USER:-sonar}
-      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:-replace-with-generated-password}
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:-sonar}
     ports:
       - "127.0.0.1:9000:9000"
     volumes:
@@ -30,6 +48,7 @@ services:
       - -Dsonar.exclusions=**/node_modules/**,**/.next/**,**/.venv/**,**/venv/**,**/__pycache__/**,**/package-lock.json,**/.git/**
 
 volumes:
+  sonarqube_db:
   sonarqube_data:
   sonarqube_extensions:
   sonarqube_logs:
