@@ -228,6 +228,16 @@ cat > "${GENERATED_DIR}/runner-inline-policy.json" <<EOF
           "ec2:ResourceTag/Name": "${SONAR_RUNNER_INSTANCE_NAME}"
         }
       }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:log-group:/bugdaddy/sonar-scan:*"
     }
   ]
 }
