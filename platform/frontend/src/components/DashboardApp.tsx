@@ -13,6 +13,8 @@ import {
   Code2,
   Database,
   Download,
+  ExternalLink,
+  FileJson,
   FlaskConical,
   Gauge,
   GitBranch,
@@ -22,6 +24,7 @@ import {
   ListFilter,
   LogOut,
   MessageCircle,
+  Play,
   RefreshCcw,
   Search,
   Shield,
@@ -43,13 +46,16 @@ import type {
   FeedItem,
   Issue,
   ListResponse,
+  SonarInvokeResponse,
+  SonarReportUrl,
+  SonarStatus,
   User,
   WorkflowEdge,
   WorkflowGraph,
   WorkflowNode,
 } from '@/lib/types';
 
-type ViewName = 'dashboard' | 'issues' | 'admin';
+type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin';
 type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';
 type ToastKind = 'ok' | 'err' | 'inf';
 
@@ -408,6 +414,7 @@ export function DashboardApp() {
   const summaryQuery = useQuery({ queryKey: ['dashboard', 'summary'], queryFn: () => apiJson<DashboardSummary>('/dashboard/summary'), refetchInterval: 30_000 });
   const chartsQuery = useQuery({ queryKey: ['dashboard', 'charts'], queryFn: () => apiJson<DashboardCharts>('/dashboard/charts'), refetchInterval: 30_000 });
   const feedQuery = useQuery({ queryKey: ['dashboard', 'feed'], queryFn: () => apiJson<ListResponse<FeedItem>>('/dashboard/feed?limit=12'), refetchInterval: 30_000 });
+  const sonarQuery = useQuery({ queryKey: ['sonar', 'status'], queryFn: () => apiJson<SonarStatus>('/sonar/status?limit=12'), refetchInterval: 30_000 });
   const issuesQuery = useQuery({
     queryKey: ['issues'],
     queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=200')).items || []),
@@ -465,6 +472,24 @@ export function DashboardApp() {
     },
     onError: (error) => toast(errorMessage(error, 'Issue update failed'), 'err'),
   });
+  const invokeSonarMutation = useMutation({
+    mutationFn: () => apiJson<SonarInvokeResponse>('/sonar/invoke', { method: 'POST', body: JSON.stringify({ reason: 'manual-ui-trigger' }) }),
+    onSuccess: async (data) => {
+      toast(data.message, 'ok');
+      await queryClient.invalidateQueries({ queryKey: ['sonar'] });
+    },
+    onError: (error) => toast(errorMessage(error, 'Could not invoke SonarQube'), 'err'),
+  });
+
+  async function openSonarReport(reportDate: string) {
+    try {
+      const data = await apiJson<SonarReportUrl>(`/sonar/reports/${reportDate}/url`);
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+      toast(`Presigned URL ready for ${reportDate}`, 'ok');
+    } catch (error) {
+      toast(errorMessage(error, 'Could not open Sonar report'), 'err');
+    }
+  }
 
   async function prioritize(issue: Issue) {
     setPrioritizeLoading((state) => ({ ...state, [issue.id]: 'invoke' }));
@@ -573,6 +598,17 @@ export function DashboardApp() {
               onExport={exportCSV}
             />
           ) : null}
+          {view === 'sonar' ? (
+            <SonarView
+              status={sonarQuery.data}
+              loading={sonarQuery.isLoading}
+              refreshing={sonarQuery.isFetching}
+              invoking={invokeSonarMutation.isPending}
+              onInvoke={() => invokeSonarMutation.mutate()}
+              onRefresh={() => sonarQuery.refetch()}
+              onOpenReport={openSonarReport}
+            />
+          ) : null}
           {view === 'admin' ? <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} toast={toast} refresh={() => usersQuery.refetch()} /> : null}
         </section>
       </div>
@@ -637,6 +673,7 @@ function Sidebar({ view, setView, isAdmin, stats }: { view: ViewName; setView: (
       <div className="sb-sec">Navigation</div>
       <button className={clsx('nav-item', view === 'dashboard' && 'active')} onClick={() => setView('dashboard')}><LayoutDashboard size={16} /> Dashboard <span className="ni-badge g">{stats.total}</span></button>
       <button className={clsx('nav-item', view === 'issues' && 'active')} onClick={() => setView('issues')}><Bug size={16} /> Issues <span className="ni-badge r">{stats.backlog}</span></button>
+      <button className={clsx('nav-item', view === 'sonar' && 'active')} onClick={() => setView('sonar')}><ShieldCheck size={16} /> SonarQube</button>
       {isAdmin ? <button className={clsx('nav-item', view === 'admin' && 'active')} onClick={() => setView('admin')}><Users size={16} /> Admin</button> : null}
       <div className="sb-filters">
         <div className="sec-label">Runtime</div>
@@ -750,6 +787,82 @@ function IssuesView(props: {
 
 function IssueRow({ issue, tab, loading, prioritize, openGraph }: { issue: Issue; tab: IssueTab; loading?: string; prioritize: (issue: Issue) => void; openGraph: (issue: Issue, summary: boolean) => void }) {
   return <tr><td className="td-id">{issue.jiraId}</td><td className="td-own">{issue.shortSvc}</td><td className="td-desc" title={issue.err}>{issue.err}</td><td><span className={clsx('freq', issue.frequency > 400 ? 'hi' : issue.frequency > 100 ? 'med' : 'low')}>{issue.frequency}</span></td><td><span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span></td><td className="td-own">{issue.owner}</td><td className="td-own">{issue.eta}</td><td>{tab === 'backlog' ? <button className={clsx('act-btn pri-btn', loading && 'loading')} disabled={Boolean(loading)} onClick={() => prioritize(issue)}>{loading ? loading : 'Prioritize'}</button> : tab === 'resolved' ? <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button> : <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>{tab === 'review' ? 'Reviewing' : 'Live Graph'}</button>}</td></tr>;
+}
+
+function formatBytes(size: number) {
+  if (!size) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+  return `${(size / Math.pow(1024, index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function SonarView({ status, loading, refreshing, invoking, onInvoke, onRefresh, onOpenReport }: {
+  status?: SonarStatus;
+  loading: boolean;
+  refreshing: boolean;
+  invoking: boolean;
+  onInvoke: () => void;
+  onRefresh: () => void;
+  onOpenReport: (reportDate: string) => void;
+}) {
+  const reports = status?.reports || [];
+  const latest = status?.latest_report;
+  return (
+    <div className="view active">
+      <PanelHeader
+        title="SonarQube"
+        subtitle="Run code-quality scans and open generated S3 reports"
+        icon={<ShieldCheck size={18} />}
+        actions={<><button className="btn" onClick={onRefresh} disabled={refreshing}><RefreshCcw size={14} /> {refreshing ? 'Refreshing' : 'Refresh'}</button><button className="btn pri" onClick={onInvoke} disabled={invoking}><Play size={14} /> {invoking ? 'Starting' : 'Run Scan'}</button></>}
+      />
+      <div className="dash-scroll">
+        <div className="sonar-grid">
+          <section className="sonar-card">
+            <div className="sonar-card-head"><Cloud size={17} /><span>Report Bucket</span></div>
+            <strong>{status?.bucket || 'bugdaddy-sonar-reports'}</strong>
+            <em>{status?.region || 'ap-south-1'}</em>
+          </section>
+          <section className="sonar-card">
+            <div className="sonar-card-head"><Bot size={17} /><span>Trigger Lambda</span></div>
+            <strong>{status?.lambda_name || 'bugdaddy-sonar-scan-trigger'}</strong>
+            <em>SSM Run Command</em>
+          </section>
+          <section className="sonar-card">
+            <div className="sonar-card-head"><FileJson size={17} /><span>Latest Report</span></div>
+            <strong>{latest?.date || 'No reports yet'}</strong>
+            <em>{latest ? formatBytes(latest.size) : loading ? 'Loading...' : 'Run the first scan'}</em>
+          </section>
+        </div>
+
+        <section className="admin-card sonar-reports">
+          <div className="sonar-list-head">
+            <div>
+              <div className="esc-head-title">S3 Reports</div>
+              <div className="esc-head-sub">Presigned links are generated on demand</div>
+            </div>
+            <div className="tbl-count">{loading ? 'Loading...' : `${reports.length} reports`}</div>
+          </div>
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Date</th><th>S3 Key</th><th>Size</th><th>Updated</th><th>Action</th></tr></thead>
+              <tbody>
+                {reports.map((report) => (
+                  <tr key={report.key}>
+                    <td className="td-id">{report.date}</td>
+                    <td className="td-desc" title={report.key}>{report.key}</td>
+                    <td className="td-own">{formatBytes(report.size)}</td>
+                    <td className="td-own">{report.last_modified || '-'}</td>
+                    <td><button className="act-btn live-btn" onClick={() => onOpenReport(report.date)}><ExternalLink size={12} /> Open</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!reports.length ? <div className="empty-state">No Sonar reports found in S3.</div> : null}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
 }
 
 function AdminView({ users, loading, toast, refresh }: { users: User[]; loading: boolean; toast: (message: string, kind?: ToastKind) => void; refresh: () => void }) {

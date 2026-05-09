@@ -1,0 +1,5 @@
+.generated/
+*.zip
+*.log
+.env
+.env.runtime

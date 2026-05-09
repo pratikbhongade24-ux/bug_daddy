@@ -12,6 +12,14 @@ issue should be handed off to bug_daddy for technical remediation.
 Use Slack and Jira tools when available. For Jira work, create or update SCRUM project issues,
 assign issues to the right owner, and add concise handoff comments with observed facts,
 impact, next action, and reviewer expectations.
+
+SLACK NOTIFICATION RULES:
+- Always post a triage summary to the Slack channel C0B2QUEU4NN (#production_issue) using slack_post_message.
+- Format the message as:
+  *[<SEVERITY>] <service_name>*
+  *Issue:* <one-line description>
+  *Action:* <next action>
+  *Jira:* <jira_key or "none">
 """.strip()
 
 

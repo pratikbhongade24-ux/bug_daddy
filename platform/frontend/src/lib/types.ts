@@ -153,3 +153,31 @@ export interface ExecutionSession {
   status: string;
   created_at?: string;
 }
+
+export interface SonarReport {
+  date: string;
+  key: string;
+  size: number;
+  last_modified: string | null;
+}
+
+export interface SonarStatus {
+  lambda_name: string;
+  bucket: string;
+  region: string;
+  latest_report: SonarReport | null;
+  reports: SonarReport[];
+}
+
+export interface SonarInvokeResponse {
+  message: string;
+  lambda_name: string;
+  status_code: number;
+}
+
+export interface SonarReportUrl {
+  date: string;
+  key: string;
+  url: string;
+  expires_in: number;
+}

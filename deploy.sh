@@ -13,6 +13,8 @@ REMOTE_FRONTEND_DIR="${REMOTE_FRONTEND_DIR:-/home/ubuntu/platform/frontend}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-bug-daddy-platform-backend.service}"
 AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL:-http://${EC2_IP}/api}"
 AGENT_EXECUTION_LOG_SECRET="${AGENT_EXECUTION_LOG_SECRET:-}"
+ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
+DOMAIN_NAMES="${DOMAIN_NAMES:-bugdaddy.in www.bugdaddy.in}"
 
 echo "🚀 Deploying Bug Daddy Platform from branch ${BRANCH} to ${EC2_IP}..."
 
@@ -41,23 +43,23 @@ ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" \
     sudo npm install -g pm2
   fi
 
-  # Kill anything holding the port before (re)starting
+  # Reset PM2 before killing the port so orphaned Next.js children cannot keep
+  # the old build alive and make the new PM2 process fail with EADDRINUSE.
+  pm2 delete bugdaddy || true
+
+  # Kill anything holding the port before starting
   sudo fuser -k ${FRONTEND_PORT}/tcp || true
   sleep 1
 
-  # Start or restart the app
-  if pm2 describe bugdaddy &>/dev/null; then
-    pm2 restart bugdaddy --update-env
-  else
-    PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
-    pm2 save
-    pm2 startup | tail -1 | sudo bash || true
-  fi
+  # Start the app from the deployed frontend directory
+  PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
+  pm2 save
+  pm2 startup | tail -1 | sudo bash || true
 EOF
 
 echo "🔧 Updating Nginx config..."
 ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" \
-  "FRONTEND_PORT=${FRONTEND_PORT} BACKEND_PORT=${BACKEND_PORT} bash -s" << 'EOF'
+  "FRONTEND_PORT=${FRONTEND_PORT} BACKEND_PORT=${BACKEND_PORT} ENABLE_HTTPS=${ENABLE_HTTPS} DOMAIN_NAMES='${DOMAIN_NAMES}' bash -s" << 'EOF'
   sudo tee /etc/nginx/sites-available/bugdaddy > /dev/null << NGINX
 map \$http_upgrade \$connection_upgrade {
   default upgrade;
@@ -99,6 +101,27 @@ NGINX
   # Remove old static-file config if it exists (replaced by this one)
   sudo rm -f /etc/nginx/sites-enabled/bug-daddy-platform
   sudo nginx -t && sudo systemctl reload nginx
+
+  if [ "${ENABLE_HTTPS}" = "1" ]; then
+    if ! command -v certbot >/dev/null 2>&1; then
+      sudo apt-get update
+      sudo apt-get install -y certbot python3-certbot-nginx
+    fi
+
+    CERTBOT_DOMAINS=""
+    for DOMAIN in ${DOMAIN_NAMES}; do
+      CERTBOT_DOMAINS="${CERTBOT_DOMAINS} -d ${DOMAIN}"
+    done
+
+    # Re-apply the certificate after rewriting this site file so future deploys
+    # keep the HTTPS listener and HTTP->HTTPS redirect in place.
+    sudo certbot --nginx ${CERTBOT_DOMAINS} \
+      --non-interactive \
+      --agree-tos \
+      --register-unsafely-without-email \
+      --redirect || echo "⚠️  HTTPS setup skipped or failed; HTTP deploy remains active."
+    sudo nginx -t && sudo systemctl reload nginx
+  fi
 EOF
 echo "✅ Frontend deployed."
 

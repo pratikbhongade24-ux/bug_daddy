@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,10 @@ AGENTCORE_RUNTIME_ARN = os.getenv(
 )
 AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
 AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
+SONAR_LAMBDA_NAME = os.getenv("SONAR_LAMBDA_NAME", "bugdaddy-sonar-scan-trigger")
+SONAR_REPORT_BUCKET = os.getenv("SONAR_REPORT_BUCKET", "bugdaddy-sonar-reports")
+SONAR_REPORT_PREFIX = os.getenv("SONAR_REPORT_PREFIX", "")
+SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "3600"))
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -120,6 +125,10 @@ class AgentExecutionCreateRequest(BaseModel):
     workflow_version: str = "v1"
     input_payload: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SonarInvokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=255)
 
 
 class AgentExecutionEventCreate(BaseModel):
@@ -894,6 +903,42 @@ def map_execution_event(row: dict[str, Any]) -> dict[str, Any]:
     return mapped
 
 
+def sonar_report_key(report_date: str) -> str:
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", report_date):
+        raise HTTPException(status_code=400, detail="report_date must use YYYY-MM-DD")
+    prefix = SONAR_REPORT_PREFIX.strip("/")
+    key = f"{report_date}/report.json"
+    return f"{prefix}/{key}" if prefix else key
+
+
+def list_sonar_reports(limit: int = 10) -> list[dict[str, Any]]:
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    prefix = SONAR_REPORT_PREFIX.strip("/")
+    response = s3.list_objects_v2(
+        Bucket=SONAR_REPORT_BUCKET,
+        Prefix=f"{prefix}/" if prefix else "",
+        MaxKeys=1000,
+    )
+    reports: list[dict[str, Any]] = []
+    for item in response.get("Contents", []):
+        key = item.get("Key") or ""
+        if not key.endswith("/report.json"):
+            continue
+        report_date = key.split("/")[-2] if "/" in key else ""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", report_date):
+            continue
+        reports.append(
+            {
+                "date": report_date,
+                "key": key,
+                "size": int(item.get("Size") or 0),
+                "last_modified": dt_to_str(item.get("LastModified")),
+            }
+        )
+    reports.sort(key=lambda item: item["date"], reverse=True)
+    return reports[:limit]
+
+
 def verify_execution_log_secret(x_agent_execution_secret: str | None = Header(default=None)):
     if AGENT_EXECUTION_LOG_SECRET and x_agent_execution_secret != AGENT_EXECUTION_LOG_SECRET:
         raise HTTPException(status_code=401, detail="Invalid execution log secret")
@@ -1469,6 +1514,82 @@ def dashboard_feed(limit: int = 12, user: dict[str, Any] = Depends(require_permi
         conn.close()
 
 
+@app.get("/sonar/status")
+def sonar_status(limit: int = 10, user: dict[str, Any] = Depends(require_permission("issues.read"))):
+    try:
+        reports = list_sonar_reports(limit=max(1, min(limit, 50)))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not list Sonar reports: {exc}") from exc
+
+    latest = reports[0] if reports else None
+    return {
+        "lambda_name": SONAR_LAMBDA_NAME,
+        "bucket": SONAR_REPORT_BUCKET,
+        "region": AWS_REGION,
+        "latest_report": latest,
+        "reports": reports,
+    }
+
+
+@app.post("/sonar/invoke")
+def invoke_sonar_scan(payload: SonarInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
+    client = boto3.client("lambda", region_name=AWS_REGION)
+    request_payload = {
+        "source": "bugdaddy-platform",
+        "requested_by": actor["username"],
+        "requested_at": utc_now().isoformat(),
+        "reason": payload.reason,
+    }
+    try:
+        response = client.invoke(
+            FunctionName=SONAR_LAMBDA_NAME,
+            InvocationType="Event",
+            Payload=json.dumps(request_payload).encode("utf-8"),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not invoke Sonar scan: {exc}") from exc
+
+    conn = get_db()
+    try:
+        write_audit_log(
+            conn,
+            actor["id"],
+            "sonar.invoke",
+            "lambda",
+            SONAR_LAMBDA_NAME,
+            {"status_code": response.get("StatusCode"), "reason": payload.reason},
+        )
+    finally:
+        conn.close()
+
+    return {
+        "message": "SonarQube scan trigger accepted",
+        "lambda_name": SONAR_LAMBDA_NAME,
+        "status_code": response.get("StatusCode"),
+    }
+
+
+@app.get("/sonar/reports/{report_date}/url")
+def sonar_report_url(report_date: str, user: dict[str, Any] = Depends(require_permission("issues.read"))):
+    key = sonar_report_key(report_date)
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    try:
+        s3.head_object(Bucket=SONAR_REPORT_BUCKET, Key=key)
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": SONAR_REPORT_BUCKET, "Key": key},
+            ExpiresIn=SONAR_PRESIGN_EXPIRES_SECONDS,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Sonar report not available: {exc}") from exc
+    return {
+        "date": report_date,
+        "key": key,
+        "url": url,
+        "expires_in": SONAR_PRESIGN_EXPIRES_SECONDS,
+    }
+
+
 @app.get("/issues")
 def list_issues(
     q: str | None = None,
@@ -1854,6 +1975,39 @@ def get_agent_execution_graph(session_id: str, user: dict[str, Any] = Depends(re
         conn.close()
 
 
+def _extract_jira_key(result: dict[str, Any]) -> str | None:
+    """Extract a Jira ticket key (e.g. BUG-123) from an agent result dict."""
+    # Explicit field set by classifier or upstream agent
+    if result.get("resolution_jira"):
+        return str(result["resolution_jira"])
+
+    # Scan artifacts list for jira_ticket entries that contain a key
+    for artifact in result.get("artifacts", []):
+        content = artifact.get("content", "")
+        if artifact.get("type") == "jira_ticket":
+            if isinstance(content, dict) and content.get("key"):
+                return str(content["key"])
+            text = json.dumps(content) if isinstance(content, dict) else str(content)
+            match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", text)
+            if match:
+                return match.group(1)
+
+    # Fallback: scan review_response artifacts
+    review_response = result.get("review_response") or {}
+    for artifact in review_response.get("artifacts", []):
+        content = artifact.get("content", "")
+        if artifact.get("type") == "jira_ticket":
+            text = json.dumps(content) if isinstance(content, dict) else str(content)
+            match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", text)
+            if match:
+                return match.group(1)
+
+    # Last resort: scan summary text
+    summary = str(result.get("summary") or "")
+    match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", summary)
+    return match.group(1) if match else None
+
+
 def run_agent_background(session_id: str, runtime_payload: dict[str, Any], target: str):
     try:
         result = invoke_agentcore(runtime_payload)
@@ -1887,6 +2041,28 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                 },
             )
             update_execution_session(conn, session_id, status_value="succeeded", summary=summary, ended=True)
+
+            # Map Jira ticket back to service_exception_log
+            jira_key = _extract_jira_key(result)
+            if jira_key:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                        (session_id,),
+                    )
+                    row = cur.fetchone()
+                issue_id = row["issue_id"] if row else None
+                if issue_id:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE service_exception_log
+                            SET resolution_jira = %s,
+                                status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+                            WHERE id = %s AND (resolution_jira IS NULL OR resolution_jira = '')
+                            """,
+                            (jira_key, issue_id),
+                        )
         finally:
             conn.close()
     except Exception as exc:
