@@ -35,7 +35,8 @@ def lambda_handler(event, context):
         InstanceIds=[instance_id],
         DocumentName="AWS-RunShellScript",
         Comment="Run BugDaddy SonarQube scan",
-        Parameters={"commands": [scan_command]},
+        Parameters={"commands": [f"nohup {scan_command} > /var/log/sonar-scan.log 2>&1 &"]},
+        TimeoutSeconds=60,
         CloudWatchOutputConfig={"CloudWatchOutputEnabled": True},
     )
     return {"commandId": response["Command"]["CommandId"]}
