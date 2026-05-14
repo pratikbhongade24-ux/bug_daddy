@@ -161,7 +161,7 @@ ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" "BACKEND_PORT=${BACK
 WorkingDirectory=${REMOTE_BACKEND_DIR}
 EnvironmentFile=
 Environment=AWS_REGION=ap-south-1
-Environment=AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/BugDaddy_bug_daddy-paFAKHCmBY
+Environment=AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs
 Environment=AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL}
 Environment=AGENT_EXECUTION_LOG_SECRET=${AGENT_EXECUTION_LOG_SECRET}
 ExecStart=

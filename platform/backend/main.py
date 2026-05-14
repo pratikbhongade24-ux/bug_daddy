@@ -30,7 +30,7 @@ PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "120000"))
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 AGENTCORE_RUNTIME_ARN = os.getenv(
     "AGENTCORE_RUNTIME_ARN",
-    "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/BugDaddy_bug_daddy-paFAKHCmBY",
+    "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs",
 )
 AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
 AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
