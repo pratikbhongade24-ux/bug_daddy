@@ -37,7 +37,7 @@ class ClassifierRuntime:
         # Basic parsing of the agent's routing decision
         if "[ROUTE: BUG]" in result:
             jira_key = self._extract_tag(result, "JIRA_KEY")
-            if not jira_key:
+            if not self._usable_jira_key(jira_key):
                 jira_key = self._create_jira_before_bug_handoff(payload, result)
 
             payload["resolution_jira"] = jira_key
@@ -69,6 +69,11 @@ class ClassifierRuntime:
         match = re.search(f"\[{tag}: (.*?)\]", text)
         return match.group(1) if match else None
 
+    def _usable_jira_key(self, value: str | None) -> bool:
+        if not value:
+            return False
+        return value.strip().lower() not in {"none", "null", "n/a", "na", ""}
+
     def _create_jira_before_bug_handoff(self, payload: dict[str, Any], classification: str) -> str:
         summary = self._jira_summary(payload)
         description = self._jira_description(payload, classification)
@@ -76,7 +81,7 @@ class ClassifierRuntime:
         result = jira_create_issue(
             summary=summary,
             description=description,
-            issue_type="Task",
+            issue_type="Bug",
             labels=["bug_daddy", "classifier"],
         )
         key = result.get("key") if isinstance(result, dict) else None

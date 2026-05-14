@@ -92,6 +92,7 @@ def _target_from_payload(payload: dict[str, Any]) -> str:
             "reviewer_daddy": "reviewer_daddy",
             "sme": "sme_agent",
             "sme_agent": "sme_agent",
+            "classifier": "classifier",
         }
         if normalized in aliases:
             return aliases[normalized]
