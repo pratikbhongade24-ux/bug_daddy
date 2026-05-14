@@ -94,7 +94,7 @@ JIRA USAGE RULES:
 - Only update the existing Jira ticket, add review comments, and assign it to the configured reviewer.
 - Use the Jira key provided in the context.
 
-Be explicit and strict about unresolved technical risk.
+Flag significant unresolved technical risks, but lean toward approving proposals that address the core problem — minor gaps or low-probability edge cases should be noted as follow-up items rather than blockers.
 """.strip()
 
 
