@@ -329,75 +329,83 @@ def _build_issue_dict(
         "status": "open",
         "created_at": created_at,
     }
-
-def build_issues(payload):
-    log_group = payload.get("logGroup")
-    log_stream = payload.get("logStream")
-    service_name = extract_service_name(log_group)
-    log_events = payload.get("logEvents", [])
-    if not log_events:
-        return []
-
-    first_event, last_event = _event_bounds(log_events)
-    merged_messages = _merged_messages(log_events)
-    execution_log = build_execution_log(log_group, log_stream, log_events)
-    canonical_message = canonical_issue_message(execution_log, log_events)
-    issue_type = classify_issue(execution_log, log_events)
-    request_id = extract_request_id(execution_log)
-    fingerprint = build_fingerprint(service_name, issue_type, canonical_message)
-
-    issue = _build_issue_dict(
-        fingerprint,
-        service_name,
-        issue_type,
-        canonical_message,
-        merged_messages,
-        execution_log,
-        request_id,
-        utc_datetime_from_ms(first_event["timestamp"]),
-        utc_datetime_from_ms(last_event["timestamp"]),
-        utc_datetime_from_ms(last_event["timestamp"]),
-    )
-    return [issue]
-
-def lambda_handler(event, context):
-    payload = decode_logs_event(event)
-    print(json.dumps(payload))
-
-    if payload.get("messageType") == "CONTROL_MESSAGE":
-        return {"statusCode": 200, "body": json.dumps({"message": "control message"})}
-
-    issues = build_issues(payload)
-    if not issues:
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"message": "no matching log events to persist"}),
-        }
-
-    inserted = 0
-    updated = 0
-    connection = connect_db()
-    try:
-        with connection.cursor() as cursor:
-            for issue in issues:
-                result = upsert_issue(cursor, issue)
-                if result == "inserted":
-                    inserted += 1
-                else:
-                    updated += 1
-    finally:
-        connection.close()
-
-    return {
-        "statusCode": 200,
-        "body": json.dumps(
-            {
-                "messageType": payload.get("messageType"),
-                "logGroup": payload.get("logGroup"),
-                "logEventCount": len(payload.get("logEvents", [])),
-                "issueCount": len(issues),
-                "inserted": inserted,
-                "updated": updated,
-            }
-        ),
-    }
++
++def _derive_issue_metadata(service_name, execution_log, log_events):
++    """Compute canonical message, issue type, request id and fingerprint.
++
++    This helper isolates the decision‑making logic that previously lived in
++    ``build_issues``. By moving it out we reduce the cognitive complexity of the
++    orchestrating function.
++    """
++    canonical_message = canonical_issue_message(execution_log, log_events)
++    issue_type = classify_issue(execution_log, log_events)
++    request_id = extract_request_id(execution_log)
++    fingerprint = build_fingerprint(service_name, issue_type, canonical_message)
++    return canonical_message, issue_type, request_id, fingerprint
+ 
+-def build_issues(payload):
+-    log_group = payload.get("logGroup")
+-    log_stream = payload.get("logStream")
+-    service_name = extract_service_name(log_group)
+-    log_events = payload.get("logEvents", [])
+-    if not log_events:
+-        return []
+-
+-    first_event, last_event = _event_bounds(log_events)
+-    merged_messages = _merged_messages(log_events)
+-    execution_log = build_execution_log(log_group, log_stream, log_events)
+-    canonical_message = canonical_issue_message(execution_log, log_events)
+-    issue_type = classify_issue(execution_log, log_events)
+-    request_id = extract_request_id(execution_log)
+-    fingerprint = build_fingerprint(service_name, issue_type, canonical_message)
+-
+-    issue = _build_issue_dict(
+-        fingerprint,
+-        service_name,
+-        issue_type,
+-        canonical_message,
+-        merged_messages,
+-        execution_log,
+-        request_id,
+-        utc_datetime_from_ms(first_event["timestamp"]),
+-        utc_datetime_from_ms(last_event["timestamp"]),
+-        utc_datetime_from_ms(last_event["timestamp"]),
+-    )
+-    return [issue]
++def build_issues(payload):
++    """Orchestrate the creation of issue objects from a CloudWatch payload.
++
++    The function now performs a linear series of steps and delegates all
++    branching/decision logic to ``_derive_issue_metadata``. This reduces its
++    cognitive complexity well below the SonarQube threshold of 15.
++    """
++    log_group = payload.get("logGroup")
++    log_stream = payload.get("logStream")
++    service_name = extract_service_name(log_group)
++    log_events = payload.get("logEvents", [])
++    if not log_events:
++        return []
++
++    first_event, last_event = _event_bounds(log_events)
++    merged_messages = _merged_messages(log_events)
++    execution_log = build_execution_log(log_group, log_stream, log_events)
++
++    # Derive metadata (canonical message, type, request id, fingerprint) in one place.
++    canonical_message, issue_type, request_id, fingerprint = _derive_issue_metadata(
++        service_name, execution_log, log_events
++    )
++
++    issue = _build_issue_dict(
++        fingerprint,
++        service_name,
++        issue_type,
++        canonical_message,
++        merged_messages,
++        execution_log,
++        request_id,
++        utc_datetime_from_ms(first_event["timestamp"]),
++        utc_datetime_from_ms(last_event["timestamp"]),
++        utc_datetime_from_ms(last_event["timestamp"]),
++    )
++    return [issue]
+*** End Patch
