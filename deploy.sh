@@ -28,6 +28,7 @@ echo "Building frontend..."
 cd "${REMOTE_ROOT}/platform/frontend"
 npm ci --omit=dev
 npm run build
+fuser -k ${FRONTEND_PORT}/tcp 2>/dev/null || true
 pm2 restart bugdaddy || PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
 pm2 save
 
