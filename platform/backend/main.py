@@ -119,7 +119,7 @@ class PullRequestResolutionMapRequest(BaseModel):
 
 class AgentInvokeRequest(BaseModel):
     session_id: str | None = None
-    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
+    target: Literal["classifier", "incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
     prompt: str | None = None
     question: str | None = None
     source: str = "platform"
@@ -133,7 +133,7 @@ class AgentInvokeRequest(BaseModel):
 
 class AgentExecutionCreateRequest(BaseModel):
     issue_id: int | None = None
-    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] = "incident_daddy"
+    target: Literal["classifier", "incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] = "incident_daddy"
     workflow_key: str | None = None
     workflow_version: str = "v1"
     input_payload: dict[str, Any] = Field(default_factory=dict)
@@ -554,6 +554,8 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
 
 def workflow_key_for_target(target: str | None) -> str:
     normalized = (target or "incident_daddy").strip().lower().replace("-", "_")
+    if normalized == "classifier":
+        return "bug_daddy"
     if normalized in {"bug", "bug_daddy"}:
         return "bug_daddy"
     if normalized in {"reviewer", "reviewer_daddy"}:
@@ -2279,6 +2281,8 @@ def agent_invoke(
                 "issue_type": issue["type"],
                 "criticality": issue["criticality"],
                 "status": issue["status"],
+                "resolution_jira": issue.get("resolution_jira"),
+                "resolution_pr": issue.get("resolution_pr"),
                 "description": issue["description"],
                 "stack_trace": issue["stack_trace"],
                 "frequency": issue["frequency"],
@@ -2294,6 +2298,13 @@ def agent_invoke(
             conn.close()
 
     target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
+    runtime_target = target
+    if target == "bug_daddy" and not (
+        payload.metadata.get("jira_key")
+        or payload.metadata.get("resolution_jira")
+        or issue_context.get("resolution_jira")
+    ):
+        runtime_target = "classifier"
     workflow_key = workflow_key_for_target(target)
     metadata = {
         **payload.metadata,
@@ -2301,13 +2312,14 @@ def agent_invoke(
         "requester_role": actor["role"],
         "issue_context": issue_context,
         "agent_target": target,
+        "runtime_target": runtime_target,
         "workflow_key": workflow_key,
         "routing_source": "explicit_target" if payload.target else "backend_policy",
     }
     session_id = payload.session_id
 
     runtime_payload = {
-        "target": target,
+        "target": runtime_target,
         "prompt": payload.prompt or payload.incident_summary or "Investigate issue and provide next actions.",
         "question": payload.question,
         "source": payload.source,
@@ -2342,7 +2354,7 @@ def agent_invoke(
                     "level": "info",
                     "title": "Execution session created",
                     "description": f"Workflow {workflow_key} was created for issue {payload.issue_id}.",
-                    "agent_name": target,
+                    "agent_name": runtime_target,
                 },
             )
 
@@ -2365,8 +2377,8 @@ def agent_invoke(
                 "status": "running",
                 "level": "info",
                 "title": "Agent orchestration started",
-                "description": f"Invoking {target} through AgentCore.",
-                "agent_name": target,
+                "description": f"Invoking {runtime_target} through AgentCore.",
+                "agent_name": runtime_target,
                 "result": {"runtime_arn": AGENTCORE_RUNTIME_ARN},
             },
         )
@@ -2377,7 +2389,7 @@ def agent_invoke(
                 "event_type": "node.started",
                 "node_id": "esc",
                 "node_name": "AgentCore Runtime",
-                "agent_name": target,
+                "agent_name": runtime_target,
                 "status": "running",
                 "level": "info",
                 "title": "AgentCore invocation started",
@@ -2387,12 +2399,13 @@ def agent_invoke(
     finally:
         conn.close()
 
-    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, target)
+    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
 
     return {
         "message": "Agent orchestration started in background",
         "session_id": session_id,
         "workflow_key": workflow_key,
-        "target": target,
+        "target": runtime_target,
+        "requested_target": target,
         "request": runtime_payload
     }

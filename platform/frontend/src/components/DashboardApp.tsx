@@ -209,11 +209,15 @@ export function DashboardApp() {
         method: 'POST',
         body: JSON.stringify({
           issue_id: issue.id,
-          target: prioritized.agent_target || issue.agent_target,
+          target: 'classifier',
           service_name: issue.service,
           incident_summary: issue.description || issue.err,
           source: 'platform',
-          metadata: { jira_id: issue.jiraId, workflow_key: prioritized.workflow_key || issue.workflow_key },
+          metadata: {
+            jira_id: issue.jiraId,
+            workflow_key: prioritized.workflow_key || issue.workflow_key,
+            suggested_agent_target: prioritized.agent_target || issue.agent_target,
+          },
         }),
       });
       const data = await invoke.json().catch(() => ({}));
