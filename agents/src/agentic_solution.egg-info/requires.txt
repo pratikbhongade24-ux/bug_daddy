@@ -1,0 +1,10 @@
+bedrock-agentcore
+boto3>=1.34.0
+mcp>=1.0.0
+pydantic>=2.8.0
+python-dotenv>=1.0.1
+requests>=2.31.0
+strands-agents
+
+[dev]
+pytest>=8.3.0

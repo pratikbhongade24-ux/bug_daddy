@@ -124,6 +124,7 @@ class BugDaddyRuntime:
             fix_proposal=coder,
             critique=critic_coder,
             metadata={
+                **request.metadata,
                 "incident_summary": request.incident_summary,
                 "incident_severity": request.incident_severity,
             },
@@ -237,6 +238,9 @@ Service:
 Repository:
 {request.repository}
 
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
+
 Gathered Context:
 {context}
 
@@ -254,6 +258,9 @@ Prompt:
 
 Repository:
 {request.repository}
+
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
 
 Logs:
 {_joined(request.logs)}
@@ -283,6 +290,9 @@ Prompt:
 
 Repository:
 {request.repository}
+
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
 
 Strategy & Plan:
 {strategy}

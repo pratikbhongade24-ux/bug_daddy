@@ -115,6 +115,9 @@ Service:
 Repository:
 {request.issue.repository}
 
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
+
 Plan:
 {request.strategy_plan}
 

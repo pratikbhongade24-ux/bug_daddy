@@ -1,0 +1,150 @@
+Metadata-Version: 2.4
+Name: agentic-solution
+Version: 0.1.0
+Summary: AgentCore-ready multi-agent incident and bug remediation workflow built with Strands.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: bedrock-agentcore
+Requires-Dist: boto3>=1.34.0
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: requests>=2.31.0
+Requires-Dist: strands-agents
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+
+# Agentic Solution
+
+This folder now follows the bifurcated architecture from your latest diagram:
+
+- `incident_daddy`
+- `bug_daddy`
+- `reviewer_daddy`
+- shared `sme_agent`
+
+Each folder under `apps/` is a self-contained deployable code base. The preferred deployment for GrabHack is now a single AgentCore runtime from `apps/bug_daddy`; that entrypoint packages `incident_daddy`, `bug_daddy`, `reviewer_daddy`, and `sme_agent` together and routes requests in-process.
+
+The repo-root `src/agentic_solution/` remains as the source mirror used to keep the four app copies aligned, but it is not required at deployment time if you deploy from within an `apps/*` directory.
+
+## Topology
+
+Flow:
+
+1. Triggers arrive at `incident_daddy`.
+2. `incident_daddy` performs triage, Slack/Jira coordination, and decides whether to hand off.
+3. `bug_daddy` owns remediation planning, evidence gathering, coding, and critique.
+4. `reviewer_daddy` is the final AI gate for PR creation or Jira-only closure.
+5. `sme_agent` is a shared agent-backed knowledge layer used by `incident_daddy` and `bug_daddy`.
+
+The external system boundary is still:
+
+- Slack MCP
+- Jira MCP
+- Bitbucket MCP
+
+## Structure
+
+- `apps/incident_daddy/main.py`: AgentCore entrypoint for incident triage.
+- `apps/bug_daddy/main.py`: AgentCore entrypoint for the combined runtime. It hosts incident triage, remediation, reviewer, and SME flows in one deployed `bug_daddy` runtime.
+- `apps/reviewer_daddy/main.py`: AgentCore entrypoint for review and PR/Jira actions.
+- `apps/sme_agent/main.py`: AgentCore entrypoint for shared SME reasoning.
+- `apps/*/pyproject.toml`: Per-app dependencies for independent packaging.
+- `apps/*/agentic_solution/`: Self-contained local package copied into each app folder.
+- `src/agentic_solution/contracts.py`: Shared handoff schemas.
+- `src/agentic_solution/config.py`: Bedrock, MCP, and peer-runtime config.
+- `src/agentic_solution/mcp.py`: MCP loading and tool allowlisting.
+- `src/agentic_solution/peer.py`: HTTP handoff client for peer AgentCore runtimes.
+- `src/agentic_solution/services/`: Runtime implementations.
+
+## Local Setup
+
+```bash
+cd agents
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+```
+
+Defaults:
+
+- model: `openai.gpt-oss-120b-1:0`
+- region resolution order: `AWS_REGION` -> `AWS_DEFAULT_REGION` -> local boto3/AWS CLI session -> `us-west-2`
+
+Populate `.env` with:
+
+- the real Slack/Jira/Bitbucket MCP server commands and tool names
+- for the single-runtime deployment, peer URLs are not required because handoffs are local
+
+## Deployable Apps
+
+Deploy the combined app with AgentCore using `apps/bug_daddy` as the code base:
+
+```bash
+cd apps/bug_daddy
+agentcore configure -e main.py
+agentcore deploy
+```
+
+The combined runtime accepts an optional `target`, `agent`, or `component` field:
+
+```json
+{
+  "target": "incident_daddy",
+  "prompt": "P1 outage in checkout",
+  "source": "slack"
+}
+```
+
+If `target` is omitted, trigger-style payloads default to `incident_daddy`. Review and SME payloads are inferred from their schema shape.
+
+## Runtime Contracts
+
+`incident_daddy` input:
+
+```json
+{
+  "prompt": "P1 outage in checkout",
+  "source": "slack",
+  "trigger": "microservice_logs",
+  "service_name": "checkout-service",
+  "repository": "org/checkout-service",
+  "logs": ["java.lang.NullPointerException at CheckoutFlow:42"],
+  "telemetry": {"region": "ap-south-1"},
+  "kb_context": "Runbook excerpt or SOP text",
+  "metadata": {"incident_channel": "checkout-p1"}
+}
+```
+
+`bug_daddy` receives a richer handoff payload that includes `incident_summary`, `incident_severity`, and `incident_artifacts`.
+
+`reviewer_daddy` receives a review package containing:
+
+- issue context
+- remediation plan
+- gathered context
+- SME guidance
+- log analysis
+- fix proposal
+- critique
+
+`sme_agent` receives:
+
+```json
+{
+  "question": "What SOP or ownership info matters here?",
+  "requested_by": "incident_daddy",
+  "context": {
+    "prompt": "P1 outage in checkout",
+    "service_name": "checkout-service"
+  }
+}
+```
+
+## Implementation Notes
+
+- In the combined deployment, `incident_daddy` and `bug_daddy` call `sme_agent`, `bug_daddy`, and `reviewer_daddy` in-process through `services/combined.py`.
+- In `DRY_RUN=true`, each runtime validates the payload and returns a safe simulated response without invoking peer runtimes or MCP tools.
+- The current `sme_agent` is agent-backed and contract-ready, but it does not yet connect to a real vector DB. It uses inline context until you wire a retrieval backend behind it.
+- Because each `apps/*` directory is self-contained, there are no deployment-time imports from the repo root when you package an app folder independently.

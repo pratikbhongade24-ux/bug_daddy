@@ -34,6 +34,7 @@ AGENTCORE_RUNTIME_ARN = os.getenv(
 )
 AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
 AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://bugdaddy.atlassian.net").rstrip("/")
 SONAR_LAMBDA_NAME = os.getenv("SONAR_LAMBDA_NAME", "bugdaddy-sonar-scan-trigger")
 SONAR_REPORT_BUCKET = os.getenv("SONAR_REPORT_BUCKET", "bugdaddy-sonar-reports")
 SONAR_REPORT_PREFIX = os.getenv("SONAR_REPORT_PREFIX", "")
@@ -102,6 +103,18 @@ class IssueUpdateRequest(BaseModel):
 
 class IssueAssignRequest(BaseModel):
     assigned_to: str = Field(min_length=1, max_length=255)
+
+
+class JiraResolutionMapRequest(BaseModel):
+    resolution_jira: str | None = Field(default=None, max_length=255)
+    jira_key: str | None = Field(default=None, max_length=100)
+    jira_url: str | None = Field(default=None, max_length=255)
+
+
+class PullRequestResolutionMapRequest(BaseModel):
+    resolution_pr: str | None = Field(default=None, max_length=255)
+    pull_request_url: str | None = Field(default=None, max_length=255)
+    pr_url: str | None = Field(default=None, max_length=255)
 
 
 class AgentInvokeRequest(BaseModel):
@@ -1893,6 +1906,30 @@ def append_agent_execution_event(
         conn.close()
 
 
+@app.post("/agent/executions/{session_id}/resolution/jira")
+def map_agent_execution_jira_resolution(
+    session_id: str,
+    payload: JiraResolutionMapRequest,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    resolution_jira = _normalize_jira_resolution(payload.jira_url or payload.resolution_jira or payload.jira_key)
+    if not resolution_jira:
+        raise HTTPException(status_code=400, detail="Provide jira_key, jira_url, or resolution_jira")
+    return _map_execution_resolution(session_id, resolution_jira=resolution_jira)
+
+
+@app.post("/agent/executions/{session_id}/resolution/pr")
+def map_agent_execution_pull_request_resolution(
+    session_id: str,
+    payload: PullRequestResolutionMapRequest,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    resolution_pr = payload.pull_request_url or payload.pr_url or payload.resolution_pr
+    if not resolution_pr:
+        raise HTTPException(status_code=400, detail="Provide pull_request_url, pr_url, or resolution_pr")
+    return _map_execution_resolution(session_id, resolution_pr=resolution_pr)
+
+
 @app.get("/agent/workflows/{workflow_key}")
 def get_agent_workflow(
     workflow_key: str,
@@ -2008,6 +2045,112 @@ def _extract_jira_key(result: dict[str, Any]) -> str | None:
     return match.group(1) if match else None
 
 
+def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
+    """Extract a pull request URL from an agent result dict."""
+    if result.get("resolution_pr"):
+        return str(result["resolution_pr"])
+
+    candidates: list[Any] = []
+    candidates.extend(result.get("artifacts", []))
+    review_response = result.get("review_response") or {}
+    if isinstance(review_response, dict):
+        candidates.extend(review_response.get("artifacts", []))
+        if review_response.get("resolution_pr"):
+            return str(review_response["resolution_pr"])
+
+    for artifact in candidates:
+        if not isinstance(artifact, dict) or artifact.get("type") != "pull_request":
+            continue
+        content = artifact.get("content", "")
+        if isinstance(content, dict):
+            for key in ("url", "html_url", "pull_request_url", "pr_url"):
+                if content.get(key):
+                    return str(content[key])
+            text = json.dumps(content)
+        else:
+            text = str(content)
+        match = re.search(r"https?://[^\s)>\"]+/pull/\d+", text)
+        if match:
+            return match.group(0)
+
+    summary = str(result.get("summary") or "")
+    match = re.search(r"https?://[^\s)>\"]+/pull/\d+", summary)
+    return match.group(0) if match else None
+
+
+def _normalize_jira_resolution(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if re.match(r"https?://", cleaned):
+        return cleaned
+    match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", cleaned)
+    if match:
+        return f"{JIRA_BASE_URL}/browse/{match.group(1)}"
+    return cleaned
+
+
+def _map_execution_resolution(
+    session_id: str,
+    resolution_jira: str | None = None,
+    resolution_pr: str | None = None,
+) -> dict[str, Any]:
+    if not resolution_jira and not resolution_pr:
+        raise HTTPException(status_code=400, detail="No resolution value provided")
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        issue_id = row.get("issue_id")
+        if not issue_id:
+            raise HTTPException(status_code=400, detail="Execution session is not linked to an issue")
+
+        fields: list[str] = []
+        values: list[Any] = []
+        event_result: dict[str, Any] = {}
+        if resolution_jira:
+            fields.append("resolution_jira = %s")
+            values.append(resolution_jira)
+            event_result["resolution_jira"] = resolution_jira
+        if resolution_pr:
+            fields.append("resolution_pr = %s")
+            values.append(resolution_pr)
+            event_result["resolution_pr"] = resolution_pr
+        fields.append("status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE service_exception_log SET {', '.join(fields)} WHERE id = %s",
+                (*values, issue_id),
+            )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "node.completed",
+                "node_id": "resmap",
+                "node_name": "Resolution Mapping",
+                "agent_name": "platform",
+                "status": "succeeded",
+                "level": "info",
+                "title": "Issue resolution link mapped",
+                "result": event_result,
+            },
+        )
+        return fetch_issue_by_id(conn, issue_id)
+    finally:
+        conn.close()
+
+
 def run_agent_background(session_id: str, runtime_payload: dict[str, Any], target: str):
     try:
         result = invoke_agentcore(runtime_payload)
@@ -2044,6 +2187,7 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
 
             # Map Jira ticket back to service_exception_log
             jira_key = _extract_jira_key(result)
+            pr_url = _extract_pull_request_url(result)
             if jira_key:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -2061,7 +2205,26 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                                 status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
                             WHERE id = %s AND (resolution_jira IS NULL OR resolution_jira = '')
                             """,
-                            (jira_key, issue_id),
+                            (_normalize_jira_resolution(jira_key), issue_id),
+                        )
+            if pr_url:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                        (session_id,),
+                    )
+                    row = cur.fetchone()
+                issue_id = row["issue_id"] if row else None
+                if issue_id:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE service_exception_log
+                            SET resolution_pr = %s,
+                                status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+                            WHERE id = %s AND (resolution_pr IS NULL OR resolution_pr = '')
+                            """,
+                            (pr_url, issue_id),
                         )
         finally:
             conn.close()

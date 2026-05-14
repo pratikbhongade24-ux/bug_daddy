@@ -2,7 +2,7 @@ import React, { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
-import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle } from 'lucide-react';
+import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown } from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import { Issue, ExecutionEvent, WorkflowNode, WorkflowEdge, WorkflowGraph, ListResponse } from '@/lib/types';
 
@@ -218,20 +218,21 @@ function GraphNode({ node, state }: { node: WorkflowNode; state?: string }) {
 }
 
 function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnector: boolean }) {
-  const [expanded, setExpanded] = useState(Boolean(event.error_message || event.output_summary));
+  const [expanded, setExpanded] = useState(false);
   const status = event.status === 'failed' ? 'error' : event.status === 'running' ? 'active' : 'done';
   const entries = [['Description', event.description], ['Input', event.input_summary], ['Output', event.output_summary], ['Reasoning', event.reasoning_summary], ['Error', event.error_message], ['Tool', event.tool_name]].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  const detailsId = `log-entry-details-${event.id || event.event_type}`;
   return (
     <>
       {showConnector ? <div className="log-connector" /> : null}
       <div className={clsx('log-entry', status, expanded && 'expanded', entries.length && 'has-details')}>
-        <button className="log-entry-header" onClick={() => setExpanded((value) => !value)}>
+        <button className="log-entry-header" onClick={() => entries.length && setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={entries.length ? detailsId : undefined}>
           <div className="log-status-dot">{status === 'active' ? 'o' : status === 'error' ? 'x' : 'v'}</div>
           <div className="log-thought-label">{event.node_name ? `${event.node_name}: ` : ''}{event.title || event.event_type}<span className="log-ts-label">{event.created_at ? new Date(event.created_at).toLocaleTimeString('en-IN', { hour12: false }) : ''}</span></div>
-          {entries.length ? <div className="log-chevron">›</div> : null}
+          {entries.length ? <span className="log-details-trigger"><span>{expanded ? 'Hide details' : 'Details'}</span><ChevronDown size={14} /></span> : null}
         </button>
         {entries.length ? (
-          <div className="log-thought-body"><div className="log-details-grid">{entries.map(([label, value]) => <div key={label} className={clsx('log-detail-item', (label === 'Input' || label === 'Output') && 'important')}><div className="log-detail-label">{label}</div><div className="log-detail-value">{value}</div></div>)}</div></div>
+          <div className="log-thought-body" id={detailsId}><div className="log-details-grid">{entries.map(([label, value]) => <div key={label} className={clsx('log-detail-item', (label === 'Input' || label === 'Output') && 'important')}><div className="log-detail-label">{label}</div><div className="log-detail-value">{value}</div></div>)}</div></div>
         ) : null}
       </div>
     </>
@@ -239,16 +240,34 @@ function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnect
 }
 
 function FallbackLogs({ issue, isSummary }: { issue: Issue; isSummary: boolean }) {
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set());
   const steps = issue.workflow_key === 'incident_daddy' ? ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Incident Daddy'] : ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Bug Daddy', 'SME Agent', 'Planner', 'Planner Critique', 'Context Analyser', 'Context Critique', 'Coder', 'Coder Critique', 'GitHub', 'Reviewer Daddy'];
+  function toggleStep(step: string) {
+    setExpandedSteps((current) => {
+      const next = new Set(current);
+      if (next.has(step)) next.delete(step);
+      else next.add(step);
+      return next;
+    });
+  }
   return (
     <>
       <div className="execution-note">{isSummary ? 'Execution summary preview' : 'Waiting for backend execution events. Local workflow animation is shown on the canvas.'}</div>
-      {steps.map((step, index) => (
-        <div key={step} className={clsx('log-step-group', index > 1 && !isSummary && 'collapsed')}>
-          <div className="log-step-header"><span className="step-chevron">▾</span><span className="step-icon">{String(index + 1).padStart(2, '0')}</span><span className="step-name">{step}</span><span className={clsx('step-status n8n-step-chip', isSummary || index < 2 ? 'done' : 'running')}>{isSummary || index < 2 ? 'DONE' : 'READY'}</span></div>
-          <div className="log-step-body"><div className="log-entry info"><strong>{step}</strong><p>{issue.jiraId} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
-        </div>
-      ))}
+      {steps.map((step, index) => {
+        const expanded = expandedSteps.has(step);
+        const detailsId = `fallback-log-step-${index}`;
+        return (
+          <div key={step} className={clsx('log-step-group', !expanded && 'collapsed')}>
+            <button className="log-step-header" onClick={() => toggleStep(step)} aria-expanded={expanded} aria-controls={detailsId}>
+              <span className="step-icon">{String(index + 1).padStart(2, '0')}</span>
+              <span className="step-name">{step}</span>
+              <span className={clsx('step-status n8n-step-chip', isSummary || index < 2 ? 'done' : 'running')}>{isSummary || index < 2 ? 'DONE' : 'READY'}</span>
+              <span className="log-details-trigger"><span>{expanded ? 'Hide details' : 'Details'}</span><ChevronDown size={14} /></span>
+            </button>
+            <div className="log-step-body" id={detailsId}><div className="log-entry info"><strong>{step}</strong><p>{issue.jiraId} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
+          </div>
+        );
+      })}
     </>
   );
 }

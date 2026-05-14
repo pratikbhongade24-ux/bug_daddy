@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Download, ListFilter } from 'lucide-react';
+import { ExternalLink, Search, Download, ListFilter } from 'lucide-react';
 import { Issue, IssueTab } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { SkeletonTableRows } from '../shared/SkeletonLoader';
@@ -100,6 +100,8 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
                 <th>Criticality</th>
                 <th>Owner</th>
+                <th>Jira</th>
+                <th>PR</th>
                 <th>ETA</th>
                 <th>Action</th>
               </tr>
@@ -163,6 +165,8 @@ export function IssueRow({
         <span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span>
       </td>
       <td className="td-own">{issue.owner}</td>
+      <ResolutionLink value={issue.resolution_jira} fallback="-" />
+      <ResolutionLink value={issue.resolution_pr} fallback="-" />
       <td className="td-own">{issue.eta}</td>
       <td>
         {tab === 'backlog' ? (
@@ -183,5 +187,23 @@ export function IssueRow({
         )}
       </td>
     </tr>
+  );
+}
+
+function ResolutionLink({ value, fallback }: { value: string | null; fallback: string }) {
+  if (!value) return <td className="td-own">{fallback}</td>;
+  const isUrl = /^https?:\/\//i.test(value);
+  const label = isUrl ? value.replace(/^https?:\/\//i, '').replace(/\/$/, '') : value;
+  return (
+    <td className="td-link" title={value}>
+      {isUrl ? (
+        <a href={value} target="_blank" rel="noreferrer">
+          <span>{label}</span>
+          <ExternalLink size={13} />
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
+    </td>
   );
 }
