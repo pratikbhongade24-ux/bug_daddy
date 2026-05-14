@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 
 import pymysql
 
+# Constants for log line prefixes
+START_REQUEST_PREFIX = "START RequestId:"
 
 logs_client = boto3.client("logs")
 
@@ -109,7 +111,7 @@ def find_invocation_window(stream_events, matched_signatures):
     start_index = target_index
     while start_index > 0:
         message = stream_events[start_index].get("message", "")
-        if message.startswith("START RequestId:"):
+        if message.startswith(START_REQUEST_PREFIX):
             break
         start_index -= 1
 
@@ -151,7 +153,7 @@ def canonical_issue_message(execution_log, grouped_events):
             stripped = line.strip()
             if not stripped:
                 continue
-            if stripped.startswith("START RequestId:"):
+            if stripped.startswith(START_REQUEST_PREFIX):
                 continue
             if stripped.startswith("END RequestId:"):
                 continue
@@ -168,7 +170,7 @@ def canonical_issue_message(execution_log, grouped_events):
 
 def extract_request_id(execution_log):
     for line in execution_log.splitlines():
-        if line.startswith("START RequestId:"):
+        if line.startswith(START_REQUEST_PREFIX):
             parts = line.split()
             if len(parts) >= 3:
                 return parts[2]
