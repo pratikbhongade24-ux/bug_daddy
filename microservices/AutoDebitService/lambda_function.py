@@ -39,7 +39,16 @@ def response(context, request_id, operation, payload, extra=None):
 
 
 def load_mandate(payload):
-    mandate = {"mandateId": payload.get("mandateId", "MANDATE-001"), "bankCode": payload.get("bankCode", "MOCKBANK"), "amount": payload.get("amount", 0)}
+    """Load mandate details.
+
+    The amount field is mandatory. Previously the function defaulted to 0, which caused
+    zero‑value debits. The function now validates the presence of ``amount`` and raises
+    a ``ValueError`` if it is missing, ensuring callers provide a valid amount.
+    """
+    amount = payload.get("amount")
+    if amount is None:
+        raise ValueError("Mandate amount is required")
+    mandate = {"mandateId": payload.get("mandateId", "MANDATE-001"), "bankCode": payload.get("bankCode", "MOCKBANK"), "amount": amount}
     log("load_mandate", mandate)
     return mandate
 
