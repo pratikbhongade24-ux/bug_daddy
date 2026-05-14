@@ -67,16 +67,22 @@ export function IssuesView(props: {
         </select>
         <select className="tc-sel" value={props.originFilter} onChange={(event) => props.setOriginFilter(event.target.value)}>
           <option value="">All Origins</option>
-          <option>CloudWatch</option>
-          <option>CVE</option>
-          <option>SonarQube</option>
-          <option>JIRA</option>
+          <option value="cloudwatch">CloudWatch</option>
+          <option value="cve">CVE</option>
+          <option value="sonarqube">SonarQube</option>
+          <option value="jira">JIRA</option>
         </select>
         <div className="tbl-count">
           {props.loading ? (
             <span style={{ color: 'var(--t3)', fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>Loading…</span>
           ) : (
-            <span><strong style={{ color: 'var(--t)' }}>{props.issues.length}</strong> issues</span>
+            <span>
+              <strong style={{ color: 'var(--t)' }}>{props.issues.length}</strong>
+              {props.issues.length !== props.stats[props.tab] ? (
+                <span style={{ color: 'var(--t3)' }}> / {props.stats[props.tab]}</span>
+              ) : null}
+              {' '}issues
+            </span>
           )}
         </div>
       </div>

@@ -133,7 +133,7 @@ export function DashboardApp() {
   const sonarQuery = useQuery({ queryKey: ['sonar', 'status'], queryFn: () => apiJson<SonarStatus>('/sonar/status?limit=12'), refetchInterval: 30_000 });
   const issuesQuery = useQuery({
     queryKey: ['issues'],
-    queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=200')).items || []),
+    queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=2000')).items || []),
     refetchInterval: 30_000,
   });
   const usersQuery = useQuery({

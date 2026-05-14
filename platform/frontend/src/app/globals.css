@@ -453,9 +453,10 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .log-thought-label { font-size: 0.95rem; font-weight: 500; color: var(--t2); flex: 1; transition: color 0.2s; }
 .log-entry.active .log-thought-label { color: var(--t); font-weight: 700; }
 .log-entry.error .log-thought-label { color: var(--c2); }
-.log-details-trigger { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid var(--bd); border-radius: 7px; background: var(--s3); color: var(--t2); padding: 0.35rem 0.55rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+.log-details-trigger { display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 4px; background: transparent; color: var(--t3); padding: 0.2rem; transition: color 0.15s; margin-left: auto; flex-shrink: 0; }
+.log-entry-header:hover .log-details-trigger { color: var(--t2); }
 .log-details-trigger svg { transition: transform 0.2s; }
-.log-entry.expanded .log-details-trigger, .log-step-group:not(.collapsed) .log-details-trigger { background: var(--s4); border-color: var(--bdh); color: var(--t); }
+.log-entry.expanded .log-details-trigger, .log-step-group:not(.collapsed) .log-details-trigger { color: var(--t); }
 .log-entry.expanded .log-details-trigger svg, .log-step-group:not(.collapsed) .log-details-trigger svg { transform: rotate(180deg); }
 
 .log-thought-body { margin-left: 11px; border-left: 2px solid var(--s4); padding: 0.5rem 0 1rem 2rem; display: none; color: var(--t2); font-size: 0.9rem; line-height: 1.6; }

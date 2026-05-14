@@ -229,7 +229,7 @@ function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnect
         <button className="log-entry-header" onClick={() => entries.length && setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={entries.length ? detailsId : undefined}>
           <div className="log-status-dot">{status === 'active' ? 'o' : status === 'error' ? 'x' : 'v'}</div>
           <div className="log-thought-label">{event.node_name ? `${event.node_name}: ` : ''}{event.title || event.event_type}<span className="log-ts-label">{event.created_at ? new Date(event.created_at).toLocaleTimeString('en-IN', { hour12: false }) : ''}</span></div>
-          {entries.length ? <span className="log-details-trigger"><span>{expanded ? 'Hide details' : 'Details'}</span><ChevronDown size={14} /></span> : null}
+          {entries.length ? <span className="log-details-trigger"><ChevronDown size={14} /></span> : null}
         </button>
         {entries.length ? (
           <div className="log-thought-body" id={detailsId}><div className="log-details-grid">{entries.map(([label, value]) => <div key={label} className={clsx('log-detail-item', (label === 'Input' || label === 'Output') && 'important')}><div className="log-detail-label">{label}</div><div className="log-detail-value">{value}</div></div>)}</div></div>
