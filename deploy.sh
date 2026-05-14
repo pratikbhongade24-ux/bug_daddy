@@ -11,12 +11,25 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 REMOTE_BACKEND_DIR="${REMOTE_BACKEND_DIR:-/home/ubuntu/platform/backend}"
 REMOTE_FRONTEND_DIR="${REMOTE_FRONTEND_DIR:-/home/ubuntu/platform/frontend}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-bug-daddy-platform-backend.service}"
-AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL:-http://${EC2_IP}/api}"
 AGENT_EXECUTION_LOG_SECRET="${AGENT_EXECUTION_LOG_SECRET:-}"
 ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
 DOMAIN_NAMES="${DOMAIN_NAMES:-bugdaddy.in www.bugdaddy.in}"
+PRIMARY_DOMAIN="${DOMAIN_NAMES%% *}"
+
+if [[ "${ENABLE_HTTPS}" == "1" && -n "${PRIMARY_DOMAIN}" ]]; then
+  PUBLIC_BASE_URL="https://${PRIMARY_DOMAIN}"
+else
+  PUBLIC_BASE_URL="http://${EC2_IP}"
+fi
+
+if [[ -n "${AGENT_EXECUTION_CALLBACK_URL:-}" ]]; then
+  AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL%/}"
+else
+  AGENT_EXECUTION_CALLBACK_URL="${PUBLIC_BASE_URL}/api"
+fi
 
 echo "🚀 Deploying Bug Daddy Platform from branch ${BRANCH} to ${EC2_IP}..."
+echo "📡 Agent execution callback: ${AGENT_EXECUTION_CALLBACK_URL}"
 
 # 1. Deploy Frontend
 echo "📦 Building Frontend..."
@@ -69,7 +82,7 @@ map \$http_upgrade \$connection_upgrade {
 server {
   listen 80 default_server;
   listen [::]:80 default_server;
-  server_name bugdaddy.in www.bugdaddy.in;
+  server_name ${DOMAIN_NAMES};
 
   location /api/ {
     proxy_pass http://127.0.0.1:${BACKEND_PORT}/;
@@ -164,5 +177,6 @@ EOF
 echo "✅ Backend deployed and restarted."
 
 echo "🎉 Deployment complete!"
-echo "Frontend: http://${EC2_IP}/"
-echo "Backend:  http://${EC2_IP}:${BACKEND_PORT}/"
+echo "Frontend: ${PUBLIC_BASE_URL}/"
+echo "Backend:  ${PUBLIC_BASE_URL}/api"
+echo "Agent callback: ${AGENT_EXECUTION_CALLBACK_URL}"
