@@ -33,13 +33,21 @@ pm2 save
 
 # Backend
 echo "Restarting backend..."
-cd "${REMOTE_ROOT}/platform/backend"
-./venv/bin/pip install -r requirements.txt -q
+BACKEND_DIR="${REMOTE_ROOT}/platform/backend"
+VENV_DIR="/home/ubuntu/platform/backend/venv"
+cd "${BACKEND_DIR}"
+"${VENV_DIR}/bin/pip" install -r requirements.txt -q
 
 sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.d/override.conf" >/dev/null <<UNIT
 [Service]
+WorkingDirectory=${BACKEND_DIR}
+EnvironmentFile=
+Environment=AWS_REGION=ap-south-1
+Environment=AGENTCORE_RUNTIME_ARN=arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs
 Environment=AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL}
 Environment=AGENT_EXECUTION_LOG_SECRET=${AGENT_EXECUTION_LOG_SECRET}
+ExecStart=
+ExecStart=${VENV_DIR}/bin/python -m uvicorn main:app --host 127.0.0.1 --port ${BACKEND_PORT}
 UNIT
 
 sudo systemctl daemon-reload
