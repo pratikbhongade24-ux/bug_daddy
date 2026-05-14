@@ -1,17 +1,21 @@
 import os
 import time
-
 import boto3
+
+# Reuse AWS SDK clients across Lambda invocations
+_REGION = os.environ.get("AWS_REGION", "ap-south-1")
+_EC2_CLIENT = boto3.client("ec2", region_name=_REGION)
+_SSM_CLIENT = boto3.client("ssm", region_name=_REGION)
 
 
 def lambda_handler(event, context):
-    region = os.environ.get("AWS_REGION", "ap-south-1")
     instance_id = os.environ["SONAR_INSTANCE_ID"]
     scan_command = os.environ.get("SONAR_SCAN_COMMAND", "/opt/sonarqube/run-scan.sh")
     wait_seconds = int(os.environ.get("SONAR_SSM_WAIT_SECONDS", "240"))
 
-    ec2 = boto3.client("ec2", region_name=region)
-    ssm = boto3.client("ssm", region_name=region)
+    # Use pre-initialized clients
+    ec2 = _EC2_CLIENT
+    ssm = _SSM_CLIENT
 
     state = ec2.describe_instances(InstanceIds=[instance_id])["Reservations"][0]["Instances"][0]["State"]["Name"]
     if state == "stopped":
