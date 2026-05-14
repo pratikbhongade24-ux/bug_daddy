@@ -290,7 +290,7 @@ def upsert_issue(cursor, issue):
     )
     return "inserted"
 
-# --- Helper functions to simplify build_issues ---
+# --- Helper functions to simplify build_issues --
 
 def _event_bounds(log_events):
     """Return (first_event, last_event) based on timestamps."""
@@ -331,12 +331,18 @@ def _build_issue_dict(
     }
 
 def build_issues(payload):
-    log_group = payload.get("logGroup")
-    log_stream = payload.get("logStream")
-    service_name = extract_service_name(log_group)
+    """Orchestrate issue creation from a CloudWatch payload.
+
+    The function now follows a linear, guard‑clause style to keep cognitive
+    complexity low (≤ 15). All heavy lifting is delegated to dedicated helpers.
+    """
     log_events = payload.get("logEvents", [])
     if not log_events:
         return []
+
+    log_group = payload.get("logGroup")
+    log_stream = payload.get("logStream")
+    service_name = extract_service_name(log_group)
 
     first_event, last_event = _event_bounds(log_events)
     merged_messages = _merged_messages(log_events)
