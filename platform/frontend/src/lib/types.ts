@@ -81,7 +81,7 @@ export interface Issue {
   agent_target: string;
   workflow_key: string;
   status: string;
-  tab: 'backlog' | 'wip' | 'review' | 'resolved' | string;
+  tab: IssueTab;
   owner: string;
   resolution_pr: string | null;
   resolution_jira: string | null;
