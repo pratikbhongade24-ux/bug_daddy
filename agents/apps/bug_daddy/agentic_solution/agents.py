@@ -58,6 +58,7 @@ def build_incident_agents(config: AppConfig, tools: dict[str, list[Any]]) -> Inc
 
 def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgentBundle:
     model = _build_model(config)
+    repo_read_write = tools["bitbucket"] + tools.get("github_read_write", [])
     all_repo_tools = tools["bitbucket"] + tools.get("github", [])
     return BugAgentBundle(
         strategy_planner=Agent(
@@ -70,7 +71,7 @@ def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgent
             system_prompt=CONTEXT_ANALYZER_PROMPT,
             tools=tools["jira"] + all_repo_tools,
         ),
-        coder=Agent(model=model, system_prompt=CODER_PROMPT, tools=all_repo_tools),
+        coder=Agent(model=model, system_prompt=CODER_PROMPT, tools=repo_read_write),
         critic=Agent(model=model, system_prompt=CRITIC_PROMPT, tools=[]),
     )
 
