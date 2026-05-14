@@ -11,6 +11,13 @@ from datetime import datetime, timezone
 import pymysql
 
 
+# -------------------------------------------------------------------------
+# Log line prefixes – defined once to avoid duplicated literals (SonarQube S1192)
+# -------------------------------------------------------------------------
+START_REQUEST_ID_PREFIX = "START RequestId:"
+END_REQUEST_ID_PREFIX   = "END RequestId:"
+REPORT_REQUEST_ID_PREFIX = "REPORT RequestId:"
+
 logs_client = boto3.client("logs")
 
 def decode_logs_event(event):
@@ -109,20 +116,20 @@ def find_invocation_window(stream_events, matched_signatures):
     start_index = target_index
     while start_index > 0:
         message = stream_events[start_index].get("message", "")
-        if message.startswith("START RequestId:"):
+        if message.startswith(START_REQUEST_ID_PREFIX):
             break
         start_index -= 1
 
     end_index = target_index
     while end_index < len(stream_events) - 1:
         message = stream_events[end_index].get("message", "")
-        if message.startswith("REPORT RequestId:") or message.startswith("END RequestId:"):
+        if message.startswith(REPORT_REQUEST_ID_PREFIX) or message.startswith(END_REQUEST_ID_PREFIX):
             break
         end_index += 1
 
     if end_index < len(stream_events) - 1:
         next_message = stream_events[end_index + 1].get("message", "")
-        if next_message.startswith("REPORT RequestId:"):
+        if next_message.startswith(REPORT_REQUEST_ID_PREFIX):
             end_index += 1
 
     return stream_events[start_index : end_index + 1]
@@ -151,11 +158,11 @@ def canonical_issue_message(execution_log, grouped_events):
             stripped = line.strip()
             if not stripped:
                 continue
-            if stripped.startswith("START RequestId:"):
+            if stripped.startswith(START_REQUEST_ID_PREFIX):
                 continue
-            if stripped.startswith("END RequestId:"):
+            if stripped.startswith(END_REQUEST_ID_PREFIX):
                 continue
-            if stripped.startswith("REPORT RequestId:"):
+            if stripped.startswith(REPORT_REQUEST_ID_PREFIX):
                 continue
             if stripped.startswith("{") and '"stage"' in stripped:
                 continue
@@ -168,11 +175,11 @@ def canonical_issue_message(execution_log, grouped_events):
 
 def extract_request_id(execution_log):
     for line in execution_log.splitlines():
-        if line.startswith("START RequestId:"):
+        if line.startswith(START_REQUEST_ID_PREFIX):
             parts = line.split()
             if len(parts) >= 3:
                 return parts[2]
-        if line.startswith("REPORT RequestId:"):
+        if line.startswith(REPORT_REQUEST_ID_PREFIX):
             parts = line.split()
             if len(parts) >= 3:
                 return parts[2]
@@ -290,7 +297,7 @@ def upsert_issue(cursor, issue):
     )
     return "inserted"
 
-# --- Helper functions to simplify build_issues ---
+# --- Helper functions to simplify build_issues --
 
 def _event_bounds(log_events):
     """Return (first_event, last_event) based on timestamps."""
