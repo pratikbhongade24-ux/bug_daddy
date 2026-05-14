@@ -23,10 +23,10 @@ YELLOW="\033[0;33m"
 RED="\033[0;31m"
 RESET="\033[0m"
 
-log()  { echo -e "${CYAN}[local_run]${RESET} $*"; }
-ok()   { echo -e "${GREEN}[local_run]${RESET} $*"; }
-warn() { echo -e "${YELLOW}[local_run]${RESET} $*"; }
-err()  { echo -e "${RED}[local_run]${RESET} $*" >&2; }
+log()  { printf "${CYAN}[local_run]${RESET} %s\n" "$*"; }
+ok()   { printf "${GREEN}[local_run]${RESET} %s\n" "$*"; }
+warn() { printf "${YELLOW}[local_run]${RESET} %s\n" "$*"; }
+err()  { printf "${RED}[local_run]${RESET} %s\n" "$*" >&2; }
 
 cleanup() {
   warn "Shutting down…"
@@ -45,7 +45,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   set +o allexport
 fi
 
-export DB_HOST="${DB_HOST:-localhost}"
+export DB_HOST="${DB_HOST:-database-1.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com}"
 export DB_PORT="${DB_PORT:-3306}"
 export DB_NAME="${DB_NAME:-bug_daddy}"
 export DB_USER="${DB_USER:-bug_daddy}"
@@ -100,8 +100,8 @@ FRONTEND_PID=$!
 # ── wait ──────────────────────────────────────────────────────────────────────
 echo ""
 ok "Both services running. Press Ctrl+C to stop."
-echo -e "  ${GREEN}Backend${RESET}  → http://localhost:8000"
-echo -e "  ${CYAN}Frontend${RESET} → http://localhost:3000"
+printf "  ${GREEN}Backend${RESET}  → http://localhost:8000\n"
+printf "  ${CYAN}Frontend${RESET} → http://localhost:3000\n"
 echo ""
 
 wait "$BACKEND_PID" "$FRONTEND_PID"
