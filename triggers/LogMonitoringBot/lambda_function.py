@@ -13,7 +13,6 @@ import pymysql
 
 logs_client = boto3.client("logs")
 
-
 def decode_logs_event(event):
     logs_data = event.get("awslogs", {}).get("data")
     if not logs_data:
@@ -22,16 +21,13 @@ def decode_logs_event(event):
     decompressed_payload = gzip.decompress(compressed_payload)
     return json.loads(decompressed_payload)
 
-
 def utc_datetime_from_ms(timestamp_ms):
     return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
-
 def extract_service_name(log_group):
     return log_group.rsplit("/", 1)[-1] if log_group else "unknown"
-
 
 def extract_issue_type(message):
     lowered = message.lower()
@@ -47,10 +43,8 @@ def extract_issue_type(message):
         return "error"
     return "log_exception"
 
-
 def normalize_message(message):
     return " ".join(message.strip().split())
-
 
 def normalize_fingerprint_message(message):
     normalized = normalize_message(message)
@@ -66,18 +60,15 @@ def normalize_fingerprint_message(message):
     normalized = re.sub(r"\b\d+\b", "<num>", normalized)
     return normalized
 
-
 def build_fingerprint(service_name, issue_type, message):
     normalized = (
         f"{service_name}|{issue_type}|{normalize_fingerprint_message(message)}"
     )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
-
 def summarize_message(message):
     first_line = message.strip().splitlines()[0] if message.strip() else "No message"
     return first_line[:1000]
-
 
 def fetch_log_stream_events(log_group, log_stream, start_time, end_time):
     events = []
@@ -104,7 +95,6 @@ def fetch_log_stream_events(log_group, log_stream, start_time, end_time):
         next_token = new_token
 
     return events
-
 
 def find_invocation_window(stream_events, matched_signatures):
     matched_indexes = [
@@ -137,7 +127,6 @@ def find_invocation_window(stream_events, matched_signatures):
 
     return stream_events[start_index : end_index + 1]
 
-
 def build_execution_log(log_group, log_stream, grouped_events):
     try:
         min_timestamp = min(event["timestamp"] for event in grouped_events)
@@ -155,7 +144,6 @@ def build_execution_log(log_group, log_stream, grouped_events):
     except Exception as exc:
         fallback = "\n".join(event.get("message", "").strip() for event in grouped_events)
         return f"[fallback] failed to fetch full invocation logs: {exc}\n{fallback}"[:65000]
-
 
 def canonical_issue_message(execution_log, grouped_events):
     if execution_log:
@@ -178,7 +166,6 @@ def canonical_issue_message(execution_log, grouped_events):
             return message
     return "Unknown issue"
 
-
 def extract_request_id(execution_log):
     for line in execution_log.splitlines():
         if line.startswith("START RequestId:"):
@@ -190,7 +177,6 @@ def extract_request_id(execution_log):
             if len(parts) >= 3:
                 return parts[2]
     return "no-request-id"
-
 
 def classify_issue(execution_log, grouped_events):
     combined = execution_log.lower()
@@ -206,7 +192,6 @@ def classify_issue(execution_log, grouped_events):
         return "key_error"
     return extract_issue_type(canonical_issue_message(execution_log, grouped_events))
 
-
 def connect_db():
     return pymysql.connect(
         host=os.environ["DB_HOST"],
@@ -217,7 +202,6 @@ def connect_db():
         autocommit=True,
         connect_timeout=10,
     )
-
 
 def upsert_issue(cursor, issue):
     select_sql = """
@@ -306,48 +290,75 @@ def upsert_issue(cursor, issue):
     )
     return "inserted"
 
+# --- Helper functions to simplify build_issues ---
+
+def _event_bounds(log_events):
+    """Return (first_event, last_event) based on timestamps."""
+    first = min(log_events, key=lambda i: i["timestamp"])
+    last = max(log_events, key=lambda i: i["timestamp"])
+    return first, last
+
+def _merged_messages(log_events):
+    """Concatenate all log messages, separated by double newlines."""
+    return "\n\n".join(event["message"].strip() for event in log_events if event.get("message"))
+
+def _build_issue_dict(
+    fingerprint,
+    service_name,
+    issue_type,
+    canonical_message,
+    merged_messages,
+    execution_log,
+    request_id,
+    first_seen,
+    last_seen,
+    created_at,
+):
+    return {
+        "fingerprint": fingerprint,
+        "service_name": service_name,
+        "issue_type": issue_type,
+        "source": "cloudwatch",
+        "description": summarize_message(canonical_message),
+        "stack_trace": merged_messages[:65000],
+        "entire_execution_logs": execution_log or merged_messages[:65000],
+        "request_id": request_id,
+        "frequency": 1,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "status": "open",
+        "created_at": created_at,
+    }
 
 def build_issues(payload):
     log_group = payload.get("logGroup")
     log_stream = payload.get("logStream")
     service_name = extract_service_name(log_group)
-    issues = []
     log_events = payload.get("logEvents", [])
     if not log_events:
-        return issues
+        return []
 
-    first_event = min(log_events, key=lambda item: item["timestamp"])
-    last_event = max(log_events, key=lambda item: item["timestamp"])
-    merged_messages = "\n\n".join(event["message"].strip() for event in log_events if event.get("message"))
+    first_event, last_event = _event_bounds(log_events)
+    merged_messages = _merged_messages(log_events)
     execution_log = build_execution_log(log_group, log_stream, log_events)
     canonical_message = canonical_issue_message(execution_log, log_events)
     issue_type = classify_issue(execution_log, log_events)
     request_id = extract_request_id(execution_log)
-    fingerprint = build_fingerprint(
+    fingerprint = build_fingerprint(service_name, issue_type, canonical_message)
+
+    issue = _build_issue_dict(
+        fingerprint,
         service_name,
         issue_type,
         canonical_message,
+        merged_messages,
+        execution_log,
+        request_id,
+        utc_datetime_from_ms(first_event["timestamp"]),
+        utc_datetime_from_ms(last_event["timestamp"]),
+        utc_datetime_from_ms(last_event["timestamp"]),
     )
-
-    issues.append(
-        {
-            "fingerprint": fingerprint,
-            "service_name": service_name,
-            "issue_type": issue_type,
-            "source": "cloudwatch",
-            "description": summarize_message(canonical_message),
-            "stack_trace": merged_messages[:65000],
-            "entire_execution_logs": execution_log or merged_messages[:65000],
-            "request_id": request_id,
-            "frequency": 1,
-            "first_seen": utc_datetime_from_ms(first_event["timestamp"]),
-            "last_seen": utc_datetime_from_ms(last_event["timestamp"]),
-            "status": "open",
-            "created_at": utc_datetime_from_ms(last_event["timestamp"]),
-        }
-    )
-    return issues
-
+    return [issue]
 
 def lambda_handler(event, context):
     payload = decode_logs_event(event)
