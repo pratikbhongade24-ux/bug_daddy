@@ -70,6 +70,7 @@ class ReviewResponse(BaseModel):
     component: Literal["reviewer_daddy"] = "reviewer_daddy"
     disposition: ReviewDisposition
     summary: str
+    pr_url: str | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 

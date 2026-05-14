@@ -2047,10 +2047,15 @@ def _extract_jira_key(result: dict[str, Any]) -> str | None:
     return match.group(1) if match else None
 
 
+_PR_URL_RE = re.compile(r"https?://[^\s)>\"]+/pull(?:-requests?)?/\d+")
+
+
 def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
     """Extract a pull request URL from an agent result dict."""
     if result.get("resolution_pr"):
         return str(result["resolution_pr"])
+    if result.get("pr_url"):
+        return str(result["pr_url"])
 
     candidates: list[Any] = []
     candidates.extend(result.get("artifacts", []))
@@ -2059,6 +2064,8 @@ def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
         candidates.extend(review_response.get("artifacts", []))
         if review_response.get("resolution_pr"):
             return str(review_response["resolution_pr"])
+        if review_response.get("pr_url"):
+            return str(review_response["pr_url"])
 
     for artifact in candidates:
         if not isinstance(artifact, dict) or artifact.get("type") != "pull_request":
@@ -2071,12 +2078,12 @@ def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
             text = json.dumps(content)
         else:
             text = str(content)
-        match = re.search(r"https?://[^\s)>\"]+/pull/\d+", text)
+        match = _PR_URL_RE.search(text)
         if match:
             return match.group(0)
 
     summary = str(result.get("summary") or "")
-    match = re.search(r"https?://[^\s)>\"]+/pull/\d+", summary)
+    match = _PR_URL_RE.search(summary)
     return match.group(0) if match else None
 
 
