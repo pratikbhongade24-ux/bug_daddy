@@ -157,6 +157,34 @@ docker compose run --rm scanner 2>&1 | tee -a "${LOG_FILE}" "${_SCANNER_LOG}"
 # Stream scanner output to CW immediately
 cw_flush_file "${_SCANNER_LOG}"
 
+# Extract the CE task ID from the scanner log so we can wait for report processing
+_CE_TASK_ID="$(grep -oP '(?<=api/ce/task\?id=)[^\s]+' "${_SCANNER_LOG}" | tail -1 || true)"
+if [[ -n "${_CE_TASK_ID}" ]]; then
+  log "Waiting for SonarQube to process report (CE task: ${_CE_TASK_ID})"
+  ce_deadline=$((SECONDS + 600))
+  while true; do
+    if (( SECONDS > ce_deadline )); then
+      log "ERROR: CE task ${_CE_TASK_ID} did not reach SUCCESS within 600s"
+      exit 1
+    fi
+    _CE_STATUS="$(curl -fsS -u "${SONAR_TOKEN}:" \
+      "http://127.0.0.1:9000/api/ce/task?id=${_CE_TASK_ID}" 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["task"]["status"])' 2>/dev/null || echo "UNKNOWN")"
+    log "  CE task status: ${_CE_STATUS}"
+    if [[ "${_CE_STATUS}" == "SUCCESS" ]]; then
+      break
+    elif [[ "${_CE_STATUS}" == "FAILED" || "${_CE_STATUS}" == "CANCELED" ]]; then
+      log "ERROR: CE task ended with status ${_CE_STATUS}"
+      exit 1
+    fi
+    sleep 15
+  done
+  log "Report processing complete"
+else
+  log "WARNING: Could not extract CE task ID — waiting 60s before export"
+  sleep 60
+fi
+
 log "Exporting unresolved SonarQube issues"
 page=1
 page_size=500
