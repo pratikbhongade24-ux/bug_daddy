@@ -639,7 +639,7 @@ def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
         runtimeSessionId=str(uuid.uuid4()),
         payload=json.dumps(payload).encode("utf-8"),
     )
-    body = response.get("payload")
+    body = response.get("response") or response.get("payload")
     if body is None:
         return {"message": "No payload returned from AgentCore"}
     if hasattr(body, "read"):
@@ -2310,6 +2310,7 @@ def agent_invoke(
         payload.metadata.get("jira_key")
         or payload.metadata.get("resolution_jira")
         or issue_context.get("resolution_jira")
+        or issue_context.get("jira_id")
     ):
         runtime_target = "classifier"
     workflow_key = workflow_key_for_target(target)
