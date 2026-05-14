@@ -59,17 +59,32 @@ log "Setting up backend…"
 VENV="$BACKEND_DIR/venv"
 if [[ ! -d "$VENV" ]]; then
   log "Creating Python venv at $VENV"
-  python3 -m venv "$VENV"
+  if command -v python3 &>/dev/null && python3 -c "import sys" 2>/dev/null; then
+    python3 -m venv "$VENV"
+  else
+    python -m venv "$VENV"
+  fi
+fi
+
+if [[ -d "$VENV/bin" ]]; then
+  VENV_BIN="$VENV/bin"
+else
+  VENV_BIN="$VENV/Scripts"
 fi
 
 log "Installing/updating Python dependencies"
-"$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet -r "$BACKEND_DIR/requirements.txt"
+if [[ -f "$VENV_BIN/python.exe" ]]; then
+  PYTHON_EXEC="$VENV_BIN/python.exe"
+else
+  PYTHON_EXEC="$VENV_BIN/python"
+fi
+"$PYTHON_EXEC" -m pip install --quiet --upgrade pip
+"$PYTHON_EXEC" -m pip install --quiet -r "$BACKEND_DIR/requirements.txt"
 
 ok "Backend ready — starting uvicorn on :8000"
 (
   cd "$BACKEND_DIR"
-  "$VENV/bin/uvicorn" main:app --host 0.0.0.0 --port 8000 --reload 2>&1 \
+  "$VENV_BIN/uvicorn" main:app --host 0.0.0.0 --port 8000 --reload 2>&1 \
     | sed "s/^/$(printf "${GREEN}[backend]${RESET} ")/"
 ) &
 BACKEND_PID=$!
@@ -84,7 +99,10 @@ fi
 
 if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   log "Installing npm dependencies"
-  npm --prefix "$FRONTEND_DIR" install
+  (
+    cd "$FRONTEND_DIR"
+    npm install
+  )
 else
   log "node_modules present — skipping npm install (run 'npm install' manually if needed)"
 fi

@@ -181,3 +181,14 @@ export interface SonarReportUrl {
   url: string;
   expires_in: number;
 }
+
+export type ToastKind = 'ok' | 'err' | 'inf';
+
+export interface ToastItem {
+  id: number;
+  message: string;
+  kind: ToastKind;
+}
+
+export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin';
+export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';
