@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
+import urllib.error
+import urllib.request
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 from strands.tools import tool
@@ -93,20 +97,49 @@ def github_update_file(
 
 @tool
 def github_create_pull_request(
-    repo_owner: str, 
-    repo_name: str, 
-    title: str, 
-    body: str, 
-    head: str, 
+    repo_owner: str,
+    repo_name: str,
+    title: str,
+    body: str,
+    head: str,
     base: str = "master"
 ) -> dict[str, Any]:
-    """Create a pull request on GitHub."""
-    return _request("POST", f"/repos/{repo_owner}/{repo_name}/pulls", {
+    """Create a pull request on GitHub, or return the existing open PR for the same branch."""
+    query = urlencode({"state": "open", "head": f"{repo_owner}:{head}", "base": base})
+    existing = _request(
+        "GET",
+        f"/repos/{repo_owner}/{repo_name}/pulls?{query}",
+    )
+    pr = existing[0] if existing else _request("POST", f"/repos/{repo_owner}/{repo_name}/pulls", {
         "title": title,
         "body": body,
         "head": head,
         "base": base
     })
+    _stamp_pr_in_platform(pr.get("html_url"))
+    return pr
+
+
+def _stamp_pr_in_platform(pr_url: str | None) -> None:
+    """Fire-and-forget: record the PR URL in the platform DB via the backend API."""
+    if not pr_url:
+        return
+    endpoint = os.getenv("AGENT_EXECUTION_CALLBACK_URL") or os.getenv("PLATFORM_API_BASE_URL")
+    session_id = os.getenv("EXECUTION_SESSION_ID")
+    if not endpoint or not session_id:
+        return
+    url = f"{endpoint.rstrip('/')}/agent/executions/{session_id}/map-resolution"
+    payload = json.dumps({"resolution_pr": pr_url}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5).read()
+    except (urllib.error.URLError, TimeoutError, OSError):
+        pass
 
 
 def get_native_github_tools() -> list[Any]:

@@ -26,7 +26,8 @@ class BugDaddyRuntime:
                 "slack": self.tools.slack_tools, 
                 "jira": self.tools.jira_tools, 
                 "bitbucket": self.tools.bitbucket_tools,
-                "github": self.tools.github_tools
+                "github": self.tools.github_tools,
+                "github_read_write": self.tools.github_read_write_tools
             },
         )
 
@@ -123,6 +124,7 @@ class BugDaddyRuntime:
             fix_proposal=coder,
             critique=critic_coder,
             metadata={
+                **request.metadata,
                 "incident_summary": request.incident_summary,
                 "incident_severity": request.incident_severity,
             },
@@ -236,6 +238,9 @@ Service:
 Repository:
 {request.repository}
 
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
+
 Gathered Context:
 {context}
 
@@ -253,6 +258,9 @@ Prompt:
 
 Repository:
 {request.repository}
+
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
 
 Logs:
 {_joined(request.logs)}
@@ -282,6 +290,9 @@ Prompt:
 
 Repository:
 {request.repository}
+
+Jira:
+{request.metadata.get("jira_key") or request.metadata.get("resolution_jira") or "None provided"}
 
 Strategy & Plan:
 {strategy}

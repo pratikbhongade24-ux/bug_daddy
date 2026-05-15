@@ -26,7 +26,7 @@ services:
       - sonar-scanner
       - -Dsonar.projectKey=${SONAR_PROJECT_KEY:-bugdaddy}
       - -Dsonar.projectName=${SONAR_PROJECT_NAME:-BugDaddy}
-      - -Dsonar.sources=/usr/src
+      - -Dsonar.sources=/usr/src/microservices,/usr/src/agents
       - -Dsonar.exclusions=**/node_modules/**,**/.next/**,**/.venv/**,**/venv/**,**/__pycache__/**,**/package-lock.json,**/.git/**
 
 volumes:

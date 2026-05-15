@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { LayoutDashboard, Bug, ShieldCheck, Users } from 'lucide-react';
+import { LayoutDashboard, Bug, ShieldCheck, Users, ScanSearch } from 'lucide-react';
 import { ViewName } from '@/lib/types';
 
 export function Sidebar({
@@ -24,6 +24,9 @@ export function Sidebar({
       </button>
       <button className={clsx('nav-item', view === 'sonar' && 'active')} onClick={() => setView('sonar')}>
         <ShieldCheck size={16} /> SonarQube
+      </button>
+      <button className={clsx('nav-item', view === 'security' && 'active')} onClick={() => setView('security')}>
+        <ScanSearch size={16} /> Security Scanner
       </button>
       {isAdmin ? (
         <button className={clsx('nav-item', view === 'admin' && 'active')} onClick={() => setView('admin')}>

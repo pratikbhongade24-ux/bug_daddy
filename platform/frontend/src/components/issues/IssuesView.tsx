@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Download, ListFilter } from 'lucide-react';
+import { ExternalLink, Search, Download, ListFilter } from 'lucide-react';
 import { Issue, IssueTab } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { SkeletonTableRows } from '../shared/SkeletonLoader';
@@ -67,16 +67,22 @@ export function IssuesView(props: {
         </select>
         <select className="tc-sel" value={props.originFilter} onChange={(event) => props.setOriginFilter(event.target.value)}>
           <option value="">All Origins</option>
-          <option>CloudWatch</option>
-          <option>CVE</option>
-          <option>SonarQube</option>
-          <option>JIRA</option>
+          <option value="cloudwatch">CloudWatch</option>
+          <option value="cve">CVE</option>
+          <option value="sonarqube">SonarQube</option>
+          <option value="jira">JIRA</option>
         </select>
         <div className="tbl-count">
           {props.loading ? (
             <span style={{ color: 'var(--t3)', fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>Loading…</span>
           ) : (
-            <span><strong style={{ color: 'var(--t)' }}>{props.issues.length}</strong> issues</span>
+            <span>
+              <strong style={{ color: 'var(--t)' }}>{props.issues.length}</strong>
+              {props.issues.length !== props.stats[props.tab] ? (
+                <span style={{ color: 'var(--t3)' }}> / {props.stats[props.tab]}</span>
+              ) : null}
+              {' '}issues
+            </span>
           )}
         </div>
       </div>
@@ -110,6 +116,8 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
                 <th>Criticality</th>
                 <th>Owner</th>
+                <th>Jira</th>
+                <th>PR</th>
                 <th>ETA</th>
                 <th>Action</th>
               </tr>
@@ -173,6 +181,8 @@ export function IssueRow({
         <span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span>
       </td>
       <td className="td-own">{issue.owner}</td>
+      <ResolutionLink value={issue.resolution_jira} fallback="-" />
+      <ResolutionLink value={issue.resolution_pr} fallback="-" />
       <td className="td-own">{issue.eta}</td>
       <td>
         {tab === 'backlog' ? (
@@ -193,5 +203,23 @@ export function IssueRow({
         )}
       </td>
     </tr>
+  );
+}
+
+function ResolutionLink({ value, fallback }: { value: string | null; fallback: string }) {
+  if (!value) return <td className="td-own">{fallback}</td>;
+  const isUrl = /^https?:\/\//i.test(value);
+  const label = isUrl ? value.replace(/^https?:\/\//i, '').replace(/\/$/, '') : value;
+  return (
+    <td className="td-link" title={value}>
+      {isUrl ? (
+        <a href={value} target="_blank" rel="noreferrer">
+          <span>{label}</span>
+          <ExternalLink size={13} />
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
+    </td>
   );
 }

@@ -78,7 +78,7 @@ def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgent
 
 def build_reviewer_agents(config: AppConfig, tools: dict[str, list[Any]]) -> ReviewerAgentBundle:
     model = _build_model(config)
-    all_repo_tools = tools["bitbucket"] + tools.get("github", [])
+    all_repo_tools = tools["bitbucket"] + tools.get("github_read_write", [])
     return ReviewerAgentBundle(
         reviewer=Agent(
             model=model,

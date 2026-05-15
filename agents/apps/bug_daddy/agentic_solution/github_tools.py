@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import os
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 from strands.tools import tool
@@ -100,7 +101,14 @@ def github_create_pull_request(
     head: str, 
     base: str = "master"
 ) -> dict[str, Any]:
-    """Create a pull request on GitHub."""
+    """Create a pull request on GitHub, or return the existing open PR for the same branch."""
+    query = urlencode({"state": "open", "head": f"{repo_owner}:{head}", "base": base})
+    existing = _request(
+        "GET",
+        f"/repos/{repo_owner}/{repo_name}/pulls?{query}",
+    )
+    if existing:
+        return existing[0]
     return _request("POST", f"/repos/{repo_owner}/{repo_name}/pulls", {
         "title": title,
         "body": body,
@@ -109,15 +117,26 @@ def github_create_pull_request(
     })
 
 
-def get_native_github_tools() -> list[Any]:
-    """Return the list of native GitHub tools."""
+def get_native_github_read_write_tools() -> list[Any]:
+    """Return the list of native GitHub tools for reading and writing files/branches."""
     return [
         github_list_files,
         github_get_file_content,
         github_create_branch,
         github_update_file,
+    ]
+
+
+def get_native_github_pr_tools() -> list[Any]:
+    """Return the list of native GitHub tools for pull request management."""
+    return [
         github_create_pull_request,
     ]
+
+
+def get_native_github_tools() -> list[Any]:
+    """Return the full list of native GitHub tools."""
+    return get_native_github_read_write_tools() + get_native_github_pr_tools()
 
 
 def native_github_diagnostics() -> dict[str, Any]:

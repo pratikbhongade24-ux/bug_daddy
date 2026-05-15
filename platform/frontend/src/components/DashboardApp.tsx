@@ -26,6 +26,7 @@ import { DashboardOverview } from './dashboard/DashboardOverview';
 import { IssuesView } from './issues/IssuesView';
 import { SonarView } from './sonar/SonarView';
 import { AdminView } from './admin/AdminView';
+import { SecurityScannerView } from './security/SecurityScannerView';
 import { ExecutionGraphModal } from './graph/ExecutionGraphModal';
 import { ToastContainer } from './shared/ToastContainer';
 import { CommandPalette } from './shared/CommandPalette';
@@ -133,7 +134,7 @@ export function DashboardApp() {
   const sonarQuery = useQuery({ queryKey: ['sonar', 'status'], queryFn: () => apiJson<SonarStatus>('/sonar/status?limit=12'), refetchInterval: 30_000 });
   const issuesQuery = useQuery({
     queryKey: ['issues'],
-    queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=200')).items || []),
+    queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=2000')).items || []),
     refetchInterval: 30_000,
   });
   const usersQuery = useQuery({
@@ -209,11 +210,15 @@ export function DashboardApp() {
         method: 'POST',
         body: JSON.stringify({
           issue_id: issue.id,
-          target: prioritized.agent_target || issue.agent_target,
+          target: 'classifier',
           service_name: issue.service,
           incident_summary: issue.description || issue.err,
           source: 'platform',
-          metadata: { issue_id: issue.id, workflow_key: prioritized.workflow_key || issue.workflow_key },
+          metadata: {
+            issue_id: issue.id,
+            workflow_key: prioritized.workflow_key || issue.workflow_key,
+            suggested_agent_target: prioritized.agent_target || issue.agent_target,
+          },
         }),
       });
       const data = await invoke.json().catch(() => ({}));
@@ -329,10 +334,14 @@ export function DashboardApp() {
               loading={sonarQuery.isLoading}
               refreshing={sonarQuery.isFetching}
               invoking={invokeSonarMutation.isPending}
+              inProgress={sonarQuery.data?.in_progress ?? false}
               onInvoke={() => invokeSonarMutation.mutate()}
               onRefresh={() => sonarQuery.refetch()}
               onOpenReport={openSonarReport}
             />
+          ) : null}
+          {view === 'security' ? (
+            <SecurityScannerView addToast={toast} />
           ) : null}
           {view === 'admin' && isAdmin ? (
             <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} toast={toast} refresh={() => usersQuery.refetch()} />

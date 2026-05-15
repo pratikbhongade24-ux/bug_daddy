@@ -38,8 +38,19 @@ def is_non_code_resolution(*parts: str) -> bool:
 
 
 def infer_review_disposition(text: str) -> str:
+    import re
+    tag = re.search(r"\[DECISION:\s*(APPROVE|JIRA_ONLY|REWORK)\]", text, re.IGNORECASE)
+    if tag:
+        decision = tag.group(1).upper()
+        if decision == "REWORK":
+            return "rework_required"
+        if decision == "JIRA_ONLY":
+            return "jira_ticket"
+        return "pull_request"
+
+    # Fallback for responses without the structured tag
     lowered = text.lower()
-    if "rework" in lowered or "reject" in lowered:
+    if re.search(r"\b(rework required|requires rework|send back for rework|rejected)\b", lowered):
         return "rework_required"
     if "jira-only" in lowered or "non-code" in lowered:
         return "jira_ticket"

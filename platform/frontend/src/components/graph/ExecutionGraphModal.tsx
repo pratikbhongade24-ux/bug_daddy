@@ -2,7 +2,7 @@ import React, { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
-import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle } from 'lucide-react';
+import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown, Copy, Check } from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import { Issue, ExecutionEvent, WorkflowNode, WorkflowEdge, WorkflowGraph, ListResponse } from '@/lib/types';
 
@@ -218,20 +218,21 @@ function GraphNode({ node, state }: { node: WorkflowNode; state?: string }) {
 }
 
 function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnector: boolean }) {
-  const [expanded, setExpanded] = useState(Boolean(event.error_message || event.output_summary));
+  const [expanded, setExpanded] = useState(false);
   const status = event.status === 'failed' ? 'error' : event.status === 'running' ? 'active' : 'done';
   const entries = [['Description', event.description], ['Input', event.input_summary], ['Output', event.output_summary], ['Reasoning', event.reasoning_summary], ['Error', event.error_message], ['Tool', event.tool_name]].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  const detailsId = `log-entry-details-${event.id || event.event_type}`;
   return (
     <>
       {showConnector ? <div className="log-connector" /> : null}
       <div className={clsx('log-entry', status, expanded && 'expanded', entries.length && 'has-details')}>
-        <button className="log-entry-header" onClick={() => setExpanded((value) => !value)}>
+        <button className="log-entry-header" onClick={() => entries.length && setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={entries.length ? detailsId : undefined}>
           <div className="log-status-dot">{status === 'active' ? 'o' : status === 'error' ? 'x' : 'v'}</div>
           <div className="log-thought-label">{event.node_name ? `${event.node_name}: ` : ''}{event.title || event.event_type}<span className="log-ts-label">{event.created_at ? new Date(event.created_at).toLocaleTimeString('en-IN', { hour12: false }) : ''}</span></div>
-          {entries.length ? <div className="log-chevron">›</div> : null}
+          {entries.length ? <span className="log-details-trigger"><ChevronDown size={14} /></span> : null}
         </button>
         {entries.length ? (
-          <div className="log-thought-body"><div className="log-details-grid">{entries.map(([label, value]) => <div key={label} className={clsx('log-detail-item', (label === 'Input' || label === 'Output') && 'important')}><div className="log-detail-label">{label}</div><div className="log-detail-value">{value}</div></div>)}</div></div>
+          <div className="log-thought-body" id={detailsId}><div className="log-details-grid">{entries.map(([label, value]) => <div key={label} className={clsx('log-detail-item', (label === 'Input' || label === 'Output') && 'important')}><div className="log-detail-label">{label}</div><div className="log-detail-value">{value}</div></div>)}</div></div>
         ) : null}
       </div>
     </>
@@ -239,16 +240,34 @@ function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnect
 }
 
 function FallbackLogs({ issue, isSummary }: { issue: Issue; isSummary: boolean }) {
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set());
   const steps = issue.workflow_key === 'incident_daddy' ? ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Incident Daddy'] : ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Bug Daddy', 'SME Agent', 'Planner', 'Planner Critique', 'Context Analyser', 'Context Critique', 'Coder', 'Coder Critique', 'GitHub', 'Reviewer Daddy'];
+  function toggleStep(step: string) {
+    setExpandedSteps((current) => {
+      const next = new Set(current);
+      if (next.has(step)) next.delete(step);
+      else next.add(step);
+      return next;
+    });
+  }
   return (
     <>
       <div className="execution-note">{isSummary ? 'Execution summary preview' : 'Waiting for backend execution events. Local workflow animation is shown on the canvas.'}</div>
-      {steps.map((step, index) => (
-        <div key={step} className={clsx('log-step-group', index > 1 && !isSummary && 'collapsed')}>
-          <div className="log-step-header"><span className="step-chevron">▾</span><span className="step-icon">{String(index + 1).padStart(2, '0')}</span><span className="step-name">{step}</span><span className={clsx('step-status n8n-step-chip', isSummary || index < 2 ? 'done' : 'running')}>{isSummary || index < 2 ? 'DONE' : 'READY'}</span></div>
-          <div className="log-step-body"><div className="log-entry info"><strong>{step}</strong><p>Issue {issue.id} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
-        </div>
-      ))}
+      {steps.map((step, index) => {
+        const expanded = expandedSteps.has(step);
+        const detailsId = `fallback-log-step-${index}`;
+        return (
+          <div key={step} className={clsx('log-step-group', !expanded && 'collapsed')}>
+            <button className="log-step-header" onClick={() => toggleStep(step)} aria-expanded={expanded} aria-controls={detailsId}>
+              <span className="step-icon">{String(index + 1).padStart(2, '0')}</span>
+              <span className="step-name">{step}</span>
+              <span className={clsx('step-status n8n-step-chip', isSummary || index < 2 ? 'done' : 'running')}>{isSummary || index < 2 ? 'DONE' : 'READY'}</span>
+              <span className="log-details-trigger"><span>{expanded ? 'Hide details' : 'Details'}</span><ChevronDown size={14} /></span>
+            </button>
+            <div className="log-step-body" id={detailsId}><div className="log-entry info"><strong>{step}</strong><p>Issue {issue.id} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -269,6 +288,7 @@ export function ExecutionGraphModal({
   const [zoom, setZoom] = useState(0.55);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState<ExecutionEvent[]>([]);
+  const [copied, setCopied] = useState(false);
   const sessionId = explicitSessionId || issue.latest_execution_session_id || issue.execution_session_id || '';
   const workflowKey = issue.workflow_key || issue.agent_target || 'bug_daddy';
   const [nodeStates, setNodeStates] = useState<Record<string, string>>(() => initialGraphNodeStates(workflowKey, isSummary));
@@ -359,6 +379,47 @@ export function ExecutionGraphModal({
 
   function endPan() { dragRef.current = null; }
 
+  function copyContext() {
+    const lines: string[] = [
+      `=== Execution Context ===`,
+      `Issue:       ${issue.jiraId}`,
+      `Service:     ${issue.service} (${issue.shortSvc})`,
+      `Error:       ${issue.err}`,
+      `Criticality: ${issue.criticality}`,
+      `Frequency:   ${issue.frequency}`,
+      `Status:      ${issue.status}`,
+      `Owner:       ${issue.owner}`,
+      `Workflow:    ${workflowKey}`,
+      `Session ID:  ${sessionId || 'N/A'}`,
+      `JIRA:        ${issue.resolution_jira || 'N/A'}`,
+      `PR:          ${issue.resolution_pr || 'N/A'}`,
+      `ETA:         ${issue.eta || 'N/A'}`,
+      `First Seen:  ${issue.first_seen || 'N/A'}`,
+      `Last Seen:   ${issue.last_seen || 'N/A'}`,
+    ];
+    if (issue.description) lines.push(`Description: ${issue.description}`);
+    if (issue.stack_trace) lines.push(`\n--- Stack Trace ---\n${issue.stack_trace}`);
+    if (events.length) {
+      lines.push(`\n--- Execution Events (${events.length}) ---`);
+      events.forEach((ev, idx) => {
+        lines.push(`\n[${idx + 1}] ${ev.node_name || ev.node_id || ''} | ${ev.event_type} | ${ev.status || ''} | ${ev.created_at ? new Date(ev.created_at).toLocaleTimeString('en-IN', { hour12: false }) : ''}`);
+        if (ev.title) lines.push(`  Title:     ${ev.title}`);
+        if (ev.description) lines.push(`  Desc:      ${ev.description}`);
+        if (ev.input_summary) lines.push(`  Input:     ${ev.input_summary}`);
+        if (ev.output_summary) lines.push(`  Output:    ${ev.output_summary}`);
+        if (ev.reasoning_summary) lines.push(`  Reasoning: ${ev.reasoning_summary}`);
+        if (ev.error_message) lines.push(`  Error:     ${ev.error_message}`);
+        if (ev.tool_name) lines.push(`  Tool:      ${ev.tool_name}`);
+      });
+    } else if (issue.entire_execution_logs) {
+      lines.push(`\n--- Execution Logs ---\n${issue.entire_execution_logs}`);
+    }
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   const progressSteps = workflowKey === 'incident_daddy'
     ? ['Analyze', 'Route', 'JIRA Update', 'Resolve']
     : ['Analyze', 'Plan', 'Code', 'Review', 'Deploy'];
@@ -391,7 +452,12 @@ export function ExecutionGraphModal({
             <div className="modal-title"><GitBranch size={18} /> {isSummary ? 'Execution Summary' : 'Live Execution Graph'} <span>Issue {issue.id}</span></div>
             <div className="modal-sub">{issue.shortSvc} / freq={issue.freq} / {issue.criticality} / {sessionId || 'workflow preview'}</div>
           </div>
-          <button className="modal-close" onClick={onClose}><X size={14} /> Close</button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button className="modal-close" onClick={copyContext} style={{ opacity: copied ? 0.75 : 1 }}>
+              {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Copied!' : 'Copy Context'}
+            </button>
+            <button className="modal-close" onClick={onClose}><X size={14} /> Close</button>
+          </div>
         </div>
 
         {/* Step progress strip */}

@@ -62,6 +62,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
     )
     bug_runtime.peers = local_peers
     incident_runtime.peers = local_peers
+    classifier_runtime.peers = local_peers
 
     return CombinedBugDaddyRuntime(
         config=cfg,
@@ -92,6 +93,7 @@ def _target_from_payload(payload: dict[str, Any]) -> str:
             "reviewer_daddy": "reviewer_daddy",
             "sme": "sme_agent",
             "sme_agent": "sme_agent",
+            "classifier": "classifier",
         }
         if normalized in aliases:
             return aliases[normalized]

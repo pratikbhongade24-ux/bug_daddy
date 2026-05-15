@@ -59,6 +59,30 @@ class ExecutionLogger:
             # Execution logging must never break the agent's primary remediation path.
             return
 
+    def map_jira_resolution(self, resolution_jira: str) -> None:
+        self._post_resolution("jira", {"resolution_jira": resolution_jira})
+
+    def map_pull_request_resolution(self, resolution_pr: str) -> None:
+        self._post_resolution("pr", {"resolution_pr": resolution_pr})
+
+    def _post_resolution(self, resolution_type: str, body: dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        request = urllib.request.Request(
+            f"{self.endpoint}/agent/executions/{self.session_id}/resolution/{resolution_type}",
+            data=json.dumps(body).encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                **({"X-Agent-Execution-Secret": self.secret} if self.secret else {}),
+            },
+        )
+        try:
+            urllib.request.urlopen(request, timeout=float(os.getenv("AGENT_EXECUTION_LOG_TIMEOUT", "3"))).read()
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return
+
     def node_started(
         self,
         node_id: str,

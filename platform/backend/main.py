@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import boto3
+from botocore.config import Config as BotocoreConfig
 import pymysql
 from fastapi import Depends, FastAPI, Header, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,10 +35,14 @@ AGENTCORE_RUNTIME_ARN = os.getenv(
 )
 AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
 AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://bugdaddy.atlassian.net").rstrip("/")
 SONAR_LAMBDA_NAME = os.getenv("SONAR_LAMBDA_NAME", "bugdaddy-sonar-scan-trigger")
 SONAR_REPORT_BUCKET = os.getenv("SONAR_REPORT_BUCKET", "bugdaddy-sonar-reports")
 SONAR_REPORT_PREFIX = os.getenv("SONAR_REPORT_PREFIX", "")
 SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "3600"))
+SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
+SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
+SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -104,9 +109,21 @@ class IssueAssignRequest(BaseModel):
     assigned_to: str = Field(min_length=1, max_length=255)
 
 
+class JiraResolutionMapRequest(BaseModel):
+    resolution_jira: str | None = Field(default=None, max_length=255)
+    jira_key: str | None = Field(default=None, max_length=100)
+    jira_url: str | None = Field(default=None, max_length=255)
+
+
+class PullRequestResolutionMapRequest(BaseModel):
+    resolution_pr: str | None = Field(default=None, max_length=255)
+    pull_request_url: str | None = Field(default=None, max_length=255)
+    pr_url: str | None = Field(default=None, max_length=255)
+
+
 class AgentInvokeRequest(BaseModel):
     session_id: str | None = None
-    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
+    target: Literal["classifier", "incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] | None = None
     prompt: str | None = None
     question: str | None = None
     source: str = "platform"
@@ -120,7 +137,7 @@ class AgentInvokeRequest(BaseModel):
 
 class AgentExecutionCreateRequest(BaseModel):
     issue_id: int | None = None
-    target: Literal["incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] = "incident_daddy"
+    target: Literal["classifier", "incident_daddy", "bug_daddy", "reviewer_daddy", "sme_agent"] = "incident_daddy"
     workflow_key: str | None = None
     workflow_version: str = "v1"
     input_payload: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +145,10 @@ class AgentExecutionCreateRequest(BaseModel):
 
 
 class SonarInvokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class SecurityInvokeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
 
 
@@ -541,6 +562,8 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
 
 def workflow_key_for_target(target: str | None) -> str:
     normalized = (target or "incident_daddy").strip().lower().replace("-", "_")
+    if normalized == "classifier":
+        return "bug_daddy"
     if normalized in {"bug", "bug_daddy"}:
         return "bug_daddy"
     if normalized in {"reviewer", "reviewer_daddy"}:
@@ -618,13 +641,17 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
 
 
 def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
-    client = boto3.client("bedrock-agentcore", region_name=AWS_REGION)
+    client = boto3.client(
+        "bedrock-agentcore",
+        region_name=AWS_REGION,
+        config=BotocoreConfig(read_timeout=600, connect_timeout=10),
+    )
     response = client.invoke_agent_runtime(
         agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
         runtimeSessionId=str(uuid.uuid4()),
         payload=json.dumps(payload).encode("utf-8"),
     )
-    body = response.get("payload")
+    body = response.get("response") or response.get("payload")
     if body is None:
         return {"message": "No payload returned from AgentCore"}
     if hasattr(body, "read"):
@@ -724,6 +751,47 @@ def ensure_execution_schema(conn):
             cur.execute(
                 "ALTER TABLE agent_execution_sessions ADD COLUMN next_sequence_no BIGINT NOT NULL DEFAULT 0 AFTER status"
             )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sonar_scan_sessions (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              session_id CHAR(36) NOT NULL UNIQUE,
+              status VARCHAR(30) NOT NULL DEFAULT 'processing',
+              triggered_by VARCHAR(255) NULL,
+              reason VARCHAR(255) NULL,
+              lambda_status_code INT NULL,
+              ssm_command_id VARCHAR(255) NULL,
+              error_message TEXT NULL,
+              started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              completed_at DATETIME NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_sonar_sessions_status (status),
+              INDEX idx_sonar_sessions_created (created_at)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS security_scan_sessions (
+              id             BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              session_id     CHAR(36) NOT NULL UNIQUE,
+              status         VARCHAR(30) NOT NULL DEFAULT 'processing',
+              triggered_by   VARCHAR(255) NULL,
+              current_phase  VARCHAR(100) NULL,
+              phase_detail   TEXT NULL,
+              findings_count INT NOT NULL DEFAULT 0,
+              critical_count INT NOT NULL DEFAULT 0,
+              high_count     INT NOT NULL DEFAULT 0,
+              error_message  TEXT NULL,
+              started_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              completed_at   DATETIME NULL,
+              created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_security_sessions_status (status),
+              INDEX idx_security_sessions_created (created_at)
+            )
+            """
+        )
     seed_workflow_definitions(conn)
 
 
@@ -1522,51 +1590,145 @@ def sonar_status(limit: int = 10, user: dict[str, Any] = Depends(require_permiss
         raise HTTPException(status_code=502, detail=f"Could not list Sonar reports: {exc}") from exc
 
     latest = reports[0] if reports else None
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT session_id, status, triggered_by, reason, lambda_status_code,
+                       ssm_command_id, error_message, started_at, completed_at, created_at
+                FROM sonar_scan_sessions
+                ORDER BY created_at DESC
+                LIMIT 20
+                """
+            )
+            sessions = cur.fetchall()
+        sessions_list = [
+            {
+                **s,
+                "started_at": dt_to_str(s.get("started_at")),
+                "completed_at": dt_to_str(s.get("completed_at")),
+                "created_at": dt_to_str(s.get("created_at")),
+            }
+            for s in sessions
+        ]
+        in_progress = any(s["status"] == "processing" for s in sessions_list)
+    finally:
+        conn.close()
+
     return {
         "lambda_name": SONAR_LAMBDA_NAME,
         "bucket": SONAR_REPORT_BUCKET,
         "region": AWS_REGION,
         "latest_report": latest,
         "reports": reports,
+        "sessions": sessions_list,
+        "in_progress": in_progress,
     }
 
 
 @app.post("/sonar/invoke")
 def invoke_sonar_scan(payload: SonarInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
-    client = boto3.client("lambda", region_name=AWS_REGION)
-    request_payload = {
-        "source": "bugdaddy-platform",
-        "requested_by": actor["username"],
-        "requested_at": utc_now().isoformat(),
-        "reason": payload.reason,
-    }
-    try:
-        response = client.invoke(
-            FunctionName=SONAR_LAMBDA_NAME,
-            InvocationType="Event",
-            Payload=json.dumps(request_payload).encode("utf-8"),
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not invoke Sonar scan: {exc}") from exc
-
     conn = get_db()
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT session_id FROM sonar_scan_sessions WHERE status = 'processing' LIMIT 1"
+            )
+            active = cur.fetchone()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A scan is already in progress (session: {active['session_id']}). Wait for it to complete before starting a new one.",
+            )
+
+        session_id = str(uuid.uuid4())
+        client = boto3.client("lambda", region_name=AWS_REGION)
+        request_payload = {
+            "source": "bugdaddy-platform",
+            "requested_by": actor["username"],
+            "requested_at": utc_now().isoformat(),
+            "reason": payload.reason,
+            "sonar_session_id": session_id,
+        }
+        try:
+            response = client.invoke(
+                FunctionName=SONAR_LAMBDA_NAME,
+                InvocationType="Event",
+                Payload=json.dumps(request_payload).encode("utf-8"),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not invoke Sonar scan: {exc}") from exc
+
+        lambda_status_code = response.get("StatusCode")
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO sonar_scan_sessions
+                  (session_id, status, triggered_by, reason, lambda_status_code)
+                VALUES (%s, 'processing', %s, %s, %s)
+                """,
+                (session_id, actor["username"], payload.reason, lambda_status_code),
+            )
+
         write_audit_log(
             conn,
             actor["id"],
             "sonar.invoke",
-            "lambda",
-            SONAR_LAMBDA_NAME,
-            {"status_code": response.get("StatusCode"), "reason": payload.reason},
+            "sonar_scan_sessions",
+            session_id,
+            {"status_code": lambda_status_code, "reason": payload.reason},
         )
     finally:
         conn.close()
 
     return {
         "message": "SonarQube scan trigger accepted",
+        "session_id": session_id,
         "lambda_name": SONAR_LAMBDA_NAME,
-        "status_code": response.get("StatusCode"),
+        "status_code": lambda_status_code,
     }
+
+
+@app.post("/sonar/sessions/{session_id}/complete")
+def complete_sonar_session(
+    session_id: str,
+    status: str = "completed",
+    error_message: str | None = None,
+    ssm_command_id: str | None = None,
+    _secret: str | None = Depends(verify_execution_log_secret),
+):
+    allowed = {"completed", "failed"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of {allowed}")
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, status FROM sonar_scan_sessions WHERE session_id = %s LIMIT 1",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Sonar session not found")
+        fields = ["status = %s", "completed_at = %s", "updated_at = %s"]
+        values: list[Any] = [status, utc_now().strftime("%Y-%m-%d %H:%M:%S"), utc_now().strftime("%Y-%m-%d %H:%M:%S")]
+        if error_message is not None:
+            fields.append("error_message = %s")
+            values.append(error_message)
+        if ssm_command_id is not None:
+            fields.append("ssm_command_id = %s")
+            values.append(ssm_command_id)
+        values.append(session_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE sonar_scan_sessions SET {', '.join(fields)} WHERE session_id = %s",
+                values,
+            )
+    finally:
+        conn.close()
+    return {"message": f"Session {session_id} marked as {status}"}
 
 
 @app.get("/sonar/reports/{report_date}/url")
@@ -1893,6 +2055,30 @@ def append_agent_execution_event(
         conn.close()
 
 
+@app.post("/agent/executions/{session_id}/resolution/jira")
+def map_agent_execution_jira_resolution(
+    session_id: str,
+    payload: JiraResolutionMapRequest,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    resolution_jira = _normalize_jira_resolution(payload.jira_url or payload.resolution_jira or payload.jira_key)
+    if not resolution_jira:
+        raise HTTPException(status_code=400, detail="Provide jira_key, jira_url, or resolution_jira")
+    return _map_execution_resolution(session_id, resolution_jira=resolution_jira)
+
+
+@app.post("/agent/executions/{session_id}/resolution/pr")
+def map_agent_execution_pull_request_resolution(
+    session_id: str,
+    payload: PullRequestResolutionMapRequest,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    resolution_pr = payload.pull_request_url or payload.pr_url or payload.resolution_pr
+    if not resolution_pr:
+        raise HTTPException(status_code=400, detail="Provide pull_request_url, pr_url, or resolution_pr")
+    return _map_execution_resolution(session_id, resolution_pr=resolution_pr)
+
+
 @app.get("/agent/workflows/{workflow_key}")
 def get_agent_workflow(
     workflow_key: str,
@@ -2008,6 +2194,119 @@ def _extract_jira_key(result: dict[str, Any]) -> str | None:
     return match.group(1) if match else None
 
 
+_PR_URL_RE = re.compile(r"https?://[^\s)>\"]+/pull(?:-requests?)?/\d+")
+
+
+def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
+    """Extract a pull request URL from an agent result dict."""
+    if result.get("resolution_pr"):
+        return str(result["resolution_pr"])
+    if result.get("pr_url"):
+        return str(result["pr_url"])
+
+    candidates: list[Any] = []
+    candidates.extend(result.get("artifacts", []))
+    review_response = result.get("review_response") or {}
+    if isinstance(review_response, dict):
+        candidates.extend(review_response.get("artifacts", []))
+        if review_response.get("resolution_pr"):
+            return str(review_response["resolution_pr"])
+        if review_response.get("pr_url"):
+            return str(review_response["pr_url"])
+
+    for artifact in candidates:
+        if not isinstance(artifact, dict) or artifact.get("type") != "pull_request":
+            continue
+        content = artifact.get("content", "")
+        if isinstance(content, dict):
+            for key in ("url", "html_url", "pull_request_url", "pr_url"):
+                if content.get(key):
+                    return str(content[key])
+            text = json.dumps(content)
+        else:
+            text = str(content)
+        match = _PR_URL_RE.search(text)
+        if match:
+            return match.group(0)
+
+    summary = str(result.get("summary") or "")
+    match = _PR_URL_RE.search(summary)
+    return match.group(0) if match else None
+
+
+def _normalize_jira_resolution(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if re.match(r"https?://", cleaned):
+        return cleaned
+    match = re.search(r"\b([A-Z][A-Z0-9]+-\d+)\b", cleaned)
+    if match:
+        return f"{JIRA_BASE_URL}/browse/{match.group(1)}"
+    return cleaned
+
+
+def _map_execution_resolution(
+    session_id: str,
+    resolution_jira: str | None = None,
+    resolution_pr: str | None = None,
+) -> dict[str, Any]:
+    if not resolution_jira and not resolution_pr:
+        raise HTTPException(status_code=400, detail="No resolution value provided")
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        issue_id = row.get("issue_id")
+        if not issue_id:
+            raise HTTPException(status_code=400, detail="Execution session is not linked to an issue")
+
+        fields: list[str] = []
+        values: list[Any] = []
+        event_result: dict[str, Any] = {}
+        if resolution_jira:
+            fields.append("resolution_jira = %s")
+            values.append(resolution_jira)
+            event_result["resolution_jira"] = resolution_jira
+        if resolution_pr:
+            fields.append("resolution_pr = %s")
+            values.append(resolution_pr)
+            event_result["resolution_pr"] = resolution_pr
+        fields.append("status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE service_exception_log SET {', '.join(fields)} WHERE id = %s",
+                (*values, issue_id),
+            )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "node.completed",
+                "node_id": "resmap",
+                "node_name": "Resolution Mapping",
+                "agent_name": "platform",
+                "status": "succeeded",
+                "level": "info",
+                "title": "Issue resolution link mapped",
+                "result": event_result,
+            },
+        )
+        return fetch_issue_by_id(conn, issue_id)
+    finally:
+        conn.close()
+
+
 def run_agent_background(session_id: str, runtime_payload: dict[str, Any], target: str):
     try:
         result = invoke_agentcore(runtime_payload)
@@ -2044,6 +2343,7 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
 
             # Map Jira ticket back to service_exception_log
             jira_key = _extract_jira_key(result)
+            pr_url = _extract_pull_request_url(result)
             if jira_key:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -2061,7 +2361,26 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                                 status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
                             WHERE id = %s AND (resolution_jira IS NULL OR resolution_jira = '')
                             """,
-                            (jira_key, issue_id),
+                            (_normalize_jira_resolution(jira_key), issue_id),
+                        )
+            if pr_url:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                        (session_id,),
+                    )
+                    row = cur.fetchone()
+                issue_id = row["issue_id"] if row else None
+                if issue_id:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE service_exception_log
+                            SET resolution_pr = %s,
+                                status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+                            WHERE id = %s AND (resolution_pr IS NULL OR resolution_pr = '')
+                            """,
+                            (pr_url, issue_id),
                         )
         finally:
             conn.close()
@@ -2116,6 +2435,8 @@ def agent_invoke(
                 "issue_type": issue["type"],
                 "criticality": issue["criticality"],
                 "status": issue["status"],
+                "resolution_jira": issue.get("resolution_jira"),
+                "resolution_pr": issue.get("resolution_pr"),
                 "description": issue["description"],
                 "stack_trace": issue["stack_trace"],
                 "frequency": issue["frequency"],
@@ -2125,12 +2446,26 @@ def agent_invoke(
                 payload.service_name = issue["service"]
             if not payload.incident_summary:
                 payload.incident_summary = issue["description"] or issue["err"]
-            if not payload.logs and issue.get("entire_execution_logs"):
-                payload.logs = [issue["entire_execution_logs"]]
+            if not payload.logs:
+                logs_list = []
+                if issue.get("stack_trace"):
+                    logs_list.append("Stack Trace:\n" + issue["stack_trace"])
+                if issue.get("entire_execution_logs"):
+                    logs_list.append("Execution Logs:\n" + issue["entire_execution_logs"])
+                if logs_list:
+                    payload.logs = logs_list
         finally:
             conn.close()
 
     target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
+    runtime_target = target
+    if target == "bug_daddy" and not (
+        payload.metadata.get("jira_key")
+        or payload.metadata.get("resolution_jira")
+        or issue_context.get("resolution_jira")
+        or issue_context.get("jira_id")
+    ):
+        runtime_target = "classifier"
     workflow_key = workflow_key_for_target(target)
     metadata = {
         **payload.metadata,
@@ -2138,13 +2473,14 @@ def agent_invoke(
         "requester_role": actor["role"],
         "issue_context": issue_context,
         "agent_target": target,
+        "runtime_target": runtime_target,
         "workflow_key": workflow_key,
         "routing_source": "explicit_target" if payload.target else "backend_policy",
     }
     session_id = payload.session_id
 
     runtime_payload = {
-        "target": target,
+        "target": runtime_target,
         "prompt": payload.prompt or payload.incident_summary or "Investigate issue and provide next actions.",
         "question": payload.question,
         "source": payload.source,
@@ -2179,7 +2515,7 @@ def agent_invoke(
                     "level": "info",
                     "title": "Execution session created",
                     "description": f"Workflow {workflow_key} was created for issue {payload.issue_id}.",
-                    "agent_name": target,
+                    "agent_name": runtime_target,
                 },
             )
 
@@ -2202,8 +2538,8 @@ def agent_invoke(
                 "status": "running",
                 "level": "info",
                 "title": "Agent orchestration started",
-                "description": f"Invoking {target} through AgentCore.",
-                "agent_name": target,
+                "description": f"Invoking {runtime_target} through AgentCore.",
+                "agent_name": runtime_target,
                 "result": {"runtime_arn": AGENTCORE_RUNTIME_ARN},
             },
         )
@@ -2214,7 +2550,7 @@ def agent_invoke(
                 "event_type": "node.started",
                 "node_id": "esc",
                 "node_name": "AgentCore Runtime",
-                "agent_name": target,
+                "agent_name": runtime_target,
                 "status": "running",
                 "level": "info",
                 "title": "AgentCore invocation started",
@@ -2224,12 +2560,312 @@ def agent_invoke(
     finally:
         conn.close()
 
-    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, target)
+    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
 
     return {
         "message": "Agent orchestration started in background",
         "session_id": session_id,
         "workflow_key": workflow_key,
-        "target": target,
+        "target": runtime_target,
+        "requested_target": target,
         "request": runtime_payload
     }
+
+
+# ---------------------------------------------------------------------------
+# Security Scanner
+# ---------------------------------------------------------------------------
+
+def _update_security_session(conn, session_id: str, **fields):
+    if not fields:
+        return
+    clauses = ", ".join(f"{k} = %s" for k in fields)
+    values = list(fields.values()) + [session_id]
+    with conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE security_scan_sessions SET {clauses} WHERE session_id = %s",
+            values,
+        )
+
+
+def _upsert_cve_finding(conn, finding: dict, scan_date: str, now: str):
+    import hashlib as _hashlib
+    cve_id = finding.get("cve_id", "unknown")
+    service = finding.get("service", "unknown")
+    severity = finding.get("severity", "UNKNOWN").upper()
+    severity_map = {"CRITICAL": "cve_critical", "HIGH": "cve_high", "MEDIUM": "cve_medium", "LOW": "cve_low"}
+    issue_type = severity_map.get(severity, "cve_low")
+    fingerprint = _hashlib.sha256(f"security_scanner|{cve_id}|{service}".encode()).hexdigest()
+    description = f"[{cve_id}] {finding.get('description', '')}"[:1000]
+    stack_trace = "\n".join([
+        f"CVE ID:    {cve_id}",
+        f"Source:    {finding.get('source', '')}",
+        f"Severity:  {severity}  CVSS: {finding.get('cvss_score', 'N/A')}",
+        f"Component: {finding.get('component', '')} {finding.get('affected_version', '')} ({finding.get('component_type', '')})",
+        f"Service:   {service} ({finding.get('asset_type', '')})",
+        f"Published: {finding.get('published', '')}",
+        "",
+        f"Description: {finding.get('description', '')}",
+    ])[:65000]
+    execution_logs = json.dumps(finding, indent=2)[:65000]
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM service_exception_log WHERE fingerprint = %s LIMIT 1",
+            (fingerprint,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            cur.execute(
+                """UPDATE service_exception_log
+                   SET last_seen = %s, description = %s, stack_trace = %s,
+                       entire_execution_logs = %s, issue_type = %s
+                   WHERE id = %s""",
+                (f"{scan_date} 00:00:00", description, stack_trace, execution_logs, issue_type, existing["id"]),
+            )
+        else:
+            cur.execute(
+                """INSERT INTO service_exception_log (
+                       fingerprint, service_name, issue_type, source, description,
+                       stack_trace, entire_execution_logs, request_id, frequency,
+                       first_seen, last_seen, status, assigned_to, resolution_pr,
+                       resolution_jira, created_at, resolved_at
+                   ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    fingerprint, service, issue_type, "security_scanner", description,
+                    stack_trace, execution_logs, cve_id, 1,
+                    f"{scan_date} 00:00:00", f"{scan_date} 00:00:00",
+                    "open", None, None, None, now, None,
+                ),
+            )
+
+
+def run_security_scan_background(session_id: str, triggered_by: str):
+    import sys
+    import os as _os
+    scanner_dir = _os.path.join(_os.path.dirname(__file__), "..", "..", "triggers", "securityScanner")
+    scanner_dir = _os.path.abspath(scanner_dir)
+    if scanner_dir not in sys.path:
+        sys.path.insert(0, scanner_dir)
+
+    conn = get_db()
+    now = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    scan_date = utc_now().strftime("%Y-%m-%d")
+
+    try:
+        import boto3 as _boto3
+
+        # Build a dedicated boto3 session using scanner-specific credentials if provided,
+        # otherwise fall back to the instance role (useful for local dev).
+        _scanner_session_kwargs: dict = {"region_name": SECURITY_SCANNER_AWS_REGION}
+        if SECURITY_SCANNER_ACCESS_KEY_ID and SECURITY_SCANNER_SECRET_ACCESS_KEY:
+            _scanner_session_kwargs["aws_access_key_id"] = SECURITY_SCANNER_ACCESS_KEY_ID
+            _scanner_session_kwargs["aws_secret_access_key"] = SECURITY_SCANNER_SECRET_ACCESS_KEY
+        _scanner_session = _boto3.Session(**_scanner_session_kwargs)
+
+        # Phase 1 — inventory
+        _update_security_session(conn, session_id, current_phase="inventory", phase_detail="Discovering AWS assets...")
+        from aws_inventory import inventory_all
+        assets = inventory_all(SECURITY_SCANNER_AWS_REGION, session=_scanner_session)
+
+        # Phase 2 — package extraction
+        _update_security_session(conn, session_id, current_phase="package_extraction", phase_detail="Extracting Lambda deployment packages...")
+        from lambda_package_extractor import extract_lambda_dependencies
+        lmb = _scanner_session.client("lambda")
+        for asset in assets:
+            if asset["asset_type"] != "lambda" or asset.get("package_type") == "Image":
+                continue
+            _update_security_session(conn, session_id, phase_detail=f"Extracting: {asset['service']}")
+            pkgs = extract_lambda_dependencies(lmb, asset["service"])
+            runtime = asset.get("runtime", "")
+            comp_type = "npm_package" if runtime.startswith("nodejs") else "pip_package"
+            for pkg in pkgs:
+                asset["components"].append({"type": comp_type, "name": pkg["name"], "version": pkg["version"]})
+
+        # Phase 3 — CVE lookup
+        _update_security_session(conn, session_id, current_phase="cve_lookup", phase_detail="Starting CVE lookup...")
+        from cve_lookup import lookup_cves
+        all_findings: list[dict] = []
+        for asset in assets:
+            for component in asset.get("components", []):
+                name = component.get("name", "")
+                version = component.get("version", "unknown")
+                if not name or version in ("unknown", "latest", ""):
+                    continue
+                _update_security_session(conn, session_id, phase_detail=f"Checking {name} {version}")
+                findings = lookup_cves(component, asset.get("service", ""), asset.get("asset_type", ""))
+                all_findings.extend(findings)
+
+        # Phase 4 — save findings
+        _update_security_session(conn, session_id, current_phase="report", phase_detail="Saving findings to database...")
+        critical = sum(1 for f in all_findings if f.get("severity") == "CRITICAL")
+        high = sum(1 for f in all_findings if f.get("severity") == "HIGH")
+        for finding in all_findings:
+            _upsert_cve_finding(conn, finding, scan_date, now)
+
+        _update_security_session(
+            conn, session_id,
+            status="completed",
+            current_phase="report",
+            phase_detail=f"Done — {len(all_findings)} CVE(s) found",
+            findings_count=len(all_findings),
+            critical_count=critical,
+            high_count=high,
+            completed_at=now,
+        )
+
+    except Exception as exc:
+        _update_security_session(
+            conn, session_id,
+            status="failed",
+            error_message=str(exc)[:1000],
+            completed_at=now,
+        )
+    finally:
+        conn.close()
+
+
+@app.post("/security/invoke")
+def invoke_security_scan(
+    payload: SecurityInvokeRequest,
+    bg_tasks: BackgroundTasks,
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT session_id FROM security_scan_sessions WHERE status = 'processing' LIMIT 1"
+            )
+            active = cur.fetchone()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A scan is already in progress (session: {active['session_id']}). Wait for it to complete.",
+            )
+        session_id = str(uuid.uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO security_scan_sessions (session_id, status, triggered_by, current_phase, phase_detail)
+                   VALUES (%s, 'processing', %s, 'inventory', 'Initialising...')""",
+                (session_id, actor["username"]),
+            )
+    finally:
+        conn.close()
+
+    bg_tasks.add_task(run_security_scan_background, session_id, actor["username"])
+    return {"message": "Security scan started", "session_id": session_id}
+
+
+@app.get("/security/sessions")
+def list_security_sessions(
+    limit: int = 20,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT session_id, status, triggered_by, current_phase, phase_detail,
+                          findings_count, critical_count, high_count, error_message,
+                          started_at, completed_at, created_at
+                   FROM security_scan_sessions
+                   ORDER BY created_at DESC
+                   LIMIT %s""",
+                (min(limit, 50),),
+            )
+            rows = cur.fetchall()
+        sessions = [
+            {
+                **r,
+                "started_at": dt_to_str(r.get("started_at")),
+                "completed_at": dt_to_str(r.get("completed_at")),
+                "created_at": dt_to_str(r.get("created_at")),
+            }
+            for r in rows
+        ]
+        in_progress = any(s["status"] == "processing" for s in sessions)
+    finally:
+        conn.close()
+    return {"sessions": sessions, "in_progress": in_progress}
+
+
+@app.get("/security/sessions/{session_id}/progress")
+def get_security_session_progress(
+    session_id: str,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT session_id, status, triggered_by, current_phase, phase_detail,
+                          findings_count, critical_count, high_count, error_message,
+                          started_at, completed_at, created_at
+                   FROM security_scan_sessions WHERE session_id = %s LIMIT 1""",
+                (session_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        **row,
+        "started_at": dt_to_str(row.get("started_at")),
+        "completed_at": dt_to_str(row.get("completed_at")),
+        "created_at": dt_to_str(row.get("created_at")),
+    }
+
+
+@app.get("/security/findings")
+def list_security_findings(
+    q: str | None = None,
+    service_name: str | None = None,
+    criticality: str | None = None,
+    limit: int = 500,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    conn = get_db()
+    try:
+        conditions = ["source = 'security_scanner'"]
+        params: list[Any] = []
+        if q:
+            conditions.append("(description LIKE %s OR service_name LIKE %s OR request_id LIKE %s)")
+            like = f"%{q}%"
+            params += [like, like, like]
+        if service_name:
+            conditions.append("service_name = %s")
+            params.append(service_name)
+        if criticality:
+            sev_map = {"critical": "cve_critical", "high": "cve_high", "medium": "cve_medium", "low": "cve_low"}
+            mapped = sev_map.get(criticality.lower())
+            if mapped:
+                conditions.append("issue_type = %s")
+                params.append(mapped)
+        where = " AND ".join(conditions)
+        params.append(min(limit, 1000))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT id, fingerprint, service_name, issue_type, source, description,
+                           stack_trace, request_id, frequency, first_seen, last_seen, status, created_at
+                    FROM service_exception_log
+                    WHERE {where}
+                    ORDER BY FIELD(issue_type,'cve_critical','cve_high','cve_medium','cve_low'), last_seen DESC
+                    LIMIT %s""",
+                params,
+            )
+            rows = cur.fetchall()
+        items = [
+            {
+                **r,
+                "first_seen": dt_to_str(r.get("first_seen")),
+                "last_seen": dt_to_str(r.get("last_seen")),
+                "created_at": dt_to_str(r.get("created_at")),
+                "severity": r["issue_type"].replace("cve_", "").upper() if r.get("issue_type", "").startswith("cve_") else "UNKNOWN",
+                "cve_id": r.get("request_id", ""),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+    return {"items": items, "total": len(items)}

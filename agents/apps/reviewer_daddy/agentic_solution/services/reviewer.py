@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,6 +46,9 @@ class ReviewerDaddyRuntime:
             )
             logger.node_completed("rev", "Reviewer Daddy", "Dry-run final AI review complete", started, response.summary)
             return response.model_dump()
+
+        if logger.session_id:
+            os.environ["EXECUTION_SESSION_ID"] = logger.session_id
 
         started = logger.node_started("airev", "AI Reviewer", "Perform final AI review", request.fix_proposal)
         review_text = str(agents.reviewer(_review_prompt(request)))
