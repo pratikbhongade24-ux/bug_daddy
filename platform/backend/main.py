@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import boto3
+from botocore.config import Config as BotocoreConfig
 import pymysql
 from fastapi import Depends, FastAPI, Header, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -633,7 +634,11 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
 
 
 def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
-    client = boto3.client("bedrock-agentcore", region_name=AWS_REGION)
+    client = boto3.client(
+        "bedrock-agentcore",
+        region_name=AWS_REGION,
+        config=BotocoreConfig(read_timeout=600, connect_timeout=10),
+    )
     response = client.invoke_agent_runtime(
         agentRuntimeArn=AGENTCORE_RUNTIME_ARN,
         runtimeSessionId=str(uuid.uuid4()),
