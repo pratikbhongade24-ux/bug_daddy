@@ -2,7 +2,7 @@ import React, { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
-import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown } from 'lucide-react';
+import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown, Copy, Check } from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import { Issue, ExecutionEvent, WorkflowNode, WorkflowEdge, WorkflowGraph, ListResponse } from '@/lib/types';
 
@@ -288,6 +288,7 @@ export function ExecutionGraphModal({
   const [zoom, setZoom] = useState(0.55);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState<ExecutionEvent[]>([]);
+  const [copied, setCopied] = useState(false);
   const sessionId = explicitSessionId || issue.latest_execution_session_id || issue.execution_session_id || '';
   const workflowKey = issue.workflow_key || issue.agent_target || 'bug_daddy';
   const [nodeStates, setNodeStates] = useState<Record<string, string>>(() => initialGraphNodeStates(workflowKey, isSummary));
@@ -378,6 +379,47 @@ export function ExecutionGraphModal({
 
   function endPan() { dragRef.current = null; }
 
+  function copyContext() {
+    const lines: string[] = [
+      `=== Execution Context ===`,
+      `Issue:       ${issue.jiraId}`,
+      `Service:     ${issue.service} (${issue.shortSvc})`,
+      `Error:       ${issue.err}`,
+      `Criticality: ${issue.criticality}`,
+      `Frequency:   ${issue.frequency}`,
+      `Status:      ${issue.status}`,
+      `Owner:       ${issue.owner}`,
+      `Workflow:    ${workflowKey}`,
+      `Session ID:  ${sessionId || 'N/A'}`,
+      `JIRA:        ${issue.resolution_jira || 'N/A'}`,
+      `PR:          ${issue.resolution_pr || 'N/A'}`,
+      `ETA:         ${issue.eta || 'N/A'}`,
+      `First Seen:  ${issue.first_seen || 'N/A'}`,
+      `Last Seen:   ${issue.last_seen || 'N/A'}`,
+    ];
+    if (issue.description) lines.push(`Description: ${issue.description}`);
+    if (issue.stack_trace) lines.push(`\n--- Stack Trace ---\n${issue.stack_trace}`);
+    if (events.length) {
+      lines.push(`\n--- Execution Events (${events.length}) ---`);
+      events.forEach((ev, idx) => {
+        lines.push(`\n[${idx + 1}] ${ev.node_name || ev.node_id || ''} | ${ev.event_type} | ${ev.status || ''} | ${ev.created_at ? new Date(ev.created_at).toLocaleTimeString('en-IN', { hour12: false }) : ''}`);
+        if (ev.title) lines.push(`  Title:     ${ev.title}`);
+        if (ev.description) lines.push(`  Desc:      ${ev.description}`);
+        if (ev.input_summary) lines.push(`  Input:     ${ev.input_summary}`);
+        if (ev.output_summary) lines.push(`  Output:    ${ev.output_summary}`);
+        if (ev.reasoning_summary) lines.push(`  Reasoning: ${ev.reasoning_summary}`);
+        if (ev.error_message) lines.push(`  Error:     ${ev.error_message}`);
+        if (ev.tool_name) lines.push(`  Tool:      ${ev.tool_name}`);
+      });
+    } else if (issue.entire_execution_logs) {
+      lines.push(`\n--- Execution Logs ---\n${issue.entire_execution_logs}`);
+    }
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   const progressSteps = workflowKey === 'incident_daddy'
     ? ['Analyze', 'Route', 'JIRA Update', 'Resolve']
     : ['Analyze', 'Plan', 'Code', 'Review', 'Deploy'];
@@ -410,7 +452,12 @@ export function ExecutionGraphModal({
             <div className="modal-title"><GitBranch size={18} /> {isSummary ? 'Execution Summary' : 'Live Execution Graph'} <span>{issue.jiraId}</span></div>
             <div className="modal-sub">{issue.shortSvc} / freq={issue.freq} / {issue.criticality} / {sessionId || 'workflow preview'}</div>
           </div>
-          <button className="modal-close" onClick={onClose}><X size={14} /> Close</button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button className="modal-close" onClick={copyContext} style={{ opacity: copied ? 0.75 : 1 }}>
+              {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? 'Copied!' : 'Copy Context'}
+            </button>
+            <button className="modal-close" onClick={onClose}><X size={14} /> Close</button>
+          </div>
         </div>
 
         {/* Step progress strip */}
