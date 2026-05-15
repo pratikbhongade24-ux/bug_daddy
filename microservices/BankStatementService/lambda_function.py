@@ -67,8 +67,17 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
+    # Guarded bug‑simulation: only execute when explicitly enabled
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        if os.getenv("ENABLE_BUG_SIMULATION", "false").lower() == "true":
+            try:
+                int("not-a-number")
+            except ValueError as ve:
+                # Log the simulated error but continue processing to avoid lambda crash
+                log("simulate_bug_error", {"error": str(ve)})
+        else:
+            # In production the simulateBug flag is ignored
+            pass
     return transactions
 
 
