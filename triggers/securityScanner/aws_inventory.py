@@ -153,9 +153,10 @@ def get_rds_assets(rds_client) -> list[dict]:
 # Top-level
 # ---------------------------------------------------------------------------
 
-def inventory_all(region: str) -> list[dict]:
-    import boto3
-    session = boto3.Session(region_name=region)
+def inventory_all(region: str, session=None) -> list[dict]:
+    if session is None:
+        import boto3
+        session = boto3.Session(region_name=region)
 
     ec2 = session.client("ec2")
     ssm = session.client("ssm")

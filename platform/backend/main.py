@@ -41,6 +41,8 @@ SONAR_REPORT_BUCKET = os.getenv("SONAR_REPORT_BUCKET", "bugdaddy-sonar-reports")
 SONAR_REPORT_PREFIX = os.getenv("SONAR_REPORT_PREFIX", "")
 SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "3600"))
 SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
+SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
+SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -2650,16 +2652,25 @@ def run_security_scan_background(session_id: str, triggered_by: str):
     scan_date = utc_now().strftime("%Y-%m-%d")
 
     try:
+        import boto3 as _boto3
+
+        # Build a dedicated boto3 session using scanner-specific credentials if provided,
+        # otherwise fall back to the instance role (useful for local dev).
+        _scanner_session_kwargs: dict = {"region_name": SECURITY_SCANNER_AWS_REGION}
+        if SECURITY_SCANNER_ACCESS_KEY_ID and SECURITY_SCANNER_SECRET_ACCESS_KEY:
+            _scanner_session_kwargs["aws_access_key_id"] = SECURITY_SCANNER_ACCESS_KEY_ID
+            _scanner_session_kwargs["aws_secret_access_key"] = SECURITY_SCANNER_SECRET_ACCESS_KEY
+        _scanner_session = _boto3.Session(**_scanner_session_kwargs)
+
         # Phase 1 — inventory
         _update_security_session(conn, session_id, current_phase="inventory", phase_detail="Discovering AWS assets...")
         from aws_inventory import inventory_all
-        assets = inventory_all(SECURITY_SCANNER_AWS_REGION)
+        assets = inventory_all(SECURITY_SCANNER_AWS_REGION, session=_scanner_session)
 
         # Phase 2 — package extraction
         _update_security_session(conn, session_id, current_phase="package_extraction", phase_detail="Extracting Lambda deployment packages...")
-        import boto3 as _boto3
         from lambda_package_extractor import extract_lambda_dependencies
-        lmb = _boto3.client("lambda", region_name=SECURITY_SCANNER_AWS_REGION)
+        lmb = _scanner_session.client("lambda")
         for asset in assets:
             if asset["asset_type"] != "lambda" or asset.get("package_type") == "Image":
                 continue
