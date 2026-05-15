@@ -32,28 +32,10 @@ rm -rf node_modules
 npm ci --omit=dev
 npm run build
 
-# A legacy systemd unit (bug-daddy-platform-frontend.service) used to manage the
-# frontend from /home/ubuntu/bug_daddy/. We now run it under pm2 from
-# ${REMOTE_ROOT}, but the old unit's Restart=always would race pm2 and grab
-# port ${FRONTEND_PORT} after every kill. Disable it idempotently here.
-if sudo systemctl list-unit-files bug-daddy-platform-frontend.service 2>/dev/null | grep -q '^bug-daddy-platform-frontend.service'; then
-  sudo systemctl disable --now bug-daddy-platform-frontend.service 2>/dev/null || true
-fi
-
-# Always delete any existing pm2 entry and kill any orphaned process on the
-# port before starting fresh. pm2 restart does not kill child processes spawned
-# by npm (e.g. next-server), so orphans keep the port open and cause EADDRINUSE
-# on the next restart. ss reads kernel socket info directly, so it catches
-# loopback-bound listeners that fuser/lsof may miss.
-pm2 delete bugdaddy 2>/dev/null || true
-for attempt in 1 2 3 4 5; do
-  PIDS=$(sudo ss -ltnpH "( sport = :${FRONTEND_PORT} )" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u)
-  [ -z "$PIDS" ] && break
-  echo "Port ${FRONTEND_PORT} held by PIDs: $PIDS (attempt $attempt)"
-  sudo kill -9 $PIDS 2>/dev/null || true
-  sleep 1
-done
-PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
+# Reload if the pm2 entry exists, otherwise start fresh. pm2's treekill handles
+# next-server children, so no manual port-killing is needed.
+PORT=${FRONTEND_PORT} pm2 reload bugdaddy --update-env 2>/dev/null \
+  || PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
 pm2 save
 
 # Backend
