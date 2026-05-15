@@ -65,11 +65,32 @@ def verify_aadhaar(payload, context, request_id):
 
 
 def run_face_match(payload, context, request_id):
+    """
+    Perform face match operation.
+
+    If `simulateBug` flag is set to "face_threshold", we simulate a low confidence
+    score instead of raising an exception. This allows testing of downstream
+    handling without crashing the Lambda.
+    """
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
+
+    # Default successful score
+    score = 0.93
+
+    # Simulated bug path – return a low confidence score safely
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
-    return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Example low score below typical acceptance threshold
+        score = 0.45
+
+    return response(
+        context,
+        request_id,
+        "runFaceMatch",
+        payload,
+        {"faceMatch": {"score": score, "result": "MATCHED"},
+         "message": "Face match run completed"}
+    )
 
 
 def get_kyc_status(payload, context, request_id):
