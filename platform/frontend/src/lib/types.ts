@@ -206,5 +206,51 @@ export interface ToastItem {
   kind: ToastKind;
 }
 
-export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin';
+export type SecurityScanStatus = 'processing' | 'completed' | 'failed';
+export type SecurityPhase = 'inventory' | 'package_extraction' | 'cve_lookup' | 'report';
+
+export interface SecurityScanSession {
+  session_id: string;
+  status: SecurityScanStatus;
+  triggered_by: string | null;
+  current_phase: SecurityPhase | null;
+  phase_detail: string | null;
+  findings_count: number;
+  critical_count: number;
+  high_count: number;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+}
+
+export interface SecuritySessionsResponse {
+  sessions: SecurityScanSession[];
+  in_progress: boolean;
+}
+
+export interface SecurityFinding {
+  id: number;
+  fingerprint: string;
+  service_name: string;
+  issue_type: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+  cve_id: string;
+  source: string;
+  description: string | null;
+  stack_trace: string | null;
+  request_id: string | null;
+  frequency: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  status: string;
+  created_at: string | null;
+}
+
+export interface SecurityFindingsResponse {
+  items: SecurityFinding[];
+  total: number;
+}
+
+export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin' | 'security';
 export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';

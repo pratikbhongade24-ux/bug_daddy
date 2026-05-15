@@ -26,6 +26,7 @@ import { DashboardOverview } from './dashboard/DashboardOverview';
 import { IssuesView } from './issues/IssuesView';
 import { SonarView } from './sonar/SonarView';
 import { AdminView } from './admin/AdminView';
+import { SecurityScannerView } from './security/SecurityScannerView';
 import { ExecutionGraphModal } from './graph/ExecutionGraphModal';
 import { ToastContainer } from './shared/ToastContainer';
 import { CommandPalette } from './shared/CommandPalette';
@@ -338,6 +339,9 @@ export function DashboardApp() {
               onRefresh={() => sonarQuery.refetch()}
               onOpenReport={openSonarReport}
             />
+          ) : null}
+          {view === 'security' ? (
+            <SecurityScannerView addToast={toast} />
           ) : null}
           {view === 'admin' && isAdmin ? (
             <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} toast={toast} refresh={() => usersQuery.refetch()} />
