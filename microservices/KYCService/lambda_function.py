@@ -65,11 +65,28 @@ def verify_aadhaar(payload, context, request_id):
 
 
 def run_face_match(payload, context, request_id):
+    """Run face match simulation.
+
+    If ``simulateBug`` is set to ``"face_threshold"`` we previously injected a
+    ``ZeroDivisionError`` via ``1 / 0``.  This caused the Lambda to crash, which
+    is undesirable for a test flag.  The bug is fixed by returning a low‑
+    confidence score (e.g., 0.45) that is below any acceptance threshold while
+    keeping the response shape identical.
+    """
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
-    return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Simulate a low‑confidence match without raising an exception.
+        score = 0.45
+    else:
+        score = 0.93
+    return response(
+        context,
+        request_id,
+        "runFaceMatch",
+        payload,
+        {"faceMatch": {"score": score, "result": "MATCHED"}, "message": "Face match run completed"},
+    )
 
 
 def get_kyc_status(payload, context, request_id):
