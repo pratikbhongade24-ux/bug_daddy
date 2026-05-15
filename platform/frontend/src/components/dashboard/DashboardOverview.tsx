@@ -37,6 +37,12 @@ export function DashboardOverview({
     .filter((issue) => issue.frequency > 400 && issue.status !== 'resolved')
     .sort((a, b) => b.frequency - a.frequency)
     .slice(0, 8);
+  const backlogRows = charts.services
+    .map((row) => ({ label: row.service_name, value: Number(row.backlog || 0), service: row.service_name }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  const wipRows = charts.services
+    .map((row) => ({ label: row.service_name, value: Number(row.wip || 0), service: row.service_name }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
@@ -70,7 +76,7 @@ export function DashboardOverview({
         <div className="hcharts-grid animate-enter stagger-3">
           <HorizontalChart
             title="Backlog by Service"
-            rows={charts.services.map((row) => ({ label: row.service_name, value: Number(row.backlog || 0), service: row.service_name }))}
+            rows={backlogRows}
             onService={(service) => {
               setServiceFilter(service);
               setView('issues');
@@ -78,7 +84,7 @@ export function DashboardOverview({
           />
           <HorizontalChart
             title="WIP by Service"
-            rows={charts.services.map((row) => ({ label: row.service_name, value: Number(row.wip || 0), service: row.service_name }))}
+            rows={wipRows}
             onService={(service) => {
               setServiceFilter(service);
               setView('issues');

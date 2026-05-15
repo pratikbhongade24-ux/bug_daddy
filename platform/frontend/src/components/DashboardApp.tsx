@@ -165,7 +165,7 @@ export function DashboardApp() {
     const q = search.toLowerCase();
     return issues
       .filter((issue) => issue.tab === tab)
-      .filter((issue) => !q || issue.jiraId.toLowerCase().includes(q) || issue.err.toLowerCase().includes(q) || issue.shortSvc.toLowerCase().includes(q))
+      .filter((issue) => !q || String(issue.id).includes(q) || issue.jiraId.toLowerCase().includes(q) || issue.err.toLowerCase().includes(q) || issue.shortSvc.toLowerCase().includes(q))
       .filter((issue) => !serviceFilter || issue.service === serviceFilter)
       .filter((issue) => !criticalityFilter || issue.criticality === criticalityFilter)
       .filter((issue) => !originFilter || issue.origin === originFilter)
@@ -213,7 +213,7 @@ export function DashboardApp() {
           service_name: issue.service,
           incident_summary: issue.description || issue.err,
           source: 'platform',
-          metadata: { jira_id: issue.jiraId, workflow_key: prioritized.workflow_key || issue.workflow_key },
+          metadata: { issue_id: issue.id, workflow_key: prioritized.workflow_key || issue.workflow_key },
         }),
       });
       const data = await invoke.json().catch(() => ({}));
@@ -252,8 +252,8 @@ export function DashboardApp() {
   }
 
   function exportCSV() {
-    const rows = [['JIRA ID', 'Service', 'Error', 'Freq', 'Criticality', 'Owner', 'Tab', 'ETA']];
-    issues.forEach((issue) => rows.push([issue.jiraId, issue.shortSvc, `"${issue.err.replace(/"/g, '""')}"`, String(issue.freq), issue.criticality, issue.owner, issue.tab, issue.eta || '']));
+    const rows = [['Issue ID', 'Service', 'Error', 'Freq', 'Criticality', 'Owner', 'Tab', 'ETA']];
+    issues.forEach((issue) => rows.push([String(issue.id), issue.shortSvc, `"${issue.err.replace(/"/g, '""')}"`, String(issue.freq), issue.criticality, issue.owner, issue.tab, issue.eta || '']));
     const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');

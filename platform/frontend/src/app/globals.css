@@ -307,9 +307,18 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .tc { background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-family: var(--mono); }
 .tab.active .tc { background: var(--c3d); color: var(--c3); }
 
-.table-wrap { flex: 1; overflow: auto; background: var(--s2); }
+.table-wrap { flex: 1; overflow-y: auto; overflow-x: hidden; background: var(--s2); }
 .issues-table, .admin-table { width: 100%; border-collapse: collapse; }
-.issues-table th, .issues-table td, .admin-table th, .admin-table td { padding: 1rem 1.5rem; border-bottom: 1px solid var(--bd); text-align: left; }
+.issues-table { table-layout: fixed; }
+.issues-table .col-id { width: 7%; }
+.issues-table .col-service { width: 13%; }
+.issues-table .col-error { width: 33%; }
+.issues-table .col-frequency { width: 9%; }
+.issues-table .col-criticality { width: 11%; }
+.issues-table .col-owner { width: 10%; }
+.issues-table .col-eta { width: 7%; }
+.issues-table .col-action { width: 10%; }
+.issues-table th, .issues-table td, .admin-table th, .admin-table td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--bd); text-align: left; }
 .issues-table th, .admin-table th {
   position: sticky; top: 0; background: var(--s3); font-size: 0.75rem; font-weight: 700; color: var(--t2);
   text-transform: uppercase; letter-spacing: 0.05em; z-index: 2; cursor: pointer; user-select: none;
@@ -318,9 +327,18 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .issues-table th:hover { background: var(--s4); color: var(--t); }
 .issues-table tr:hover td, .admin-table tr:hover td { background: var(--s3); }
 
-.td-id { font-family: var(--mono); color: var(--t); font-weight: 700; font-size: 0.85rem; }
-.td-own { font-size: 0.85rem; font-weight: 500; color: var(--t2); }
-.td-desc { max-width: 450px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem; color: var(--t); }
+.td-id { font-family: var(--mono); color: var(--t); font-weight: 700; font-size: 0.82rem; }
+.td-own { font-size: 0.82rem; font-weight: 500; color: var(--t2); white-space: normal; overflow-wrap: anywhere; }
+.td-desc {
+  display: -webkit-box;
+  max-width: none;
+  overflow: hidden;
+  color: var(--t);
+  font-size: 0.86rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .freq { font-family: var(--mono); font-weight: 700; font-size: 0.85rem; }
 .freq.hi { color: var(--c2); } .freq.med { color: var(--c4); } .freq.low { color: var(--t2); }
 
@@ -330,7 +348,7 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .badge.medium, .badge.med { background: var(--c4d); color: #b45309; border: 1px solid #fde68a; }
 .badge.low { background: var(--c1d); color: #047857; border: 1px solid #a7f3d0; }
 
-.act-btn { border: 1px solid var(--bd); border-radius: 6px; font-size: 0.8rem; font-weight: 600; padding: 6px 12px; transition: all 0.2s; background: #fff; }
+.act-btn { border: 1px solid var(--bd); border-radius: 6px; font-size: 0.78rem; font-weight: 600; padding: 6px 8px; transition: all 0.2s; background: #fff; white-space: normal; }
 .act-btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .pri-btn { color: var(--c3); border-color: var(--c3d); background: #fff; }
 .pri-btn:hover { background: var(--c3h); border-color: var(--c3); }
@@ -527,8 +545,8 @@ body { font-size: 15px; }
 .kpi-val { font-size: 3.2rem !important; font-weight: 900 !important; }
 .nav-item { font-size: 0.95rem; padding: 0.85rem 1.5rem; }
 .badge, .admin-badge { font-size: 0.8rem; padding: 5px 10px; }
-.act-btn { padding: 8px 16px; font-size: 0.85rem; }
-.issues-table th, .issues-table td { padding: 1.1rem 1.5rem; }
+.act-btn { padding: 7px 8px; font-size: 0.8rem; }
+.issues-table th, .issues-table td { padding: 0.9rem 0.75rem; }
 
 /* ── Glassmorphic topbar ── */
 .topbar {

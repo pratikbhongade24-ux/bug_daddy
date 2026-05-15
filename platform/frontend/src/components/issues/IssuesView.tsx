@@ -50,7 +50,7 @@ export function IssuesView(props: {
       <div className="table-controls">
         <div className="srch-box">
           <Search size={15} />
-          <input value={props.search} onChange={(event) => props.setSearch(event.target.value)} placeholder="Search ID or description..." />
+          <input value={props.search} onChange={(event) => props.setSearch(event.target.value)} placeholder="Search issue ID or description..." />
         </div>
         <select className="tc-sel" value={props.serviceFilter} onChange={(event) => props.setServiceFilter(event.target.value)}>
           <option value="">All Services</option>
@@ -92,9 +92,19 @@ export function IssuesView(props: {
           <SkeletonTableRows count={6} />
         ) : (
           <table className="issues-table">
+            <colgroup>
+              <col className="col-id" />
+              <col className="col-service" />
+              <col className="col-error" />
+              <col className="col-frequency" />
+              <col className="col-criticality" />
+              <col className="col-owner" />
+              <col className="col-eta" />
+              <col className="col-action" />
+            </colgroup>
             <thead>
               <tr>
-                <th onClick={() => props.sortBy('id')}>JIRA ID</th>
+                <th onClick={() => props.sortBy('id')}>Issue ID</th>
                 <th>Service</th>
                 <th>Error</th>
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
@@ -151,7 +161,7 @@ export function IssueRow({
 
   return (
     <tr className={flashed ? 'row-flash' : ''}>
-      <td className="td-id">{issue.jiraId}</td>
+      <td className="td-id">{issue.id}</td>
       <td className="td-own">{issue.shortSvc}</td>
       <td className="td-desc" title={issue.err}>{issue.err}</td>
       <td>

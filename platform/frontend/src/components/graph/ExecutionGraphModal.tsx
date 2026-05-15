@@ -246,7 +246,7 @@ function FallbackLogs({ issue, isSummary }: { issue: Issue; isSummary: boolean }
       {steps.map((step, index) => (
         <div key={step} className={clsx('log-step-group', index > 1 && !isSummary && 'collapsed')}>
           <div className="log-step-header"><span className="step-chevron">▾</span><span className="step-icon">{String(index + 1).padStart(2, '0')}</span><span className="step-name">{step}</span><span className={clsx('step-status n8n-step-chip', isSummary || index < 2 ? 'done' : 'running')}>{isSummary || index < 2 ? 'DONE' : 'READY'}</span></div>
-          <div className="log-step-body"><div className="log-entry info"><strong>{step}</strong><p>{issue.jiraId} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
+          <div className="log-step-body"><div className="log-entry info"><strong>{step}</strong><p>Issue {issue.id} / {issue.shortSvc} / freq={issue.frequency}</p></div></div>
         </div>
       ))}
     </>
@@ -388,7 +388,7 @@ export function ExecutionGraphModal({
       >
         <div className="modal-hdr">
           <div>
-            <div className="modal-title"><GitBranch size={18} /> {isSummary ? 'Execution Summary' : 'Live Execution Graph'} <span>{issue.jiraId}</span></div>
+            <div className="modal-title"><GitBranch size={18} /> {isSummary ? 'Execution Summary' : 'Live Execution Graph'} <span>Issue {issue.id}</span></div>
             <div className="modal-sub">{issue.shortSvc} / freq={issue.freq} / {issue.criticality} / {sessionId || 'workflow preview'}</div>
           </div>
           <button className="modal-close" onClick={onClose}><X size={14} /> Close</button>
