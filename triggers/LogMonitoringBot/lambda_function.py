@@ -10,8 +10,51 @@ from datetime import datetime, timezone
 
 import pymysql
 
-
 logs_client = boto3.client("logs")
+
+# Global DB connection initialized once per container lifecycle
+try:
+    connection = pymysql.connect(
+        host=os.environ["DB_HOST"],
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        database=os.environ["DB_NAME"],
+        port=int(os.environ.get("DB_PORT", "3306")),
+        autocommit=True,
+        connect_timeout=10,
+    )
+except Exception as e:
+    connection = None
+    # Log the failure; subsequent calls will attempt lazy reconnect
+    print(f"[WARN] Initial DB connection failed: {e}")
+
+
+def get_connection():
+    """Return a live DB connection, reconnecting lazily if needed.
+
+    The Lambda execution environment may reuse containers, so we keep a
+    global connection open across invocations. If the connection is lost or
+    closed (e.g., due to timeout or network issues), we recreate it.
+    """
+    global connection
+    try:
+        # pymysql connections have an ``open`` attribute indicating state
+        if connection is None or not getattr(connection, "open", False):
+            connection = pymysql.connect(
+                host=os.environ["DB_HOST"],
+                user=os.environ["DB_USER"],
+                password=os.environ["DB_PASSWORD"],
+                database=os.environ["DB_NAME"],
+                port=int(os.environ.get("DB_PORT", "3306")),
+                autocommit=True,
+                connect_timeout=10,
+            )
+    except Exception as exc:
+        # If reconnection fails, propagate the exception to be handled by the caller
+        print(f"[ERROR] DB reconnection failed: {exc}")
+        raise
+    return connection
+
 
 def decode_logs_event(event):
     logs_data = event.get("awslogs", {}).get("data")
@@ -376,9 +419,10 @@ def lambda_handler(event, context):
 
     inserted = 0
     updated = 0
-    connection = connect_db()
+    # Use the global connection; reconnect lazily if needed
+    conn = get_connection()
     try:
-        with connection.cursor() as cursor:
+        with conn.cursor() as cursor:
             for issue in issues:
                 result = upsert_issue(cursor, issue)
                 if result == "inserted":
@@ -386,7 +430,8 @@ def lambda_handler(event, context):
                 else:
                     updated += 1
     finally:
-        connection.close()
+        # Do not close the global connection; let the container reuse it.
+        pass
 
     return {
         "statusCode": 200,
