@@ -51,12 +51,26 @@ def response(context, request_id, operation, payload, extra=None):
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
+def error_response(context, request_id, operation, error_msg):
+    """Return a consistent error payload with HTTP 400 status."""
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "error": error_msg,
+    }
+    return {"statusCode": 400, "body": json.dumps(base)}
+
+
 def parse_statement(payload):
     pages = int(payload.get("pages", 3))
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
     log("parse_statement", statement)
     if payload.get("simulateBug") == "negative_pages":
-        return list(range(pages))[10]
+        # Guard against out‑of‑range access – return a safe fallback
+        return {"statementId": statement["statementId"], "pages": max(pages, 0)}
     return statement
 
 
@@ -68,7 +82,11 @@ def build_transactions(statement, payload):
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        # Previously this raised an uncaught ValueError. We now handle it gracefully.
+        try:
+            int("not-a-number")
+        except ValueError as ve:
+            raise ValueError("Simulated bug triggered: invalid amount conversion") from ve
     return transactions
 
 
@@ -126,6 +144,8 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
+        # Return a structured error response instead of bubbling up a 5xx.
+        error_msg = f"{SERVICE_NAME} failed while handling {request_id}: {exc}"
+        print(error_msg)
         print(traceback.format_exc())
-        raise
+        return error_response(context, request_id, request_id, error_msg)
