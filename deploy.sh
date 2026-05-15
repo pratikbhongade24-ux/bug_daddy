@@ -28,8 +28,25 @@ echo "Building frontend..."
 cd "${REMOTE_ROOT}/platform/frontend"
 npm ci --omit=dev
 npm run build
-fuser -k ${FRONTEND_PORT}/tcp 2>/dev/null || true
-pm2 restart bugdaddy || PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
+
+# Clean up any duplicate pm2 entries for bugdaddy before restarting.
+# Duplicates accumulate when pm2 restart creates a new entry instead of
+# reusing an existing one (e.g. after a pm2 delete or server reboot),
+# causing EADDRINUSE crashes on port ${FRONTEND_PORT}.
+BUGDADDY_COUNT=$(pm2 jlist 2>/dev/null | python3 -c "import sys,json; procs=json.load(sys.stdin); print(sum(1 for p in procs if p.get('name')=='bugdaddy'))" 2>/dev/null || echo 0)
+if [ "${BUGDADDY_COUNT}" -gt 1 ]; then
+  echo "WARNING: ${BUGDADDY_COUNT} duplicate bugdaddy pm2 entries found — cleaning up..."
+  pm2 delete bugdaddy 2>/dev/null || true
+  fuser -k ${FRONTEND_PORT}/tcp 2>/dev/null || true
+  BUGDADDY_COUNT=0
+fi
+
+if [ "${BUGDADDY_COUNT}" -eq 1 ]; then
+  PORT=${FRONTEND_PORT} pm2 restart bugdaddy
+else
+  fuser -k ${FRONTEND_PORT}/tcp 2>/dev/null || true
+  PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
+fi
 pm2 save
 
 # Backend
