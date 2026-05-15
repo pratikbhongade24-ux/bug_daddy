@@ -59,27 +59,8 @@ def validate_account(payload, context, request_id):
 def release_funds(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
-    # Guard against accidental fault injection in production
     if payload.get("simulateBug") == "release_zero":
-        # Feature flag to allow this only in test environments
-        enable_fault = os.getenv("ENABLE_FAULT_INJECTION", "false").lower() == "true"
-        if not enable_fault:
-            # Return a structured error instead of crashing
-            return response(
-                context,
-                request_id,
-                "releaseFunds",
-                payload,
-                {"error": "simulateBug flag not permitted in this environment", "details": "release_zero simulation disabled"},
-            )
-        # If explicitly enabled, simulate a deterministic error response
-        return response(
-            context,
-            request_id,
-            "releaseFunds",
-            payload,
-            {"error": "Simulated internal error", "details": "division by zero simulated"},
-        )
+        disbursement["amount"] / 0
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
 
 
