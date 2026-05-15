@@ -210,7 +210,7 @@ export function IssueRow({
       <ResolutionLink value={issue.resolution_pr} fallback="-" />
       <td className="td-time" title={issue.last_seen || issue.created_at || ''}>{formatTimestamp(issue.last_seen || issue.created_at)}</td>
       <td>
-        {tab !== 'resolved' ? (
+        {tab === 'backlog' || tab === 'review' ? (
           <button
             className={clsx('act-btn pri-btn', loading && 'loading')}
             disabled={Boolean(loading)}
@@ -223,7 +223,7 @@ export function IssueRow({
           <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button>
         ) : (
           <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>
-            {tab === 'review' ? 'Reviewing' : 'Live Graph'}
+            Live Graph
           </button>
         )}
       </td>
