@@ -33,30 +33,6 @@ export function Sidebar({
           <Users size={16} /> Admin
         </button>
       ) : null}
-      <div className="sb-filters">
-        <div className="sec-label">Runtime</div>
-        <div className="health-card">
-          <span>Bug Daddy</span>
-          <strong>Idle</strong>
-          <div className="hbar">
-            <div className="hbar-f" style={{ width: '8%', background: 'var(--c3)' }} />
-          </div>
-        </div>
-        <div className="health-card">
-          <span>Incident Daddy</span>
-          <strong>Ready</strong>
-          <div className="hbar">
-            <div className="hbar-f" style={{ width: '62%', background: 'var(--c1)' }} />
-          </div>
-        </div>
-        <div className="health-card">
-          <span>Reviewer Daddy</span>
-          <strong>Ready</strong>
-          <div className="hbar">
-            <div className="hbar-f" style={{ width: '45%', background: 'var(--c5)' }} />
-          </div>
-        </div>
-      </div>
     </aside>
   );
 }

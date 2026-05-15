@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ScanSearch, Play, AlertTriangle, CheckCircle, Clock, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Play, AlertTriangle, CheckCircle, Clock, ShieldAlert, RefreshCw } from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import type {
   SecurityScanSession,
@@ -135,7 +135,16 @@ function FindingsTable({
         <span className="sec-findings-count">{filtered.length} / {findings.length}</span>
       </div>
       <div className="tbl-wrap">
-        <table className="issues-tbl">
+        <table className="issues-tbl sec-findings-table">
+          <colgroup>
+            <col className="sec-col-severity" />
+            <col className="sec-col-cve" />
+            <col className="sec-col-service" />
+            <col className="sec-col-component" />
+            <col className="sec-col-description" />
+            <col className="sec-col-last-seen" />
+            <col className="sec-col-status" />
+          </colgroup>
           <thead>
             <tr>
               <th>Severity</th>
@@ -151,19 +160,19 @@ function FindingsTable({
             {filtered.map(f => (
               <tr key={f.id}>
                 <td><SeverityBadge severity={f.severity} /></td>
-                <td className="mono" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{f.cve_id}</td>
+                <td className="mono sec-cve-id">{f.cve_id}</td>
                 <td className="td-svc">{f.service_name}</td>
-                <td className="td-svc" style={{ color: 'var(--t2)', fontSize: '0.75rem' }}>
+                <td className="td-svc sec-component">
                   {f.issue_type.replace('cve_', '')}
                 </td>
-                <td className="td-desc" title={f.description ?? ''}>
-                  {(f.description ?? '').slice(0, 120)}{(f.description ?? '').length > 120 ? '…' : ''}
+                <td className="sec-finding-desc">
+                  {f.description || '-'}
                 </td>
-                <td style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', color: 'var(--t2)' }}>
+                <td className="sec-date-cell">
                   {f.last_seen ? new Date(f.last_seen).toLocaleDateString() : '—'}
                 </td>
                 <td>
-                  <span className={clsx('badge', f.status === 'open' ? 'medium' : 'low')} style={{ fontSize: '0.65rem' }}>
+                  <span className={clsx('badge', f.status === 'open' ? 'medium' : 'low')}>
                     {f.status}
                   </span>
                 </td>
@@ -305,12 +314,8 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
   return (
     <div className="sec-scanner-view">
       {/* Header */}
-      <div className="panel-header">
-        <div className="ph-left">
-          <ScanSearch size={18} style={{ color: 'var(--c6)' }} />
-          <span className="ph-title">Security Scanner</span>
-          <span className="ph-sub">CVE detection across your AWS infrastructure</span>
-        </div>
+      <div className="panel-header sec-toolbar-header">
+        <div className="ph-left" />
         <div className="ph-right">
           <button
             className={clsx('btn pri', inProgress && 'disabled')}

@@ -79,7 +79,7 @@ export function SonarView({
           </>
         }
       />
-      <div className="dash-scroll">
+      <div className="sonar-scroll">
         <div className="sonar-grid">
           <section className="sonar-card">
             <div className="sonar-card-head">
@@ -115,8 +115,16 @@ export function SonarView({
             </div>
             <div className="tbl-count">{loading ? 'Loading…' : `${sessions.length} sessions`}</div>
           </div>
-          <div className="table-wrap">
-            <table className="admin-table">
+          <div className="sonar-table-wrap">
+            <table className="admin-table sonar-sessions-table">
+              <colgroup>
+                <col className="sonar-col-session" />
+                <col className="sonar-col-status" />
+                <col className="sonar-col-triggered" />
+                <col className="sonar-col-reason" />
+                <col className="sonar-col-started" />
+                <col className="sonar-col-completed" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Session ID</th>
@@ -152,8 +160,15 @@ export function SonarView({
             </div>
             <div className="tbl-count">{loading ? 'Loading…' : `${reports.length} reports`}</div>
           </div>
-          <div className="table-wrap">
-            <table className="admin-table">
+          <div className="sonar-table-wrap">
+            <table className="admin-table sonar-reports-table">
+              <colgroup>
+                <col className="sonar-col-date" />
+                <col className="sonar-col-key" />
+                <col className="sonar-col-size" />
+                <col className="sonar-col-updated" />
+                <col className="sonar-col-action" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Date</th>

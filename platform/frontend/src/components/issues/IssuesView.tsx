@@ -105,6 +105,8 @@ export function IssuesView(props: {
               <col className="col-frequency" />
               <col className="col-criticality" />
               <col className="col-owner" />
+              <col className="col-jira" />
+              <col className="col-pr" />
               <col className="col-eta" />
               <col className="col-action" />
             </colgroup>
@@ -185,7 +187,7 @@ export function IssueRow({
       <ResolutionLink value={issue.resolution_pr} fallback="-" />
       <td className="td-own">{issue.eta}</td>
       <td>
-        {tab === 'backlog' ? (
+        {tab !== 'resolved' ? (
           <button
             className={clsx('act-btn pri-btn', loading && 'loading')}
             disabled={Boolean(loading)}

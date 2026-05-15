@@ -35,7 +35,7 @@ export function Topbar({
   return (
     <header className="topbar">
       <div className="logo">
-        <span className="logo-g">BUG</span> DADDY <span className="logo-tag">AI OPS</span>
+        <span className="logo-g">BUG</span> DADDY
       </div>
       <div className="tb-sep" />
       <div className="live-ind">
