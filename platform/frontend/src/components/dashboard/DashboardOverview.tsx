@@ -43,6 +43,11 @@ export function DashboardOverview({
   const wipRows = charts.services
     .map((row) => ({ label: row.service_name, value: Number(row.wip || 0), service: row.service_name }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+  const feedFrequencyLabel = (item: FeedItem) => {
+    const source = `${item.source || item.meta || ''}`.toLowerCase();
+    const label = source.includes('sonar') ? 'SQ freq' : 'freq';
+    return `${label} ${item.frequency ?? 0}`;
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
@@ -136,6 +141,7 @@ export function DashboardOverview({
                     <strong>{item.title}</strong>
                     <em>{item.meta}</em>
                   </span>
+                  <b className="feed-frequency">{feedFrequencyLabel(item)}</b>
                 </button>
               ))}
               {!feed.length ? <div className="empty-state">No feed events.</div> : null}

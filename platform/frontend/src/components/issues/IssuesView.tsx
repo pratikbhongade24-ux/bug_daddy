@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ExternalLink, Search, Download, ListFilter } from 'lucide-react';
+import { ExternalLink, Info, Search, Download, ListFilter } from 'lucide-react';
 import { Issue, IssueTab } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { SkeletonTableRows } from '../shared/SkeletonLoader';
@@ -11,6 +11,17 @@ import { SkeletonTableRows } from '../shared/SkeletonLoader';
 function issueStatusLabel(tab: IssueTab) {
   if (tab === 'wip') return 'Work in Progress';
   return tab.charAt(0).toUpperCase() + tab.slice(1);
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 export function IssuesView(props: {
@@ -107,7 +118,7 @@ export function IssuesView(props: {
               <col className="col-owner" />
               <col className="col-jira" />
               <col className="col-pr" />
-              <col className="col-eta" />
+              <col className="col-time" />
               <col className="col-action" />
             </colgroup>
             <thead>
@@ -120,7 +131,7 @@ export function IssuesView(props: {
                 <th>Owner</th>
                 <th>Jira</th>
                 <th>PR</th>
-                <th>ETA</th>
+                <th>Timestamp</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -171,7 +182,19 @@ export function IssueRow({
 
   return (
     <tr className={flashed ? 'row-flash' : ''}>
-      <td className="td-id">{issue.id}</td>
+      <td className="td-id">
+        <span className="issue-id-cell">
+          {issue.id}
+          <button
+            className="issue-info-btn"
+            title={`First seen: ${formatTimestamp(issue.first_seen)}\nLast seen: ${formatTimestamp(issue.last_seen)}\nCreated: ${formatTimestamp(issue.created_at)}`}
+            onClick={() => openGraph(issue, true)}
+            aria-label={`Show issue ${issue.id} details`}
+          >
+            <Info size={12} />
+          </button>
+        </span>
+      </td>
       <td className="td-own">{issue.shortSvc}</td>
       <td className="td-desc" title={issue.err}>{issue.err}</td>
       <td>
@@ -185,7 +208,7 @@ export function IssueRow({
       <td className="td-own">{issue.owner}</td>
       <ResolutionLink value={issue.resolution_jira} fallback="-" />
       <ResolutionLink value={issue.resolution_pr} fallback="-" />
-      <td className="td-own">{issue.eta}</td>
+      <td className="td-time" title={issue.last_seen || issue.created_at || ''}>{formatTimestamp(issue.last_seen || issue.created_at)}</td>
       <td>
         {tab !== 'resolved' ? (
           <button

@@ -219,7 +219,7 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: var(--bg); }
 .view { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
 
-.ph { padding: 1.5rem; border-bottom: 1px solid var(--bd); display: flex; align-items: center; justify-content: space-between; background: var(--s1); box-shadow: var(--shadow-sm); z-index: 10; }
+.ph, .panel-header { padding: 1.5rem; border-bottom: 1px solid var(--bd); display: flex; align-items: center; justify-content: space-between; background: var(--s1); box-shadow: var(--shadow-sm); z-index: 10; }
 .ph-left h2 { font-weight: 700; font-size: 1.25rem; display: flex; align-items: center; gap: 0.6rem; color: var(--t); }
 .ph-left h2 svg { color: var(--c3); }
 .ph-sub { font-size: 0.85rem; color: var(--t2); margin-top: 0.3rem; }
@@ -279,6 +279,7 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .esc-content, .feed-item span { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .esc-content strong, .feed-item strong { color: var(--t); font-size: 0.9rem; font-weight: 600; margin-bottom: 0.2rem; }
 .esc-content em, .feed-item em { font-size: 0.8rem; color: var(--t2); font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-frequency { flex-shrink: 0; justify-self: flex-end; font-family: var(--mono); font-size: 0.74rem; font-weight: 800; color: var(--c3); background: var(--c3d); border: 1px solid rgba(59,130,246,0.18); border-radius: 999px; padding: 0.32rem 0.55rem; }
 .esc-right { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); }
 .esc-right b { color: var(--c2); font-size: 0.9rem; font-weight: 700; }
 .esc-right small { color: var(--t3); font-size: 0.75rem; margin-top: 0.2rem; }
@@ -318,7 +319,7 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .issues-table .col-owner { width: 8%; }
 .issues-table .col-jira { width: 9%; }
 .issues-table .col-pr { width: 9%; }
-.issues-table .col-eta { width: 6%; }
+.issues-table .col-time { width: 6%; }
 .issues-table .col-action { width: 9%; }
 .issues-table th, .issues-table td, .admin-table th, .admin-table td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--bd); text-align: left; }
 .issues-table th, .admin-table th {
@@ -330,7 +331,11 @@ button { cursor: pointer; transition: all 0.3s var(--ease-apple); }
 .issues-table tr:hover td, .admin-table tr:hover td { background: var(--s3); }
 
 .td-id { font-family: var(--mono); color: var(--t); font-weight: 700; font-size: 0.82rem; }
+.issue-id-cell { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.issue-info-btn { width: 20px; height: 20px; display: inline-grid; place-items: center; border: 1px solid var(--bd); border-radius: 50%; background: var(--s3); color: var(--t2); padding: 0; flex-shrink: 0; }
+.issue-info-btn:hover { background: var(--c3d); border-color: var(--c3); color: var(--c3); }
 .td-own { font-size: 0.82rem; font-weight: 500; color: var(--t2); white-space: normal; overflow-wrap: anywhere; }
+.td-time { font-family: var(--mono); font-size: 0.72rem; line-height: 1.35; color: var(--t2); white-space: normal; overflow-wrap: anywhere; }
 .td-link { max-width: 180px; font-size: 0.82rem; font-weight: 600; color: var(--t2); }
 .td-link a { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--brand); text-decoration: none; }
 .td-link a span, .td-link > span { display: inline-block; max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
@@ -900,6 +905,7 @@ body { font-size: 15px; }
 .sec-scanner-view { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .sec-toolbar-header { flex-shrink: 0; min-height: 64px; justify-content: flex-end; }
 .sec-toolbar-header .ph-left { display: none; }
+.sec-toolbar-header .ph-right { margin-left: auto; justify-content: flex-end; width: 100%; }
 .sec-body { display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; }
 
 /* Left history sidebar */

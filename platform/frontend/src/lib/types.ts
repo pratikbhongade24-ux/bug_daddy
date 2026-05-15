@@ -61,6 +61,8 @@ export interface FeedItem {
   event_type: string;
   title: string;
   meta: string;
+  source?: string;
+  frequency?: number;
   time: string | null;
 }
 

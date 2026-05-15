@@ -1579,6 +1579,8 @@ def dashboard_feed(limit: int = 12, user: dict[str, Any] = Depends(require_permi
                         "event_type": event_type,
                         "title": title,
                         "meta": row["description"] or row["issue_type"],
+                        "source": row["issue_type"],
+                        "frequency": int(row["frequency"] or 0),
                         "time": dt_to_str(row.get("resolved_at") or row.get("last_seen")),
                     }
                 )
