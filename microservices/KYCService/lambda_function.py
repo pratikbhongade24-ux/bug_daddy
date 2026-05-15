@@ -68,8 +68,25 @@ def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
-    return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Gracefully handle simulated bug: return a deterministic error response
+        return response(
+            context,
+            request_id,
+            "runFaceMatch",
+            payload,
+            {
+                "faceMatch": {"score": None, "result": "ERROR"},
+                "message": "Simulated face match threshold error",
+                "error": "division_by_zero_simulation",
+            },
+        )
+    return response(
+        context,
+        request_id,
+        "runFaceMatch",
+        payload,
+        {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"},
+    )
 
 
 def get_kyc_status(payload, context, request_id):
