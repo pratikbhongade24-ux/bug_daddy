@@ -2304,8 +2304,14 @@ def agent_invoke(
                 payload.service_name = issue["service"]
             if not payload.incident_summary:
                 payload.incident_summary = issue["description"] or issue["err"]
-            if not payload.logs and issue.get("entire_execution_logs"):
-                payload.logs = [issue["entire_execution_logs"]]
+            if not payload.logs:
+                logs_list = []
+                if issue.get("stack_trace"):
+                    logs_list.append("Stack Trace:\n" + issue["stack_trace"])
+                if issue.get("entire_execution_logs"):
+                    logs_list.append("Execution Logs:\n" + issue["entire_execution_logs"])
+                if logs_list:
+                    payload.logs = logs_list
         finally:
             conn.close()
 

@@ -74,6 +74,7 @@ CRITIC_PROMPT = """
 Critique the output of the previous execution step.
 Find correctness risks, missing edge cases, and weak assumptions.
 Challenge the execution if it deviates from expected goals or fails to address the core problem.
+Cross-reference the proposed fix against the specific line number and error type in the stack trace. If the line identified in the trace is not modified or handled, flag it as a blocking defect.
 
 SCOPE RULES — stay within the bounds of the ticket:
 - Only flag issues that are DIRECTLY caused by the bug being fixed, not general hardening opportunities.
@@ -101,6 +102,7 @@ JIRA USAGE RULES:
 Flag significant unresolved technical risks, but lean toward approving proposals that address the core problem — minor gaps or low-probability edge cases should be noted as follow-up items rather than blockers.
 
 APPROVAL BIAS: If the fix directly resolves the crash or error described in the ticket, APPROVE it. Only use [DECISION: REWORK] when there is a concrete, blocking defect in the proposed code itself — not for missing tests, style issues, or hardening outside the ticket scope.
+Cross-reference the proposed fix against the specific line number and error type in the stack trace. If the line identified in the trace is not modified or handled, trigger REWORK.
 
 DECISION OUTPUT RULES — you MUST end your response with exactly one of these tags on its own line:
 - [DECISION: APPROVE] — proposal is sound; create the pull request
