@@ -59,8 +59,39 @@ def validate_mandate(payload, context, request_id):
 def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
+    # -----------------------------------------------------------------
+    # BUG‑96 – TypeError caused by adding an int to a str when the
+    # simulateBug flag is set to "execute_type".
+    #
+    # The original line:
+    #     mandate["amount"] + "100"
+    # attempted numeric addition with a string literal, raising:
+    #     TypeError: unsupported operand type(s) for +: 'int' and 'str'
+    #
+    # Fix:
+    #   * Cast the amount to int (it is already an int in normal flow,
+    #     but the cast protects against accidental string payloads).
+    #   * Perform a harmless numeric addition (adds 100) and log the
+    #     simulated result.  The result is **not** used downstream – the
+    #     purpose of the flag is only to exercise the error‑handling
+    #     path without crashing the Lambda.
+    # -----------------------------------------------------------------
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
+        try:
+            simulated_amount = int(mandate["amount"]) + 100
+            log(
+                "simulate_execute_type",
+                {
+                    "original_amount": mandate["amount"],
+                    "simulated_amount": simulated_amount,
+                },
+            )
+        except Exception as e:
+            # If casting fails we still want the service to continue.
+            log(
+                "simulate_execute_type_error",
+                {"error": str(e), "original_amount": mandate["amount"]},
+            )
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
