@@ -2,7 +2,7 @@ import React, { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
-import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown, Copy, Check } from 'lucide-react';
+import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database, Zap, ClipboardPenLine, Siren, Brain, Bug, Search, Target, Bot, Code2, GitPullRequest, HardHat, CircleHelp, MessageCircle, ChevronDown, Copy, Check, FileText, ScrollText } from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import { Issue, ExecutionEvent, WorkflowNode, WorkflowEdge, WorkflowGraph, ListResponse } from '@/lib/types';
 
@@ -17,6 +17,8 @@ const archNodes: WorkflowNode[] = [
   { id: 'esc', x: 380, y: 220, icon: 'ES', label: 'Escalation Agent', sub: 'triage + route', color: 'var(--c3)', type: 'agent' },
   { id: 'jag', x: 580, y: 220, icon: 'JA', label: 'Jira Agent', sub: 'Jira Update', color: 'var(--c5)', type: 'agent' },
   { id: 'inc', x: 110, y: 385, icon: 'ID', label: 'Incident Daddy', sub: 'Orchestrator', color: 'var(--c2)', type: 'daddy' },
+  { id: 'irw', x: 110, y: 510, icon: 'RW', label: 'Report Writer', sub: 'Draft Report', color: 'var(--c4)', type: 'agent' },
+  { id: 'irr', x: 110, y: 630, icon: 'RR', label: 'Report Reviewer', sub: 'Review Report', color: 'var(--c6)', type: 'agent' },
   { id: 'sme', x: 310, y: 390, icon: 'SM', label: 'SME', sub: 'Knowledge Base', color: 'var(--c4)', type: 'agent' },
   { id: 'bug', x: 700, y: 310, icon: 'BD', label: 'Bug Daddy', sub: 'Orchestrator', color: 'var(--c1)', type: 'daddy' },
   { id: 'ctx', x: 760, y: 455, icon: 'CX', label: 'Context Analyser', sub: 'Analysis', color: 'var(--c4)', type: 'agent' },
@@ -38,6 +40,9 @@ const archEdges: WorkflowEdge[] = [
   ['db', 'esc'],
   ['esc', 'jag'],
   ['esc', 'inc'],
+  ['inc', 'irw'],
+  ['irw', 'irr'],
+  ['irr', 'irw'],
   ['esc', 'bug'],
   ['bug', 'sme'],
   ['bug', 'strat'],
@@ -106,6 +111,8 @@ function renderNodeIcon(node: WorkflowNode) {
     case 'esc': return <Zap {...iconProps} />;
     case 'jag': return <ClipboardPenLine {...iconProps} />;
     case 'inc': return <Siren {...iconProps} />;
+    case 'irw': return <FileText {...iconProps} />;
+    case 'irr': return <ScrollText {...iconProps} />;
     case 'sme': return <Brain {...iconProps} />;
     case 'bug': return <Bug {...iconProps} />;
     case 'ctx': return <Search {...iconProps} />;
@@ -134,7 +141,7 @@ function normalizeNodeModel(node: WorkflowNode): WorkflowNode {
 function normalizeWorkflowGraph(graph: WorkflowGraph | undefined): WorkflowGraph {
   const rawNodes = Array.isArray(graph?.nodes) ? graph.nodes : archNodes;
   const rawEdges = Array.isArray(graph?.edges) ? graph.edges : archEdges;
-  const architectureGraph = rawNodes.some((node) => ['esc', 'db', 'bug', 'inc', 'rev'].includes(canonicalNodeId(node.id)));
+  const architectureGraph = rawNodes.some((node) => ['esc', 'db', 'bug', 'inc', 'rev', 'irw', 'irr'].includes(canonicalNodeId(node.id)));
   if (architectureGraph) {
     const rawById = new Map(rawNodes.map((node) => [canonicalNodeId(node.id), node]));
     const nodes = archNodes.map((style) => normalizeNodeModel({ ...rawById.get(style.id), ...style }));
@@ -184,7 +191,7 @@ function edgePath(from: WorkflowNode, to: WorkflowNode, allEdges: [string, strin
 }
 
 function activePathForWorkflow(workflowKey: string) {
-  return workflowKey === 'incident_daddy' ? ['db', 'esc', 'jag', 'inc'] : ['db', 'esc', 'jag', 'bug', 'sme', 'strat', 'crit_strat', 'ctx', 'crit_ctx', 'code', 'crit_code', 'jprf', 'rev'];
+  return workflowKey === 'incident_daddy' ? ['db', 'esc', 'jag', 'inc', 'irw', 'irr'] : ['db', 'esc', 'jag', 'bug', 'sme', 'strat', 'crit_strat', 'ctx', 'crit_ctx', 'code', 'crit_code', 'jprf', 'rev'];
 }
 
 function initialGraphNodeStates(workflowKey: string, isSummary: boolean) {
@@ -241,7 +248,7 @@ function LogEntry({ event, showConnector }: { event: ExecutionEvent; showConnect
 
 function FallbackLogs({ issue, isSummary }: { issue: Issue; isSummary: boolean }) {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set());
-  const steps = issue.workflow_key === 'incident_daddy' ? ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Incident Daddy'] : ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Bug Daddy', 'SME Agent', 'Planner', 'Planner Critique', 'Context Analyser', 'Context Critique', 'Coder', 'Coder Critique', 'GitHub', 'Reviewer Daddy'];
+  const steps = issue.workflow_key === 'incident_daddy' ? ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Incident Daddy', 'Report Writer', 'Report Reviewer'] : ['Issues Tracker', 'Escalation Agent', 'Jira Agent', 'Bug Daddy', 'SME Agent', 'Planner', 'Planner Critique', 'Context Analyser', 'Context Critique', 'Coder', 'Coder Critique', 'GitHub', 'Reviewer Daddy'];
   function toggleStep(step: string) {
     setExpandedSteps((current) => {
       const next = new Set(current);

@@ -61,9 +61,7 @@ class IncidentDaddyRuntime:
         orchestration = str(agents.orchestrator(_orchestrator_prompt(request, analysis, sme_summary)))
         logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration)
 
-        started = logger.node_started("irw", "Report Writer", "Write incident report", orchestration)
-        incident_report = self._write_and_review_report(agents, request, analysis, orchestration, sme_summary)
-        logger.node_completed("irw", "Report Writer", "Incident report finalised", started, incident_report.raw_markdown)
+        incident_report = self._write_and_review_report(agents, request, analysis, orchestration, sme_summary, logger)
         self._post_report_to_slack(agents, incident_report)
 
         severity = infer_incident_severity(f"{request.prompt}\n{analysis}\n{orchestration}")
@@ -133,15 +131,24 @@ class IncidentDaddyRuntime:
         analysis: str,
         orchestration: str,
         sme_summary: str,
+        logger: ExecutionLogger,
     ) -> IncidentReport:
+        started = logger.node_started("irw", "Report Writer", "Write incident report", orchestration)
         draft = str(agents.report_writer(_report_writer_prompt(request, analysis, orchestration, sme_summary)))
+        logger.node_completed("irw", "Report Writer", "Incident report draft complete", started, draft)
+
+        started = logger.node_started("irr", "Report Reviewer", "Review incident report", draft)
         review = str(agents.report_reviewer(f"Review this incident report:\n\n{draft}"))
+        logger.node_completed("irr", "Report Reviewer", "Incident report reviewed", started, review)
+
         if "[REPORT: REWORK]" in review:
             reason = review.split("[REPORT: REWORK]", 1)[-1].strip().splitlines()[0]
+            started = logger.node_started("irw", "Report Writer", "Rework incident report", reason)
             draft = str(agents.report_writer(
                 _report_writer_prompt(request, analysis, orchestration, sme_summary)
                 + f"\n\nPrevious draft was returned for rework. Reason: {reason}\nPlease fix and rewrite."
             ))
+            logger.node_completed("irw", "Report Writer", "Rework complete", started, draft)
         return _parse_incident_report(draft, infer_incident_severity(f"{request.prompt}\n{analysis}"))
 
     def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport) -> None:

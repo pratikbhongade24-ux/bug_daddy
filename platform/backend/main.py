@@ -478,6 +478,8 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
     ]
     incident_nodes = [
         {"id": "inc", "label": "Incident Daddy", "type": "agent", "x": 110, "y": 385},
+        {"id": "irw", "label": "Report Writer", "type": "agent", "x": 110, "y": 510},
+        {"id": "irr", "label": "Report Reviewer", "type": "agent", "x": 110, "y": 630},
     ]
     bug_nodes = [
         {"id": "bug", "label": "Bug Daddy", "type": "agent", "x": 700, "y": 310},
@@ -543,6 +545,9 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "db", "to": "esc"},
             {"from": "esc", "to": "jag"},
             {"from": "esc", "to": "inc"},
+            {"from": "inc", "to": "irw"},
+            {"from": "irw", "to": "irr"},
+            {"from": "irr", "to": "irw"},
             {"from": "esc", "to": "bug"},
             {"from": "bug", "to": "sme"},
             {"from": "bug", "to": "strat"},
