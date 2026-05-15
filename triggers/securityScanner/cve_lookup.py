@@ -77,17 +77,23 @@ def lookup_cves(
 
     results: list[dict] = []
 
-    # --- NVD (keyword search) ---
-    nvd_hits = _nvd_query(name, version, nvd_api_key)
-    results.extend(nvd_hits)
-    time.sleep(_NVD_DELAY)
-
-    # --- OSV (exact package + version match) ---
     ecosystem = _resolve_ecosystem(name, comp_type)
-    if ecosystem:
-        osv_hits = _osv_query(name, version, ecosystem)
-        existing_ids = {r["cve_id"] for r in results}
-        results.extend(h for h in osv_hits if h["cve_id"] not in existing_ids)
+
+    # For pip/npm packages use OSV only — it's instant, no rate limit, and
+    # more accurate for package-level CVEs. NVD keyword search is too noisy
+    # for individual packages and would add 7s delay per package.
+    if comp_type in ("pip_package", "npm_package", "package"):
+        if ecosystem:
+            results.extend(_osv_query(name, version, ecosystem))
+    else:
+        # OS, runtime, db_engine — use NVD (better for these) + OSV if applicable
+        nvd_hits = _nvd_query(name, version, nvd_api_key)
+        results.extend(nvd_hits)
+        time.sleep(_NVD_DELAY)
+        if ecosystem:
+            osv_hits = _osv_query(name, version, ecosystem)
+            existing_ids = {r["cve_id"] for r in results}
+            results.extend(h for h in osv_hits if h["cve_id"] not in existing_ids)
 
     # Annotate with asset context
     for r in results:
