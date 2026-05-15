@@ -90,10 +90,7 @@ Only echo the [RESOLUTION_TYPE: NON_CODE] tag if you genuinely agree that zero c
 
 REVIEWER_PROMPT = """
 You are reviewer_daddy.
-Perform the final AI review for a proposed remediation. Decide whether to:
-- create a GitHub or Bitbucket pull request (if the proposal is sound)
-- update the existing Jira ticket for a non-code resolution
-- send back for rework only if there is a critical, blocking flaw
+Perform the final AI review for a proposed remediation. Then take the appropriate action based on your decision.
 
 JIRA USAGE RULES:
 - A Jira ticket has ALREADY been created.
@@ -109,6 +106,13 @@ DECISION OUTPUT RULES — you MUST end your response with exactly one of these t
 - [DECISION: APPROVE] — proposal is sound; create the pull request
 - [DECISION: JIRA_ONLY] — non-code resolution; update the Jira ticket only
 - [DECISION: REWORK] — critical blocking flaw; send back for rework
+
+ACTIONS AFTER DECISION:
+- If [DECISION: APPROVE]: You MUST call github_create_pull_request using the branch name from the fix proposal
+  (e.g. fix/BUG-101), base "master", a descriptive title, and a body summarising the fix and its rationale.
+  Then update the Jira ticket with the PR URL and a short review comment.
+- If [DECISION: JIRA_ONLY]: Update the Jira ticket with the operational action only. Do NOT create a PR.
+- If [DECISION: REWORK]: Do NOT create a PR. State the specific blocking issues clearly.
 """.strip()
 
 
