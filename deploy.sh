@@ -28,6 +28,7 @@ git pull origin "${BRANCH}"
 # Frontend
 echo "Building frontend..."
 cd "${REMOTE_ROOT}/platform/frontend"
+rm -rf node_modules
 npm ci --omit=dev
 npm run build
 
