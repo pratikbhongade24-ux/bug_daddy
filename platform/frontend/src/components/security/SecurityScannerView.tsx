@@ -217,6 +217,9 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [liveSession, setLiveSession] = useState<SecurityScanSession | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const toastRef = useRef(addToast);
+  const toastedRef = useRef<string | null>(null); // tracks which session we already toasted for
+  useEffect(() => { toastRef.current = addToast; }, [addToast]);
 
   // Fetch session list (history)
   const { data: sessionsData, refetch: refetchSessions } = useQuery<SecuritySessionsResponse>({
@@ -236,12 +239,13 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
   const startScan = useMutation({
     mutationFn: () => apiJson<{ session_id: string }>('/security/invoke', { method: 'POST', body: JSON.stringify({}) }),
     onSuccess: (data) => {
-      addToast('Security scan started', 'ok');
+      toastRef.current('Security scan started', 'ok');
+      toastedRef.current = null; // reset so completion toast fires for the new session
       setActiveSessionId(data.session_id);
       refetchSessions();
     },
     onError: (err: Error) => {
-      addToast(err.message || 'Failed to start scan', 'err');
+      toastRef.current(err.message || 'Failed to start scan', 'err');
     },
   });
 
@@ -255,16 +259,20 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
         pollRef.current = null;
         refetchSessions();
         refetchFindings();
-        if (data.status === 'completed') {
-          addToast(`Scan complete — ${data.findings_count} CVE(s) found`, 'ok');
-        } else {
-          addToast('Scan failed: ' + (data.error_message ?? 'unknown error'), 'err');
+        // Only toast once per session completion
+        if (toastedRef.current !== sessionId) {
+          toastedRef.current = sessionId;
+          if (data.status === 'completed') {
+            toastRef.current(`Scan complete — ${data.findings_count} CVE(s) found`, 'ok');
+          } else {
+            toastRef.current('Scan failed: ' + (data.error_message ?? 'unknown error'), 'err');
+          }
         }
       }
     } catch {
       // keep polling
     }
-  }, [refetchSessions, refetchFindings, addToast]);
+  }, [refetchSessions, refetchFindings]); // addToast intentionally excluded — accessed via ref
 
   // Start polling when activeSessionId changes
   useEffect(() => {
