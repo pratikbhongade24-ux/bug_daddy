@@ -161,16 +161,32 @@ export interface SonarReport {
   last_modified: string | null;
 }
 
+export interface SonarScanSession {
+  session_id: string;
+  status: 'processing' | 'completed' | 'failed';
+  triggered_by: string | null;
+  reason: string | null;
+  lambda_status_code: number | null;
+  ssm_command_id: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+}
+
 export interface SonarStatus {
   lambda_name: string;
   bucket: string;
   region: string;
   latest_report: SonarReport | null;
   reports: SonarReport[];
+  sessions: SonarScanSession[];
+  in_progress: boolean;
 }
 
 export interface SonarInvokeResponse {
   message: string;
+  session_id: string;
   lambda_name: string;
   status_code: number;
 }

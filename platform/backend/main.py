@@ -744,6 +744,26 @@ def ensure_execution_schema(conn):
             cur.execute(
                 "ALTER TABLE agent_execution_sessions ADD COLUMN next_sequence_no BIGINT NOT NULL DEFAULT 0 AFTER status"
             )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sonar_scan_sessions (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              session_id CHAR(36) NOT NULL UNIQUE,
+              status VARCHAR(30) NOT NULL DEFAULT 'processing',
+              triggered_by VARCHAR(255) NULL,
+              reason VARCHAR(255) NULL,
+              lambda_status_code INT NULL,
+              ssm_command_id VARCHAR(255) NULL,
+              error_message TEXT NULL,
+              started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              completed_at DATETIME NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_sonar_sessions_status (status),
+              INDEX idx_sonar_sessions_created (created_at)
+            )
+            """
+        )
     seed_workflow_definitions(conn)
 
 
@@ -1542,51 +1562,145 @@ def sonar_status(limit: int = 10, user: dict[str, Any] = Depends(require_permiss
         raise HTTPException(status_code=502, detail=f"Could not list Sonar reports: {exc}") from exc
 
     latest = reports[0] if reports else None
+
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT session_id, status, triggered_by, reason, lambda_status_code,
+                       ssm_command_id, error_message, started_at, completed_at, created_at
+                FROM sonar_scan_sessions
+                ORDER BY created_at DESC
+                LIMIT 20
+                """
+            )
+            sessions = cur.fetchall()
+        sessions_list = [
+            {
+                **s,
+                "started_at": dt_to_str(s.get("started_at")),
+                "completed_at": dt_to_str(s.get("completed_at")),
+                "created_at": dt_to_str(s.get("created_at")),
+            }
+            for s in sessions
+        ]
+        in_progress = any(s["status"] == "processing" for s in sessions_list)
+    finally:
+        conn.close()
+
     return {
         "lambda_name": SONAR_LAMBDA_NAME,
         "bucket": SONAR_REPORT_BUCKET,
         "region": AWS_REGION,
         "latest_report": latest,
         "reports": reports,
+        "sessions": sessions_list,
+        "in_progress": in_progress,
     }
 
 
 @app.post("/sonar/invoke")
 def invoke_sonar_scan(payload: SonarInvokeRequest, actor: dict[str, Any] = Depends(require_permission("issues.update"))):
-    client = boto3.client("lambda", region_name=AWS_REGION)
-    request_payload = {
-        "source": "bugdaddy-platform",
-        "requested_by": actor["username"],
-        "requested_at": utc_now().isoformat(),
-        "reason": payload.reason,
-    }
-    try:
-        response = client.invoke(
-            FunctionName=SONAR_LAMBDA_NAME,
-            InvocationType="Event",
-            Payload=json.dumps(request_payload).encode("utf-8"),
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not invoke Sonar scan: {exc}") from exc
-
     conn = get_db()
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT session_id FROM sonar_scan_sessions WHERE status = 'processing' LIMIT 1"
+            )
+            active = cur.fetchone()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A scan is already in progress (session: {active['session_id']}). Wait for it to complete before starting a new one.",
+            )
+
+        session_id = str(uuid.uuid4())
+        client = boto3.client("lambda", region_name=AWS_REGION)
+        request_payload = {
+            "source": "bugdaddy-platform",
+            "requested_by": actor["username"],
+            "requested_at": utc_now().isoformat(),
+            "reason": payload.reason,
+            "sonar_session_id": session_id,
+        }
+        try:
+            response = client.invoke(
+                FunctionName=SONAR_LAMBDA_NAME,
+                InvocationType="Event",
+                Payload=json.dumps(request_payload).encode("utf-8"),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not invoke Sonar scan: {exc}") from exc
+
+        lambda_status_code = response.get("StatusCode")
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO sonar_scan_sessions
+                  (session_id, status, triggered_by, reason, lambda_status_code)
+                VALUES (%s, 'processing', %s, %s, %s)
+                """,
+                (session_id, actor["username"], payload.reason, lambda_status_code),
+            )
+
         write_audit_log(
             conn,
             actor["id"],
             "sonar.invoke",
-            "lambda",
-            SONAR_LAMBDA_NAME,
-            {"status_code": response.get("StatusCode"), "reason": payload.reason},
+            "sonar_scan_sessions",
+            session_id,
+            {"status_code": lambda_status_code, "reason": payload.reason},
         )
     finally:
         conn.close()
 
     return {
         "message": "SonarQube scan trigger accepted",
+        "session_id": session_id,
         "lambda_name": SONAR_LAMBDA_NAME,
-        "status_code": response.get("StatusCode"),
+        "status_code": lambda_status_code,
     }
+
+
+@app.post("/sonar/sessions/{session_id}/complete")
+def complete_sonar_session(
+    session_id: str,
+    status: str = "completed",
+    error_message: str | None = None,
+    ssm_command_id: str | None = None,
+    _secret: str | None = Depends(verify_execution_log_secret),
+):
+    allowed = {"completed", "failed"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of {allowed}")
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, status FROM sonar_scan_sessions WHERE session_id = %s LIMIT 1",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Sonar session not found")
+        fields = ["status = %s", "completed_at = %s", "updated_at = %s"]
+        values: list[Any] = [status, utc_now().strftime("%Y-%m-%d %H:%M:%S"), utc_now().strftime("%Y-%m-%d %H:%M:%S")]
+        if error_message is not None:
+            fields.append("error_message = %s")
+            values.append(error_message)
+        if ssm_command_id is not None:
+            fields.append("ssm_command_id = %s")
+            values.append(ssm_command_id)
+        values.append(session_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE sonar_scan_sessions SET {', '.join(fields)} WHERE session_id = %s",
+                values,
+            )
+    finally:
+        conn.close()
+    return {"message": f"Session {session_id} marked as {status}"}
 
 
 @app.get("/sonar/reports/{report_date}/url")

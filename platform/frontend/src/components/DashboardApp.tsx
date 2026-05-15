@@ -333,6 +333,7 @@ export function DashboardApp() {
               loading={sonarQuery.isLoading}
               refreshing={sonarQuery.isFetching}
               invoking={invokeSonarMutation.isPending}
+              inProgress={sonarQuery.data?.in_progress ?? false}
               onInvoke={() => invokeSonarMutation.mutate()}
               onRefresh={() => sonarQuery.refetch()}
               onOpenReport={openSonarReport}
