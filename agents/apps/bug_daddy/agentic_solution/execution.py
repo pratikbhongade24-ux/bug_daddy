@@ -65,6 +65,25 @@ class ExecutionLogger:
     def map_pull_request_resolution(self, resolution_pr: str) -> None:
         self._post_resolution("pr", {"resolution_pr": resolution_pr})
 
+    def update_issue_status_to_review(self) -> None:
+        """Signal the platform to move the linked issue status from in_progress to in_review."""
+        if not self.enabled:
+            return
+        request = urllib.request.Request(
+            f"{self.endpoint}/agent/executions/{self.session_id}/issue-status",
+            data=b"{}",
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                **({"X-Agent-Execution-Secret": self.secret} if self.secret else {}),
+            },
+        )
+        try:
+            urllib.request.urlopen(request, timeout=float(os.getenv("AGENT_EXECUTION_LOG_TIMEOUT", "3"))).read()
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return
+
     def _post_resolution(self, resolution_type: str, body: dict[str, Any]) -> None:
         if not self.enabled:
             return

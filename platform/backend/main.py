@@ -931,6 +931,11 @@ def _runtime_payload_for_issue(
         "execution_callback_url": AGENT_EXECUTION_CALLBACK_URL,
         "execution_log_secret": AGENT_EXECUTION_LOG_SECRET,
     }
+    # Also set these at the top level so ExecutionLogger.from_payload can read them directly
+    if AGENT_EXECUTION_CALLBACK_URL:
+        runtime_payload["execution_log_endpoint"] = AGENT_EXECUTION_CALLBACK_URL.rstrip("/")
+    if AGENT_EXECUTION_LOG_SECRET:
+        runtime_payload["execution_log_secret"] = AGENT_EXECUTION_LOG_SECRET
     append_execution_event(
         conn,
         session_id,

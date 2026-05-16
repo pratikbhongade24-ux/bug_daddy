@@ -132,6 +132,13 @@ class BugDaddyRuntime:
         )
 
         review_payload = review_request.model_dump()
+        # Forward execution-logging credentials so reviewer_daddy's ExecutionLogger is enabled
+        if payload.get("execution_log_endpoint"):
+            review_payload["execution_log_endpoint"] = payload["execution_log_endpoint"]
+        if payload.get("execution_log_secret"):
+            review_payload["execution_log_secret"] = payload["execution_log_secret"]
+        if logger.session_id:
+            review_payload["session_id"] = logger.session_id
         artifacts.append(
             {"type": "review_handoff_request", "system": "reviewer_daddy", "content": review_payload}
         )
