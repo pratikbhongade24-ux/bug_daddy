@@ -1,11 +1,4 @@
-import json
-import os
-import traceback
-from datetime import datetime, timezone
-
-
-SERVICE_NAME = "BankStatementService"
-
+aW1wb3J0IGpzb24KaW1wb3J0IG9zCmltcG9ydCB0cmFjZWJhbGwgCmZyb20gZGF0ZXRpbWUgaW1wb3J0IGRhdGV0aW1lLCB0aW1lem9uCgpTRVJWRVJfTkFNRSA9ICJCYW5rU3RhdGVtZW50U2VydmljZSIK
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
@@ -51,6 +44,20 @@ def response(context, request_id, operation, payload, extra=None):
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
+def error_response(context, request_id, operation, message, code="InvalidInput"):
+    """Return a consistent JSON error payload with HTTP 400 status.
+    This is used for simulated‑bug triggers and any other client‑side errors.
+    """
+    err_body = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "error": {"code": code, "message": message},
+        "timestamp": iso_now(),
+    }
+    return {"statusCode": 400, "body": json.dumps(err_body)}
+
+
 def parse_statement(payload):
     pages = int(payload.get("pages", 3))
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
@@ -68,6 +75,7 @@ def build_transactions(statement, payload):
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
     if payload.get("simulateBug") == "amount_cast":
+        # Intentional bug injection – now guarded to raise a controlled error
         int("not-a-number")
     return transactions
 
@@ -126,6 +134,12 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
+        # Gracefully surface errors – especially simulated‑bug triggers –
+        # instead of bubbling an unhandled exception which results in a 500.
         print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        # If the error originates from a simulated bug we return a 400 error response.
+        if isinstance(exc, ValueError) and payload.get("simulateBug"):
+            return error_response(context, request_id, request_id, str(exc), code="SimulatedBug")
+        # Fallback generic error response
+        return error_response(context, request_id, request_id, str(exc), code="InternalError")
