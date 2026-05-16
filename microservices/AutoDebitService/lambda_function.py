@@ -84,7 +84,7 @@ def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
+        str(mandate["amount"]) + "100"
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
