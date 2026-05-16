@@ -1,6 +1,10 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+# Python 3.13 + Node 22 LTS in one slim image — no apt-get needed for Node
+FROM nikolaik/python-nodejs:python3.13-nodejs22-slim
 
 WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 ENV UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -24,9 +28,6 @@ ENV UV_SYSTEM_PYTHON=1 \
     SLACK_MCP_COMMAND=npx \
     SLACK_MCP_ARGS='["-y","@modelcontextprotocol/server-slack"]' \
     SLACK_MCP_TOOL_ALLOWLIST='["slack_post_message","slack_list_channels","slack_get_channel_history","slack_join_channel"]'
-
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
 COPY main.py ./
