@@ -28,13 +28,24 @@ _CODE_CHANGE_PATTERNS = (
     # explicit code mutation verbs
     r"\breplace\s+`",
     r"\breplace\s+\S+\s+with\s+",
+    r"\bmodif(?:y|ied|ying)\s+line\b",
+    r"\bedit(?:ed|ing)?\s+line\b",
+    r"\bconvert(?:ed|ing)?\s+(?:the\s+)?(?:integer|int|string|str|value)\b",
+    r"\bcast(?:ed|ing)?\s+\S+\s+to\b",
+    r"\bwrap(?:ped|ping)?\s+\S+\s+(?:in|with)\s+`?str\b",
+    # branches / commits / PRs
     r"\bcreate\s+(a\s+)?branch\b",
     r"\bcreate\s+(a\s+)?(new\s+)?pull request\b",
     r"\bopen(?:ed)?\s+(a\s+)?pr\b",
     r"\bfix/[\w\-/]+",                # branch names like fix/foo-bar
-    r"\bmicroservices/\S+\.py\b",     # repo-specific file paths
     r"\bpull/\d+\b",                  # PR refs like pull/46
     r"\bgithub\.com/\S+/pull/\d+",    # PR URLs
+    r"\bPR\s*#\s*\d+",                # PR #48
+    # repo-specific file paths and code locations
+    r"\bmicroservices/\S+\.py\b",
+    r"\b\S+\.py[:#]\s*line\s*\d+",   # foo.py: line 63
+    r"\bline\s+\d+\s+(?:in|of)\s+\S+\.py\b",
+    r"\bat\s+line\s+\d+\b",          # "at line 63"
 )
 
 
@@ -70,26 +81,34 @@ def _critic_verdict(*parts: str) -> str | None:
 def is_non_code_resolution(*parts: str) -> bool:
     """Decide whether to skip the Coder/Reviewer pipeline and route to Jira-only.
 
+    Biased toward CODE: a NON_CODE routing only sticks when there is zero
+    evidence of a code change in the combined signal.
+
     Decision order:
-    1. **Critic verdict (authoritative)** — if the Critic Agent emitted
-       ``[STRATEGY_VERDICT: ...]``, trust it. CODE/UNCLEAR → run the pipeline;
-       NON_CODE → skip. This wins over any planner tag because the critic
-       reviewed the strategy holistically.
+    1. **Critic verdict** — if the Critic Agent emitted
+       ``[STRATEGY_VERDICT: ...]``: CODE/UNCLEAR → run the pipeline. NON_CODE
+       is honored ONLY if the same text contains no code-change evidence
+       (diff blocks, branch names, PR refs, file:line, etc.); otherwise the
+       verdict contradicts its own context and is overridden to CODE.
     2. **Planner tag with contradiction guard** — fall back to detecting
        ``[RESOLUTION_TYPE: NON_CODE]`` or jira-only/non-code keywords, BUT
-       ignore the tag if the same text also describes a code change
-       (diff blocks, branch names, PR refs, etc.). A contradictory tag is
-       a bug, not a signal.
+       ignore the tag if the same text also describes a code change.
     """
+    signal = " ".join(parts)
+    looks_codey = _looks_like_code_change(signal)
+
     verdict = _critic_verdict(*parts)
     if verdict == "NON_CODE":
+        # Contradiction guard: critic said NON_CODE but the strategy text
+        # plainly describes a code fix. Trust the evidence, not the tag.
+        if looks_codey:
+            return False
         return True
     if verdict in ("CODE", "UNCLEAR"):
         return False
 
     # No critic verdict available — fall back to the planner tag / keyword scan.
     import re
-    signal = " ".join(parts)
     tag_present = bool(
         re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE)
     )
@@ -100,7 +119,7 @@ def is_non_code_resolution(*parts: str) -> bool:
         return False
 
     # Tie-break: if the same text also describes a real code change, the tag is wrong.
-    if _looks_like_code_change(signal):
+    if looks_codey:
         return False
     return True
 

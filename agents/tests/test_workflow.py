@@ -35,6 +35,21 @@ def test_is_non_code_resolution_detects_jira_only_path():
     assert is_non_code_resolution("This is a non-code operational fix", "jira-only resolution") is True
 
 
+def test_is_non_code_resolution_overrides_critic_verdict_when_body_describes_code_fix():
+    strategy = (
+        "Edited microservices/AutoDebitService/lambda_function.py at line 63 to "
+        "cast the value to str. Branch fix/BUG-101 opened in PR #48."
+    )
+    critic = "Looks good.\n[STRATEGY_VERDICT: NON_CODE]"
+    assert is_non_code_resolution(strategy, critic) is False
+
+
+def test_is_non_code_resolution_honors_critic_non_code_when_body_is_operational():
+    strategy = "Update the runbook and assign the Jira ticket to the on-call. No code changes."
+    critic = "Agreed.\n[STRATEGY_VERDICT: NON_CODE]"
+    assert is_non_code_resolution(strategy, critic) is True
+
+
 def test_infer_review_disposition_detects_rework():
     assert infer_review_disposition("Reject this patch and send for rework") == "rework_required"
 

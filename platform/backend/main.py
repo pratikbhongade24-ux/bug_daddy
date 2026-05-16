@@ -2842,6 +2842,35 @@ def map_agent_execution_pull_request_resolution(
     return _map_execution_resolution(session_id, resolution_pr=resolution_pr)
 
 
+@app.post("/agent/executions/{session_id}/issue-status")
+def update_agent_execution_issue_status(
+    session_id: str,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    """Move the linked issue status to in_review when reviewer_daddy takes ownership."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        issue_id = row.get("issue_id")
+        if not issue_id:
+            raise HTTPException(status_code=400, detail="Execution session is not linked to an issue")
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE service_exception_log SET status = 'in_review' WHERE id = %s AND status = 'in_progress'",
+                (issue_id,),
+            )
+        return fetch_issue_by_id(conn, issue_id)
+    finally:
+        conn.close()
+
+
 @app.get("/agent/workflows/{workflow_key}")
 def get_agent_workflow(
     workflow_key: str,
