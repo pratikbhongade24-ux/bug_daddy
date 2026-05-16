@@ -32,6 +32,7 @@ const SonarView = dynamic(() => import('./sonar/SonarView').then((mod) => mod.So
 const SonarReportModal = dynamic(() => import('./sonar/SonarReportModal').then((mod) => mod.SonarReportModal), { ssr: false, loading: () => null });
 import type { SonarReport } from './sonar/SonarReportModal';
 const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
+const AiQueueView = dynamic(() => import('./admin/AiQueueView').then((mod) => mod.AiQueueView), { ssr: false, loading: () => sectionSkeleton });
 const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
 const TransactionDemoView = dynamic(() => import('./transaction/TransactionDemoView').then((mod) => mod.TransactionDemoView), { ssr: false, loading: () => sectionSkeleton });
 const GrafanaView = dynamic(() => import('./grafana/GrafanaView').then((mod) => mod.GrafanaView), { ssr: false, loading: () => sectionSkeleton });
@@ -109,7 +110,7 @@ export function DashboardApp() {
   }
 
   function setView(nextView: ViewName) {
-    if (nextView === 'admin' && !hasPermission(authUser, 'users.read')) {
+    if ((nextView === 'admin' || nextView === 'ai_queue') && !hasPermission(authUser, 'users.read')) {
       toast('Admin access required', 'err');
       return;
     }
@@ -173,8 +174,8 @@ export function DashboardApp() {
   const aiQueueQuery = useQuery({
     queryKey: ['admin', 'ai-queue'],
     queryFn: () => apiJson<AiQueueStatus>('/admin/ai-queue'),
-    enabled: view === 'admin' && hasPermission(authUser, 'users.read'),
-    refetchInterval: view === 'admin' ? 15_000 : false,
+    enabled: (view === 'admin' || view === 'ai_queue') && hasPermission(authUser, 'users.read'),
+    refetchInterval: view === 'admin' || view === 'ai_queue' ? 15_000 : false,
   });
 
   const summary = summaryQuery.data || emptySummary;
@@ -190,6 +191,7 @@ export function DashboardApp() {
   const issuesHardError = issuesQuery.isError && !issuesQuery.data;
   const sonarHardError = sonarQuery.isError && !sonarQuery.data;
   const adminHardError = usersQuery.isError && !usersQuery.data;
+  const aiQueueHardError = aiQueueQuery.isError && !aiQueueQuery.data;
 
   const hasDataError = (
     view === 'dashboard' && dashboardHardError
@@ -199,6 +201,8 @@ export function DashboardApp() {
     view === 'sonar' && sonarHardError
   ) || (
     view === 'admin' && isAdmin && adminHardError
+  ) || (
+    view === 'ai_queue' && isAdmin && aiQueueHardError
   );
   const dashboardErrorText = view === 'dashboard' && dashboardHardError
     ? errorMessage(summaryQuery.error || chartsQuery.error || feedQuery.error || issuesQuery.error, 'Dashboard data could not be loaded.')
@@ -211,6 +215,9 @@ export function DashboardApp() {
     : undefined;
   const adminErrorText = view === 'admin' && isAdmin && adminHardError
     ? errorMessage(usersQuery.error, 'Admin data could not be loaded.')
+    : undefined;
+  const aiQueueErrorText = view === 'ai_queue' && isAdmin && aiQueueHardError
+    ? errorMessage(aiQueueQuery.error, 'AI queue data could not be loaded.')
     : undefined;
   const deferredSearch = useDeferredValue(search);
 
@@ -464,6 +471,15 @@ export function DashboardApp() {
           ) : null}
           {view === 'transactions' ? (
             <TransactionDemoView addToast={toast} />
+          ) : null}
+          {view === 'ai_queue' && isAdmin ? (
+            <AiQueueView
+              aiQueue={aiQueueQuery.data}
+              loading={aiQueueQuery.isLoading}
+              loadError={aiQueueErrorText}
+              toast={toast}
+              refresh={() => aiQueueQuery.refetch()}
+            />
           ) : null}
           {view === 'grafana' ? (
             <GrafanaView />

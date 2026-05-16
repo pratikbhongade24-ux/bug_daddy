@@ -361,5 +361,5 @@ export interface TransactionVerifyFix {
   };
 }
 
-export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana' | 'transactions';
+export type ViewName = 'dashboard' | 'issues' | 'ai_queue' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana' | 'transactions';
 export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';
