@@ -3,17 +3,21 @@ import os
 import traceback
 from datetime import datetime, timezone
 
-
 SERVICE_NAME = "BankStatementService"
-
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
-
 def log(stage, payload):
     print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
 
+def safe_int(value, default):
+    """Convert value to int safely, fallback to default on error."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        print(f"WARNING: invalid int value {value}, defaulting to {default}")
+        return default
 
 def parse_request(event):
     body = event.get("body")
@@ -29,7 +33,6 @@ def parse_request(event):
     else:
         payload = {}
     return payload.get("requestId") or "healthCheck", payload
-
 
 def response(context, request_id, operation, payload, extra=None):
     base = {
@@ -50,17 +53,24 @@ def response(context, request_id, operation, payload, extra=None):
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
-
 def parse_statement(payload):
-    pages = int(payload.get("pages", 3))
+    pages = safe_int(payload.get("pages", 3), 3)
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
     log("parse_statement", statement)
     if payload.get("simulateBug") == "negative_pages":
+        # This will raise IndexError intentionally for simulation
         return list(range(pages))[10]
     return statement
 
+ALLOWED_SIMULATE_BUGS = {"negative_pages", "amount_cast", "missing_bucket"}
+
+def validate_simulate_bug(payload):
+    bug = payload.get("simulateBug")
+    if bug and bug not in ALLOWED_SIMULATE_BUGS:
+        raise ValueError(f"Unsupported simulateBug flag: {bug}")
 
 def build_transactions(statement, payload):
+    validate_simulate_bug(payload)
     transactions = [
         {"txnId": "TXN-1001", "amount": 1250, "type": "credit"},
         {"txnId": "TXN-1002", "amount": 480, "type": "debit"},
@@ -68,20 +78,20 @@ def build_transactions(statement, payload):
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        try:
+            int("not-a-number")
+        except Exception as e:
+            raise ValueError("Simulated bug triggered: invalid amount conversion") from e
     return transactions
-
 
 def upload_statement(payload, context, request_id):
     statement = parse_statement(payload)
     return response(context, request_id, "uploadStatement", payload, {"upload": {"statementId": statement["statementId"], "status": "UPLOADED", "pages": statement["pages"]}, "message": "Statement uploaded to mock storage"})
 
-
 def extract_transactions(payload, context, request_id):
     statement = parse_statement(payload)
     transactions = build_transactions(statement, payload)
     return response(context, request_id, "extractTransactions", payload, {"transactions": transactions, "message": "Transactions extracted from statement"})
-
 
 def summarize_cashflow(payload, context, request_id):
     statement = parse_statement(payload)
@@ -93,7 +103,6 @@ def summarize_cashflow(payload, context, request_id):
         {}["summary"]
     return response(context, request_id, "summarizeCashflow", payload, {"summary": {"avgMonthlyCredit": credit, "avgMonthlyDebit": debit, "stability": "GOOD"}, "message": "Cashflow summary generated"})
 
-
 def detect_anomalies(payload, context, request_id):
     statement = parse_statement(payload)
     transactions = build_transactions(statement, payload)
@@ -101,10 +110,8 @@ def detect_anomalies(payload, context, request_id):
     log("detect_anomalies", {"anomalyCount": len(anomalies)})
     return response(context, request_id, "detectAnomalies", payload, {"anomalies": anomalies, "message": "Statement anomaly detection completed"})
 
-
 def health_check(payload, context, request_id):
     return response(context, request_id, "healthCheck", payload, {"message": "Bank statement service is healthy"})
-
 
 def route_request(request_id, payload, context):
     if request_id == "uploadStatement":
@@ -117,7 +124,6 @@ def route_request(request_id, payload, context):
         return detect_anomalies(payload, context, request_id)
     return health_check(payload, context, request_id)
 
-
 def lambda_handler(event, context):
     request_id, payload = parse_request(event)
     log("request_received", {"requestId": request_id, "payload": payload})
@@ -126,6 +132,8 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
+        err_msg = f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}"
+        print(err_msg)
         print(traceback.format_exc())
-        raise
+        error_body = {"service": SERVICE_NAME, "requestId": request_id, "operation": request_id, "error": str(exc)}
+        return {"statusCode": 400, "body": json.dumps(error_body)}
