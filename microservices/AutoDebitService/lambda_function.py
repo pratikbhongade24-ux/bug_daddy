@@ -3,7 +3,6 @@ import os
 import traceback
 from datetime import datetime, timezone
 
-
 SERVICE_NAME = "AutoDebitService"
 
 
@@ -13,6 +12,15 @@ def iso_now():
 
 def log(stage, payload):
     print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
+
+
+def _is_test_env() -> bool:
+    """
+    Determines if the current runtime environment is non‑production.
+    The environment is read from the ENVIRONMENT variable; defaults to "dev".
+    Returns True for any value other than "prod".
+    """
+    return os.getenv("ENVIRONMENT", "dev").lower() != "prod"
 
 
 def parse_request(event):
@@ -32,45 +40,126 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
-    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "db": {
+            "host": os.environ.get("DB_HOST"),
+            "port": os.environ.get("DB_PORT"),
+            "name": os.environ.get("DB_NAME"),
+            "user": os.environ.get("DB_USER"),
+        },
+        "payload": payload,
+    }
     if extra:
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
 def load_mandate(payload):
-    mandate = {"mandateId": payload.get("mandateId", "MANDATE-001"), "bankCode": payload.get("bankCode", "MOCKBANK"), "amount": payload.get("amount", 0)}
+    mandate = {
+        "mandateId": payload.get("mandateId", "MANDATE-001"),
+        "bankCode": payload.get("bankCode", "MOCKBANK"),
+        "amount": payload.get("amount", 0),
+    }
     log("load_mandate", mandate)
     return mandate
 
 
 def register_mandate(payload, context, request_id):
     mandate = load_mandate(payload)
-    return response(context, request_id, "registerMandate", payload, {"mandate": {"mandateId": mandate["mandateId"], "status": "REGISTERED", "bankCode": mandate["bankCode"]}, "message": "Mandate registration completed"})
+    return response(
+        context,
+        request_id,
+        "registerMandate",
+        payload,
+        {
+            "mandate": {
+                "mandateId": mandate["mandateId"],
+                "status": "REGISTERED",
+                "bankCode": mandate["bankCode"],
+            },
+            "message": "Mandate registration completed",
+        },
+    )
 
 
 def validate_mandate(payload, context, request_id):
     mandate = load_mandate(payload)
     if payload.get("simulateBug") == "mandate_lookup":
-        [][1]
-    return response(context, request_id, "validateMandate", payload, {"validation": {"mandateId": mandate["mandateId"], "status": "VALID", "retryEligible": False}, "message": "Mandate validation completed"})
+        # Guarded simulation – only active in non‑production environments.
+        if _is_test_env():
+            raise RuntimeError("Simulated mandate_lookup failure")
+        # In production the flag is ignored; continue normal flow.
+    return response(
+        context,
+        request_id,
+        "validateMandate",
+        payload,
+        {
+            "validation": {
+                "mandateId": mandate["mandateId"],
+                "status": "VALID",
+                "retryEligible": False,
+            },
+            "message": "Mandate validation completed",
+        },
+    )
 
 
 def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
-    return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
+        # Guarded simulation – raise a controlled error in test environments.
+        if _is_test_env():
+            raise RuntimeError("Simulated execute_type failure")
+        # Production ignores the flag and proceeds normally.
+    return response(
+        context,
+        request_id,
+        "executeDebit",
+        payload,
+        {
+            "debit": {
+                "transactionId": payload.get("transactionId", "DEBIT-1001"),
+                "status": "SCHEDULED",
+                "amount": mandate["amount"],
+            },
+            "message": "Debit execution scheduled",
+        },
+    )
 
 
 def get_mandate_status(payload, context, request_id):
     mandate = load_mandate(payload)
-    return response(context, request_id, "getMandateStatus", payload, {"status": {"mandateId": mandate["mandateId"], "state": "ACTIVE", "lastExecution": "SUCCESS"}, "message": "Mandate status fetched"})
+    return response(
+        context,
+        request_id,
+        "getMandateStatus",
+        payload,
+        {
+            "status": {
+                "mandateId": mandate["mandateId"],
+                "state": "ACTIVE",
+                "lastExecution": "SUCCESS",
+            },
+            "message": "Mandate status fetched",
+        },
+    )
 
 
 def health_check(payload, context, request_id):
-    return response(context, request_id, "healthCheck", payload, {"message": "Auto debit service is healthy"})
+    return response(
+        context,
+        request_id,
+        "healthCheck",
+        payload,
+        {"message": "Auto debit service is healthy"},
+    )
 
 
 def route_request(request_id, payload, context):
