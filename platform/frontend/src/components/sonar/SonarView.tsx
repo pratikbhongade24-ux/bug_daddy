@@ -3,6 +3,7 @@ import { ShieldCheck, RefreshCcw, Play, Cloud, Bot, FileJson, ExternalLink, Load
 import { SonarScanSession, SonarStatus } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { motion } from 'framer-motion';
+import { AsyncActionButton } from '../shared/AsyncActionButton';
 
 function formatBytes(size: number) {
   if (!size) return '0 B';
@@ -35,6 +36,7 @@ function SessionStatusBadge({ status }: { status: SonarScanSession['status'] }) 
 
 export function SonarView({
   status,
+  loadError,
   loading,
   refreshing,
   invoking,
@@ -44,6 +46,7 @@ export function SonarView({
   onOpenReport,
 }: {
   status?: SonarStatus;
+  loadError?: string;
   loading: boolean;
   refreshing: boolean;
   invoking: boolean;
@@ -55,7 +58,6 @@ export function SonarView({
   const reports = status?.reports || [];
   const sessions = status?.sessions || [];
   const latest = status?.latest_report;
-  const scanDisabled = invoking || inProgress;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
@@ -65,21 +67,24 @@ export function SonarView({
         icon={<ShieldCheck size={18} />}
         actions={
           <>
-            <button className="btn" onClick={onRefresh} disabled={refreshing}>
-              <RefreshCcw size={14} /> {refreshing ? 'Refreshing' : 'Refresh'}
-            </button>
-            <button
+            <AsyncActionButton className="btn" onClick={onRefresh} pending={refreshing} pendingLabel="Refreshing...">
+              <><RefreshCcw size={14} /> Refresh</>
+            </AsyncActionButton>
+            <AsyncActionButton
               className="btn pri"
               onClick={onInvoke}
-              disabled={scanDisabled}
+              pending={invoking}
+              pendingLabel="Starting..."
+              disabled={inProgress}
               title={inProgress ? 'A scan is already in progress' : undefined}
             >
-              <Play size={14} /> {invoking ? 'Starting…' : inProgress ? 'Scan in Progress' : 'Run Scan'}
-            </button>
+              <><Play size={14} /> {inProgress ? 'Scan in Progress' : 'Run Scan'}</>
+            </AsyncActionButton>
           </>
         }
       />
       <div className="sonar-scroll">
+        {loadError ? <div className="section-alert" role="alert">{loadError}</div> : null}
         <div className="sonar-grid">
           <section className="sonar-card">
             <div className="sonar-card-head">
@@ -115,8 +120,9 @@ export function SonarView({
             </div>
             <div className="tbl-count">{loading ? 'Loading…' : `${sessions.length} sessions`}</div>
           </div>
-          <div className="sonar-table-wrap">
+          <div className="sonar-table-wrap" aria-busy={loading || refreshing}>
             <table className="admin-table sonar-sessions-table">
+              <caption className="sr-only">Sonar scan sessions table</caption>
               <colgroup>
                 <col className="sonar-col-session" />
                 <col className="sonar-col-status" />
@@ -160,8 +166,9 @@ export function SonarView({
             </div>
             <div className="tbl-count">{loading ? 'Loading…' : `${reports.length} reports`}</div>
           </div>
-          <div className="sonar-table-wrap">
+          <div className="sonar-table-wrap" aria-busy={loading || refreshing}>
             <table className="admin-table sonar-reports-table">
+              <caption className="sr-only">Sonar report files table</caption>
               <colgroup>
                 <col className="sonar-col-date" />
                 <col className="sonar-col-key" />

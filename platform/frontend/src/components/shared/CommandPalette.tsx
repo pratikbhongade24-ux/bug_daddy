@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, LayoutDashboard, Bug, ShieldCheck, Zap, Activity, Brain, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Search, LayoutDashboard, Bug, ShieldCheck, Zap, Activity, Brain, AlertTriangle } from 'lucide-react';
 import { ViewName, Issue } from '@/lib/types';
 
 type AiSuggestion = {
@@ -25,6 +25,7 @@ export function CommandPalette({
   issues?: Issue[];
 }) {
   const [query, setQuery] = useState('');
+  const dialogTitleId = 'command-palette-title';
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -85,6 +86,9 @@ export function CommandPalette({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={dialogTitleId}
         style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           zIndex: 500, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
@@ -111,6 +115,7 @@ export function CommandPalette({
         >
           {/* Search input */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--bd)', padding: '14px 16px' }}>
+            <h2 id={dialogTitleId} style={{ position: 'absolute', left: '-9999px' }}>Command palette</h2>
             <Search size={16} style={{ color: 'var(--t3)', flexShrink: 0 }} />
             <input
               autoFocus

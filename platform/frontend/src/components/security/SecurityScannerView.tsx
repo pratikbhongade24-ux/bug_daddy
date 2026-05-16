@@ -1,9 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Play, AlertTriangle, CheckCircle, Clock, ShieldAlert, RefreshCw } from 'lucide-react';
+import {
+  Play,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  ShieldAlert,
+  RefreshCw,
+  Search,
+  History,
+  Radar,
+  Shield,
+  Bug,
+} from 'lucide-react';
 import { apiJson } from '@/lib/api';
 import type {
   SecurityScanSession,
@@ -28,6 +40,27 @@ const PHASES: { key: SecurityPhase; label: string; description: string }[] = [
 function phaseIndex(phase: SecurityPhase | null): number {
   if (!phase) return -1;
   return PHASES.findIndex(p => p.key === phase);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString();
+}
+
+function formatPhaseLabel(phase: SecurityPhase | null) {
+  if (!phase) return 'Waiting to start';
+  return PHASES.find((item) => item.key === phase)?.label ?? phase;
+}
+
+function statusTone(status: SecurityScanSession['status']) {
+  if (status === 'completed') return 'success';
+  if (status === 'failed') return 'danger';
+  return 'warning';
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +101,7 @@ function ScanStepper({ session }: { session: SecurityScanSession }) {
 
 function SeverityBadge({ severity }: { severity: string }) {
   const cls = severity.toLowerCase();
-  return <span className={clsx('badge', cls)}>{severity}</span>;
+  return <span className={clsx('badge', cls, 'sec-severity-badge')}>{severity}</span>;
 }
 
 function FindingsTable({
@@ -82,21 +115,23 @@ function FindingsTable({
   const [svcFilter, setSvcFilter] = useState('');
   const [sevFilter, setSevFilter] = useState('');
 
-  const services = [...new Set(findings.map(f => f.service_name))].sort();
+  const services = useMemo(() => [...new Set(findings.map(f => f.service_name))].sort(), [findings]);
 
-  const filtered = findings.filter(f => {
-    if (sevFilter && f.severity !== sevFilter) return false;
-    if (svcFilter && f.service_name !== svcFilter) return false;
-    if (q) {
-      const lq = q.toLowerCase();
-      return (
-        f.cve_id?.toLowerCase().includes(lq) ||
-        (f.description ?? '').toLowerCase().includes(lq) ||
-        f.service_name.toLowerCase().includes(lq)
-      );
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    return findings.filter((finding) => {
+      if (sevFilter && finding.severity !== sevFilter) return false;
+      if (svcFilter && finding.service_name !== svcFilter) return false;
+      if (q) {
+        const loweredQuery = q.toLowerCase();
+        return (
+          finding.cve_id?.toLowerCase().includes(loweredQuery) ||
+          (finding.description ?? '').toLowerCase().includes(loweredQuery) ||
+          finding.service_name.toLowerCase().includes(loweredQuery)
+        );
+      }
+      return true;
+    });
+  }, [findings, q, sevFilter, svcFilter]);
 
   if (loading) {
     return <div className="sec-empty">Loading findings...</div>;
@@ -112,15 +147,17 @@ function FindingsTable({
   }
 
   return (
-    <div className="sec-findings">
+    <div className="sec-findings" aria-busy={loading}>
       <div className="sec-findings-toolbar">
-        <input
-          className="cmd-input"
-          placeholder="Search CVE ID, service, description..."
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ flex: 1, maxWidth: 320 }}
-        />
+        <label className="sec-search">
+          <Search size={16} />
+          <input
+            className="cmd-input sec-search-input"
+            placeholder="Search CVE ID, service, description..."
+            value={q}
+            onChange={e => setQ(e.target.value)}
+          />
+        </label>
         <select className="filter-select" value={svcFilter} onChange={e => setSvcFilter(e.target.value)}>
           <option value="">All services</option>
           {services.map(s => <option key={s} value={s}>{s}</option>)}
@@ -132,10 +169,11 @@ function FindingsTable({
           <option value="MEDIUM">Medium</option>
           <option value="LOW">Low</option>
         </select>
-        <span className="sec-findings-count">{filtered.length} / {findings.length}</span>
+        <span className="sec-findings-count">{filtered.length} of {findings.length} findings</span>
       </div>
-      <div className="tbl-wrap">
+      <div className="tbl-wrap sec-findings-scroll">
         <table className="issues-tbl sec-findings-table">
+          <caption className="sr-only">Security CVE findings table</caption>
           <colgroup>
             <col className="sec-col-severity" />
             <col className="sec-col-cve" />
@@ -169,7 +207,7 @@ function FindingsTable({
                   {f.description || '-'}
                 </td>
                 <td className="sec-date-cell">
-                  {f.last_seen ? new Date(f.last_seen).toLocaleDateString() : '—'}
+                  {formatDate(f.last_seen)}
                 </td>
                 <td>
                   <span className={clsx('badge', f.status === 'open' ? 'medium' : 'low')}>
@@ -197,22 +235,20 @@ function SessionHistoryRow({ session, onSelect, active }: {
       onClick={onSelect}
     >
       <span className={clsx('sec-hist-dot', session.status)} />
-      <span className="sec-hist-date">
-        {session.started_at ? new Date(session.started_at).toLocaleString() : '—'}
+      <span className="sec-history-copy">
+        <span className="sec-hist-date">{formatDateTime(session.started_at)}</span>
+        {isProcessing ? (
+          <span className="sec-hist-phase">{formatPhaseLabel(session.current_phase)}</span>
+        ) : session.status === 'completed' ? (
+          <span className="sec-hist-counts">
+            <span>{session.critical_count} critical</span>
+            <span>{session.high_count} high</span>
+            <span>{session.findings_count} total</span>
+          </span>
+        ) : (
+          <span className="sec-hist-failed">Scan failed</span>
+        )}
       </span>
-      {isProcessing ? (
-        <span className="sec-hist-phase">{session.current_phase ?? 'starting'}</span>
-      ) : session.status === 'completed' ? (
-        <span className="sec-hist-counts">
-          <span style={{ color: 'var(--c2)' }}>{session.critical_count}C</span>
-          {' / '}
-          <span style={{ color: 'var(--c4)' }}>{session.high_count}H</span>
-          {' · '}
-          {session.findings_count} total
-        </span>
-      ) : (
-        <span style={{ color: 'var(--c2)', fontSize: '0.72rem' }}>failed</span>
-      )}
     </button>
   );
 }
@@ -305,18 +341,39 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
   const sessions = sessionsData?.sessions ?? [];
   const inProgress = sessionsData?.in_progress ?? false;
   const findings = findingsData?.items ?? [];
+  const latestSession = sessions[0] ?? null;
+  const criticalFindings = findings.filter((item) => item.severity === 'CRITICAL').length;
+  const activeServices = new Set(findings.map((item) => item.service_name)).size;
 
   // The session to display in stepper — live data takes priority
   const displaySession = liveSession && liveSession.session_id === activeSessionId
     ? liveSession
-    : sessions.find(s => s.session_id === activeSessionId) ?? null;
+    : sessions.find(s => s.session_id === activeSessionId) ?? latestSession;
 
   return (
     <div className="sec-scanner-view">
-      {/* Header */}
-      <div className="panel-header sec-toolbar-header">
-        <div className="ph-left" />
-        <div className="ph-right">
+      <section className="sec-hero">
+        <div className="sec-hero-copy">
+          <span className="sec-eyebrow">
+            <Radar size={14} />
+            Cloud exposure audit
+          </span>
+          <h1 className="sec-hero-title">Security scanner command center</h1>
+          <p className="sec-hero-text">
+            Launch on-demand scans, monitor the live pipeline, and review findings in one scrollable workspace.
+          </p>
+          <div className="sec-hero-meta">
+            <span className={clsx('sec-status-chip', displaySession && statusTone(displaySession.status))}>
+              {displaySession ? (displaySession.status === 'processing' ? 'Scan running' : displaySession.status) : 'Ready to scan'}
+            </span>
+            <span className="sec-hero-note">
+              {displaySession
+                ? `Last activity ${formatDateTime(displaySession.started_at)}`
+                : 'No security scans have been recorded yet'}
+            </span>
+          </div>
+        </div>
+        <div className="sec-hero-actions">
           <button
             className={clsx('btn pri', inProgress && 'disabled')}
             disabled={inProgress || startScan.isPending}
@@ -328,71 +385,150 @@ export function SecurityScannerView({ addToast }: { addToast: (msg: string, kind
               <><Play size={14} /> Run Scan</>
             )}
           </button>
+          <p className="sec-hero-help">
+            {inProgress ? 'A scan is already in progress. Live updates refresh automatically.' : 'Kick off a fresh inventory and CVE sweep across connected AWS assets.'}
+          </p>
         </div>
-      </div>
+      </section>
+
+      <section className="sec-summary-grid">
+        <article className="sec-stat-card">
+          <div className="sec-stat-icon critical">
+            <ShieldAlert size={18} />
+          </div>
+          <div className="sec-stat-copy">
+            <span className="sec-stat-label">Critical findings</span>
+            <strong className="sec-stat-value">{criticalFindings}</strong>
+            <span className="sec-stat-note">Open issues needing immediate review</span>
+          </div>
+        </article>
+        <article className="sec-stat-card">
+          <div className="sec-stat-icon accent">
+            <Bug size={18} />
+          </div>
+          <div className="sec-stat-copy">
+            <span className="sec-stat-label">Total findings</span>
+            <strong className="sec-stat-value">{findings.length}</strong>
+            <span className="sec-stat-note">Results currently stored in the platform</span>
+          </div>
+        </article>
+        <article className="sec-stat-card">
+          <div className="sec-stat-icon success">
+            <Shield size={18} />
+          </div>
+          <div className="sec-stat-copy">
+            <span className="sec-stat-label">Services covered</span>
+            <strong className="sec-stat-value">{activeServices}</strong>
+            <span className="sec-stat-note">Unique AWS services represented in findings</span>
+          </div>
+        </article>
+      </section>
 
       <div className="sec-body">
-        {/* Left: session history */}
-        <div className="sec-sidebar">
-          <div className="sec-sidebar-title">Scan History</div>
-          {sessions.length === 0 ? (
-            <div className="sec-empty-small">No scans yet</div>
-          ) : (
-            sessions.map(s => (
-              <SessionHistoryRow
-                key={s.session_id}
-                session={s}
-                active={s.session_id === activeSessionId}
-                onSelect={() => {
-                  setActiveSessionId(s.session_id);
-                  setLiveSession(null);
-                }}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Right: detail panel */}
-        <div className="sec-detail">
-          {/* Live progress stepper */}
-          {displaySession && (displaySession.status === 'processing' || activeSessionId === displaySession.session_id) && (
-            <div className="sec-progress-card">
-              <div className="sec-progress-header">
-                <Clock size={14} />
-                <span>
-                  {displaySession.status === 'processing'
-                    ? 'Scan in progress'
-                    : displaySession.status === 'completed'
-                    ? `Completed — ${displaySession.findings_count} finding(s)`
-                    : 'Scan failed'}
-                </span>
-                {displaySession.triggered_by && (
-                  <span style={{ marginLeft: 'auto', color: 'var(--t3)', fontSize: '0.72rem' }}>
-                    by {displaySession.triggered_by}
-                  </span>
-                )}
-              </div>
-              <ScanStepper session={displaySession} />
-              {displaySession.status === 'completed' && (
-                <div className="sec-summary-pills">
-                  <span className="sec-pill critical">{displaySession.critical_count} Critical</span>
-                  <span className="sec-pill high">{displaySession.high_count} High</span>
-                  <span className="sec-pill total">{displaySession.findings_count} Total</span>
-                </div>
-              )}
+        <aside className="sec-sidebar">
+          <div className="sec-sidebar-head">
+            <div>
+              <div className="sec-sidebar-title">Scan history</div>
+              <p className="sec-sidebar-subtitle">Select a run to inspect its status and outcome.</p>
             </div>
-          )}
+            <History size={16} />
+          </div>
+          <div className="sec-history-list">
+            {sessions.length === 0 ? (
+              <div className="sec-empty-small">No scans yet</div>
+            ) : (
+              sessions.map(s => (
+                <SessionHistoryRow
+                  key={s.session_id}
+                  session={s}
+                  active={s.session_id === displaySession?.session_id}
+                  onSelect={() => {
+                    setActiveSessionId(s.session_id);
+                    setLiveSession(null);
+                  }}
+                />
+              ))
+            )}
+          </div>
+        </aside>
 
-          {/* Findings table */}
-          <div className="sec-findings-section">
+        <div className="sec-detail">
+          <section className="sec-progress-card">
+            <div className="sec-progress-header">
+              <div>
+                <div className="sec-card-label">Active session</div>
+                <h2 className="sec-card-title">
+                  {displaySession
+                    ? displaySession.status === 'processing'
+                      ? 'Scan in progress'
+                      : displaySession.status === 'completed'
+                        ? 'Latest scan complete'
+                        : 'Latest scan failed'
+                    : 'No scan selected'}
+                </h2>
+              </div>
+              {displaySession ? (
+                <span className={clsx('sec-status-chip', statusTone(displaySession.status))}>
+                  <Clock size={14} />
+                  {displaySession.status}
+                </span>
+              ) : null}
+            </div>
+
+            {displaySession ? (
+              <>
+                <div className="sec-session-meta">
+                  <div className="sec-session-meta-item">
+                    <span className="sec-meta-label">Started</span>
+                    <span className="sec-meta-value">{formatDateTime(displaySession.started_at)}</span>
+                  </div>
+                  <div className="sec-session-meta-item">
+                    <span className="sec-meta-label">Current phase</span>
+                    <span className="sec-meta-value">{formatPhaseLabel(displaySession.current_phase)}</span>
+                  </div>
+                  <div className="sec-session-meta-item">
+                    <span className="sec-meta-label">Triggered by</span>
+                    <span className="sec-meta-value">{displaySession.triggered_by || 'System'}</span>
+                  </div>
+                </div>
+                <ScanStepper session={displaySession} />
+                {displaySession.phase_detail ? (
+                  <div className="sec-session-note">{displaySession.phase_detail}</div>
+                ) : null}
+                {displaySession.status === 'completed' ? (
+                  <div className="sec-summary-pills">
+                    <span className="sec-pill critical">{displaySession.critical_count} Critical</span>
+                    <span className="sec-pill high">{displaySession.high_count} High</span>
+                    <span className="sec-pill total">{displaySession.findings_count} Total</span>
+                  </div>
+                ) : null}
+                {displaySession.status === 'failed' && displaySession.error_message ? (
+                  <div className="sec-session-error">
+                    <AlertTriangle size={16} />
+                    <span>{displaySession.error_message}</span>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="sec-empty left">
+                <ShieldAlert size={32} style={{ opacity: 0.3 }} />
+                <p>Start a scan to populate live progress and historical results.</p>
+              </div>
+            )}
+          </section>
+
+          <section className="sec-findings-section">
             <div className="sec-section-title">
-              CVE Findings
+              <div>
+                <div className="sec-card-label">Findings explorer</div>
+                <h2 className="sec-card-title">CVE findings</h2>
+              </div>
               {findings.length > 0 && (
-                <span className="ni-badge r" style={{ marginLeft: 8 }}>{findings.length}</span>
+                <span className="ni-badge r">{findings.length}</span>
               )}
             </div>
             <FindingsTable findings={findings} loading={findingsLoading} />
-          </div>
+          </section>
         </div>
       </div>
     </div>

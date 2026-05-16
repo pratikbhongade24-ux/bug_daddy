@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { motion, useSpring, useTransform, useMotionValue, animate } from 'framer-motion';
+import React, { useEffect, useRef } from 'react';
+import { useMotionValue, animate } from 'framer-motion';
 import { SpotlightCard } from '../shared/SpotlightCard';
 
 // Mini sparkline SVG — generates a soft random waveform

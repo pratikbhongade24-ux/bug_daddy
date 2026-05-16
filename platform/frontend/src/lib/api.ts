@@ -61,8 +61,20 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
 export async function apiJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await apiFetch(path, options);
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new ApiError(response.status, data?.detail ?? data ?? response.statusText);
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!response.ok) {
+    const detail = typeof data === 'object' && data !== null && 'detail' in data
+      ? (data as { detail?: unknown }).detail
+      : data;
+    throw new ApiError(response.status, detail ?? response.statusText);
+  }
   return data as T;
 }
 

@@ -14,25 +14,27 @@ export function Sidebar({
   stats: Record<string, number>;
 }) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="Primary">
       <div className="sb-sec">Navigation</div>
-      <button className={clsx('nav-item', view === 'dashboard' && 'active')} onClick={() => setView('dashboard')}>
-        <LayoutDashboard size={16} /> Dashboard <span className="ni-badge g">{stats.total}</span>
-      </button>
-      <button className={clsx('nav-item', view === 'issues' && 'active')} onClick={() => setView('issues')}>
-        <Bug size={16} /> Issues <span className="ni-badge r">{stats.backlog}</span>
-      </button>
-      <button className={clsx('nav-item', view === 'sonar' && 'active')} onClick={() => setView('sonar')}>
-        <ShieldCheck size={16} /> SonarQube
-      </button>
-      <button className={clsx('nav-item', view === 'security' && 'active')} onClick={() => setView('security')}>
-        <ScanSearch size={16} /> Security Scanner
-      </button>
-      {isAdmin ? (
-        <button className={clsx('nav-item', view === 'admin' && 'active')} onClick={() => setView('admin')}>
-          <Users size={16} /> Admin
+      <nav className="sidebar-nav">
+        <button type="button" aria-current={view === 'dashboard' ? 'page' : undefined} className={clsx('nav-item', view === 'dashboard' && 'active')} onClick={() => setView('dashboard')}>
+          <LayoutDashboard size={16} /> Dashboard <span className="ni-badge g">{stats.total}</span>
         </button>
-      ) : null}
+        <button type="button" aria-current={view === 'issues' ? 'page' : undefined} className={clsx('nav-item', view === 'issues' && 'active')} onClick={() => setView('issues')}>
+          <Bug size={16} /> Issues <span className="ni-badge r">{stats.backlog}</span>
+        </button>
+        <button type="button" aria-current={view === 'sonar' ? 'page' : undefined} className={clsx('nav-item', view === 'sonar' && 'active')} onClick={() => setView('sonar')}>
+          <ShieldCheck size={16} /> SonarQube
+        </button>
+        <button type="button" aria-current={view === 'security' ? 'page' : undefined} className={clsx('nav-item', view === 'security' && 'active')} onClick={() => setView('security')}>
+          <ScanSearch size={16} /> Security Scanner
+        </button>
+        {isAdmin ? (
+          <button type="button" aria-current={view === 'admin' ? 'page' : undefined} className={clsx('nav-item', view === 'admin' && 'active')} onClick={() => setView('admin')}>
+            <Users size={16} /> Admin
+          </button>
+        ) : null}
+      </nav>
     </aside>
   );
 }

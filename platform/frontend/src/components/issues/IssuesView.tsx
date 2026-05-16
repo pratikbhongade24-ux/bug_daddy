@@ -1,12 +1,13 @@
 'use client';
 
 import clsx from 'clsx';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ExternalLink, Info, Search, Download, ListFilter } from 'lucide-react';
 import { Issue, IssueTab } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { SkeletonTableRows } from '../shared/SkeletonLoader';
+import { AsyncActionButton } from '../shared/AsyncActionButton';
 
 function issueStatusLabel(tab: IssueTab) {
   if (tab === 'wip') return 'Work in Progress';
@@ -38,6 +39,8 @@ export function IssuesView(props: {
   setOriginFilter: (value: string) => void;
   services: string[];
   issues: Issue[];
+  loadError?: string;
+  syncingIssueIds?: number[];
   loading: boolean;
   sortBy: (key: 'id' | 'freq') => void;
   prioritizeLoading: Record<number, string>;
@@ -46,6 +49,7 @@ export function IssuesView(props: {
   onExport: () => void;
 }) {
   const tabs: IssueTab[] = ['backlog', 'wip', 'review', 'resolved'];
+  const showResolutionColumns = props.tab !== 'backlog';
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
       <PanelHeader
@@ -104,11 +108,17 @@ export function IssuesView(props: {
           </button>
         ))}
       </div>
-      <div className="table-wrap">
+      {props.loadError ? (
+        <div className="section-alert" role="alert">
+          {props.loadError}
+        </div>
+      ) : null}
+      <div className="table-wrap" aria-busy={props.loading}>
         {props.loading ? (
           <SkeletonTableRows count={6} />
         ) : (
           <table className="issues-table">
+            <caption className="sr-only">Issues list for {issueStatusLabel(props.tab)}</caption>
             <colgroup>
               <col className="col-id" />
               <col className="col-service" />
@@ -116,8 +126,8 @@ export function IssuesView(props: {
               <col className="col-frequency" />
               <col className="col-criticality" />
               <col className="col-owner" />
-              <col className="col-jira" />
-              <col className="col-pr" />
+              {showResolutionColumns ? <col className="col-jira" /> : null}
+              {showResolutionColumns ? <col className="col-pr" /> : null}
               <col className="col-time" />
               <col className="col-action" />
             </colgroup>
@@ -129,8 +139,8 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
                 <th>Criticality</th>
                 <th>Owner</th>
-                <th>Jira</th>
-                <th>PR</th>
+                {showResolutionColumns ? <th>Jira</th> : null}
+                {showResolutionColumns ? <th>PR</th> : null}
                 <th>Timestamp</th>
                 <th>Action</th>
               </tr>
@@ -141,6 +151,8 @@ export function IssuesView(props: {
                   key={issue.id}
                   issue={issue}
                   tab={props.tab}
+                  showResolutionColumns={showResolutionColumns}
+                  isSyncing={props.syncingIssueIds?.includes(issue.id)}
                   loading={props.prioritizeLoading[issue.id]}
                   prioritize={props.prioritize}
                   openGraph={props.openGraph}
@@ -157,15 +169,19 @@ export function IssuesView(props: {
   );
 }
 
-export function IssueRow({
+export const IssueRow = memo(function IssueRow({
   issue,
   tab,
+  showResolutionColumns,
+  isSyncing,
   loading,
   prioritize,
   openGraph,
 }: {
   issue: Issue;
   tab: IssueTab;
+  showResolutionColumns: boolean;
+  isSyncing?: boolean;
   loading?: string;
   prioritize: (issue: Issue) => void;
   openGraph: (issue: Issue, summary: boolean) => void;
@@ -185,6 +201,7 @@ export function IssueRow({
       <td className="td-id">
         <span className="issue-id-cell">
           {issue.id}
+          {isSyncing ? <span className="sync-pill">Syncing…</span> : null}
           <button
             className="issue-info-btn"
             title={`First seen: ${formatTimestamp(issue.first_seen)}\nLast seen: ${formatTimestamp(issue.last_seen)}\nCreated: ${formatTimestamp(issue.created_at)}`}
@@ -206,19 +223,24 @@ export function IssueRow({
         <span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span>
       </td>
       <td className="td-own">{issue.owner}</td>
-      <ResolutionLink value={issue.resolution_jira} fallback="-" />
-      <ResolutionLink value={issue.resolution_pr} fallback="-" />
+      {showResolutionColumns ? (
+        <ResolutionLink value={issue.resolution_jira} fallback="-" asButton={tab === 'wip'} buttonLabel="Open Jira" />
+      ) : null}
+      {showResolutionColumns ? (
+        <ResolutionLink value={issue.resolution_pr} fallback="-" asButton={tab === 'wip'} buttonLabel="Open PR" />
+      ) : null}
       <td className="td-time" title={issue.last_seen || issue.created_at || ''}>{formatTimestamp(issue.last_seen || issue.created_at)}</td>
       <td>
         {tab === 'backlog' || tab === 'review' ? (
-          <button
+          <AsyncActionButton
             className={clsx('act-btn pri-btn', loading && 'loading')}
-            disabled={Boolean(loading)}
+            pending={Boolean(loading)}
+            pendingLabel="Invoking..."
             onClick={handlePrioritize}
             style={{ position: 'relative' }}
           >
-            {loading ? '' : 'Invoke AI'}
-          </button>
+            Invoke AI
+          </AsyncActionButton>
         ) : tab === 'resolved' ? (
           <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button>
         ) : (
@@ -229,21 +251,37 @@ export function IssueRow({
       </td>
     </tr>
   );
-}
+});
 
-function ResolutionLink({ value, fallback }: { value: string | null; fallback: string }) {
+function ResolutionLink({
+  value,
+  fallback,
+  asButton,
+  buttonLabel,
+}: {
+  value: string | null;
+  fallback: string;
+  asButton?: boolean;
+  buttonLabel?: string;
+}) {
   if (!value) return <td className="td-own">{fallback}</td>;
   const isUrl = /^https?:\/\//i.test(value);
   const label = isUrl ? value.replace(/^https?:\/\//i, '').replace(/\/$/, '') : value;
+  const linkText = asButton ? (buttonLabel ?? 'Open') : label;
+  const content = (
+    <>
+      <span>{linkText}</span>
+      {isUrl ? <ExternalLink size={13} /> : null}
+    </>
+  );
   return (
     <td className="td-link" title={value}>
       {isUrl ? (
-        <a href={value} target="_blank" rel="noreferrer">
-          <span>{label}</span>
-          <ExternalLink size={13} />
+        <a href={value} target="_blank" rel="noreferrer" className={asButton ? 'td-link-btn' : undefined}>
+          {content}
         </a>
       ) : (
-        <span>{label}</span>
+        <span className={asButton ? 'td-link-btn td-link-btn-static' : undefined}>{content}</span>
       )}
     </td>
   );

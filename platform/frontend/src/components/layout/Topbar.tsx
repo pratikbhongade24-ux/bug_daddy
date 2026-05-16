@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import clsx from 'clsx';
 import { LogOut, Cpu } from 'lucide-react';
 import { User } from '@/lib/types';
 import { Metric } from '../shared/Metric';
@@ -70,23 +69,14 @@ export function Topbar({
         ) : null}
 
         {/* Animated role-switcher pill */}
-        <div style={{ display: 'flex', gap: '2px', background: 'var(--s3)', borderRadius: '8px', padding: '3px', border: '1px solid var(--bd)' }}>
+        <div className="role-switcher" role="group" aria-label="Role view selector">
           {ROLES.map((role) => (
             <button
               key={role}
+              type="button"
               onClick={() => setRoleView(role)}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: 'none',
-                fontSize: '0.78rem',
-                fontWeight: roleView === role ? 700 : 500,
-                background: roleView === role ? '#fff' : 'transparent',
-                color: roleView === role ? 'var(--c3)' : 'var(--t2)',
-                boxShadow: roleView === role ? 'var(--shadow-sm)' : 'none',
-                transition: 'all 0.2s var(--ease-apple)',
-                cursor: 'pointer',
-              }}
+              aria-pressed={roleView === role}
+              className={roleView === role ? 'role-pill active' : 'role-pill'}
             >
               {role}
             </button>

@@ -13,6 +13,7 @@ export function DashboardOverview({
   charts,
   issues,
   feed,
+  loadError,
   onExport,
   onEscalate,
   setView,
@@ -25,6 +26,7 @@ export function DashboardOverview({
   charts: DashboardCharts;
   issues: Issue[];
   feed: FeedItem[];
+  loadError?: string;
   onExport: () => void;
   onEscalate: () => void;
   setView: (view: ViewName) => void;
@@ -67,6 +69,9 @@ export function DashboardOverview({
         }
       />
       <div className="dash-scroll">
+        {loadError ? (
+          <div className="section-alert" role="alert">{loadError}</div>
+        ) : null}
         {loading ? (
           <SkeletonKpiGrid />
         ) : (
@@ -132,6 +137,7 @@ export function DashboardOverview({
                 <div className="esc-head-title">Live Feed</div>
                 <div className="esc-head-sub">Latest platform events</div>
               </div>
+              <div className="esc-count-badge">{feed.length}</div>
             </div>
             <div className="feed-list">
               {feed.map((item, idx) => (

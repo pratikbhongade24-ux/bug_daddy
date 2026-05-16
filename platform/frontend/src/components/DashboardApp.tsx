@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { apiFetch, apiJson, errorMessage, logoutRequest } from '@/lib/api';
 import { TAB_KEY, VIEW_KEY, clearSession, getStoredUser } from '@/lib/storage';
 import type {
@@ -22,16 +23,18 @@ import type {
 
 import { Topbar } from './layout/Topbar';
 import { Sidebar } from './layout/Sidebar';
-import { DashboardOverview } from './dashboard/DashboardOverview';
-import { IssuesView } from './issues/IssuesView';
-import { SonarView } from './sonar/SonarView';
-import { AdminView } from './admin/AdminView';
-import { SecurityScannerView } from './security/SecurityScannerView';
-import { ExecutionGraphModal } from './graph/ExecutionGraphModal';
 import { ToastContainer } from './shared/ToastContainer';
-import { CommandPalette } from './shared/CommandPalette';
-import { DemoTourBanner } from './shared/DemoTourBanner';
-import { AiThinkingBadge } from './shared/AiThinkingBadge';
+
+const sectionSkeleton = <div className="view-skeleton" aria-busy="true" />;
+const DashboardOverview = dynamic(() => import('./dashboard/DashboardOverview').then((mod) => mod.DashboardOverview), { ssr: false, loading: () => sectionSkeleton });
+const IssuesView = dynamic(() => import('./issues/IssuesView').then((mod) => mod.IssuesView), { ssr: false, loading: () => sectionSkeleton });
+const SonarView = dynamic(() => import('./sonar/SonarView').then((mod) => mod.SonarView), { ssr: false, loading: () => sectionSkeleton });
+const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
+const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
+const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
+const CommandPalette = dynamic(() => import('./shared/CommandPalette').then((mod) => mod.CommandPalette), { ssr: false, loading: () => null });
+const DemoTourBanner = dynamic(() => import('./shared/DemoTourBanner').then((mod) => mod.DemoTourBanner), { ssr: false, loading: () => null });
+const AiThinkingBadge = dynamic(() => import('./shared/AiThinkingBadge').then((mod) => mod.AiThinkingBadge), { ssr: false, loading: () => null });
 
 const emptySummary: DashboardSummary = { total: 0, backlog: 0, wip: 0, review: 0, resolved: 0, no_action: 0, critical: 0 };
 const emptyCharts: DashboardCharts = { services: [], sources: [], issue_types: [] };
@@ -78,6 +81,9 @@ export function DashboardApp() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
   const [agentActive, setAgentActive] = useState(false);
+  const [syncingIssueIds, setSyncingIssueIds] = useState<number[]>([]);
+  const prioritizeControllersRef = useRef<Record<number, AbortController>>({});
+  const escalateControllerRef = useRef<AbortController | null>(null);
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -128,10 +134,26 @@ export function DashboardApp() {
     }
   }, [meQuery.data, meQuery.isError]);
 
-  const summaryQuery = useQuery({ queryKey: ['dashboard', 'summary'], queryFn: () => apiJson<DashboardSummary>('/dashboard/summary'), refetchInterval: 30_000 });
-  const chartsQuery = useQuery({ queryKey: ['dashboard', 'charts'], queryFn: () => apiJson<DashboardCharts>('/dashboard/charts'), refetchInterval: 30_000 });
-  const feedQuery = useQuery({ queryKey: ['dashboard', 'feed'], queryFn: () => apiJson<ListResponse<FeedItem>>('/dashboard/feed?limit=12'), refetchInterval: 30_000 });
-  const sonarQuery = useQuery({ queryKey: ['sonar', 'status'], queryFn: () => apiJson<SonarStatus>('/sonar/status?limit=12'), refetchInterval: 30_000 });
+  const summaryQuery = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: () => apiJson<DashboardSummary>('/dashboard/summary'),
+    refetchInterval: view === 'dashboard' ? 30_000 : false,
+  });
+  const chartsQuery = useQuery({
+    queryKey: ['dashboard', 'charts'],
+    queryFn: () => apiJson<DashboardCharts>('/dashboard/charts'),
+    refetchInterval: view === 'dashboard' ? 30_000 : false,
+  });
+  const feedQuery = useQuery({
+    queryKey: ['dashboard', 'feed'],
+    queryFn: () => apiJson<ListResponse<FeedItem>>('/dashboard/feed?limit=12'),
+    refetchInterval: view === 'dashboard' ? 30_000 : false,
+  });
+  const sonarQuery = useQuery({
+    queryKey: ['sonar', 'status'],
+    queryFn: () => apiJson<SonarStatus>('/sonar/status?limit=12'),
+    refetchInterval: view === 'sonar' ? 30_000 : false,
+  });
   const issuesQuery = useQuery({
     queryKey: ['issues'],
     queryFn: async () => withEta((await apiJson<ListResponse<Issue>>('/issues?limit=2000')).items || []),
@@ -148,6 +170,28 @@ export function DashboardApp() {
   const issues = issuesQuery.data || emptyIssues;
   const feed = feedQuery.data?.items || [];
   const isAdmin = authUser?.role === 'admin' && hasPermission(authUser, 'users.read');
+  const hasDataError = (
+    view === 'dashboard' && (summaryQuery.isError || chartsQuery.isError || feedQuery.isError || issuesQuery.isError)
+  ) || (
+    view === 'issues' && issuesQuery.isError
+  ) || (
+    view === 'sonar' && sonarQuery.isError
+  ) || (
+    view === 'admin' && isAdmin && usersQuery.isError
+  );
+  const dashboardErrorText = view === 'dashboard'
+    ? errorMessage(summaryQuery.error || chartsQuery.error || feedQuery.error || issuesQuery.error, 'Dashboard data could not be loaded.')
+    : undefined;
+  const issuesErrorText = view === 'issues' && issuesQuery.isError
+    ? errorMessage(issuesQuery.error, 'Issues could not be loaded.')
+    : undefined;
+  const sonarErrorText = view === 'sonar' && sonarQuery.isError
+    ? errorMessage(sonarQuery.error, 'Sonar data could not be loaded.')
+    : undefined;
+  const adminErrorText = view === 'admin' && isAdmin && usersQuery.isError
+    ? errorMessage(usersQuery.error, 'Admin data could not be loaded.')
+    : undefined;
+  const deferredSearch = useDeferredValue(search);
 
   const stats = useMemo(
     () => ({
@@ -163,7 +207,7 @@ export function DashboardApp() {
 
   const services = useMemo(() => [...new Set(issues.map((issue) => issue.service))].sort(), [issues]);
   const filteredIssues = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = deferredSearch.toLowerCase();
     return issues
       .filter((issue) => issue.tab === tab)
       .filter((issue) => !q || String(issue.id).includes(q) || issue.jiraId.toLowerCase().includes(q) || issue.err.toLowerCase().includes(q) || issue.shortSvc.toLowerCase().includes(q))
@@ -171,7 +215,7 @@ export function DashboardApp() {
       .filter((issue) => !criticalityFilter || issue.criticality === criticalityFilter)
       .filter((issue) => !originFilter || issue.origin === originFilter)
       .sort((a, b) => ((a[sortKey] as number) > (b[sortKey] as number) ? sortDir : -sortDir));
-  }, [criticalityFilter, issues, originFilter, search, serviceFilter, sortDir, sortKey, tab]);
+  }, [criticalityFilter, deferredSearch, issues, originFilter, serviceFilter, sortDir, sortKey, tab]);
 
   async function refreshDashboard() {
     await Promise.all([
@@ -201,13 +245,29 @@ export function DashboardApp() {
   }
 
   async function prioritize(issue: Issue) {
+    prioritizeControllersRef.current[issue.id]?.abort();
+    const controller = new AbortController();
+    prioritizeControllersRef.current[issue.id] = controller;
     setAgentActive(true);
+    setSyncingIssueIds((current) => (current.includes(issue.id) ? current : [...current, issue.id]));
     setPrioritizeLoading((state) => ({ ...state, [issue.id]: 'invoke' }));
+    const previousIssues = queryClient.getQueryData<Issue[]>(['issues']) ?? [];
+    queryClient.setQueryData<Issue[]>(['issues'], (existing = []) =>
+      existing.map((item) =>
+        item.id === issue.id
+          ? { ...item, tab: 'wip', status: 'in_progress' }
+          : item,
+      ),
+    );
     try {
-      const prioritized = await apiJson<Issue>(`/issues/${issue.id}/prioritize`, { method: 'POST' });
+      const prioritized = await apiJson<Issue>(`/issues/${issue.id}/prioritize`, {
+        method: 'POST',
+        signal: controller.signal,
+      });
       setPrioritizeLoading((state) => ({ ...state, [issue.id]: 'refresh' }));
       const invoke = await apiFetch('/agent/invoke', {
         method: 'POST',
+        signal: controller.signal,
         body: JSON.stringify({
           issue_id: issue.id,
           target: 'classifier',
@@ -223,6 +283,7 @@ export function DashboardApp() {
       });
       const data = await invoke.json().catch(() => ({}));
       if (!invoke.ok) {
+        queryClient.setQueryData<Issue[]>(['issues'], previousIssues);
         toast(data.detail || 'Agent invoke failed', 'err');
         return;
       }
@@ -230,8 +291,12 @@ export function DashboardApp() {
       await refreshDashboard();
       setModalIssue({ issue: prioritized, summary: false, sessionId: data.session_id });
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      queryClient.setQueryData<Issue[]>(['issues'], previousIssues);
       toast(errorMessage(error, 'Prioritize failed'), 'err');
     } finally {
+      delete prioritizeControllersRef.current[issue.id];
+      setSyncingIssueIds((current) => current.filter((id) => id !== issue.id));
       setPrioritizeLoading((state) => {
         const next = { ...state };
         delete next[issue.id];
@@ -246,11 +311,38 @@ export function DashboardApp() {
   }
 
   async function escalateAll() {
+    escalateControllerRef.current?.abort();
+    const controller = new AbortController();
+    escalateControllerRef.current = controller;
     const criticals = issues.filter((issue) => issue.criticality === 'Critical' && issue.tab !== 'resolved');
+    const criticalIds = criticals.map((issue) => issue.id);
+    setSyncingIssueIds((current) => [...new Set([...current, ...criticalIds])]);
+    const previousIssues = queryClient.getQueryData<Issue[]>(['issues']) ?? [];
+    queryClient.setQueryData<Issue[]>(['issues'], (existing = []) =>
+      existing.map((item) =>
+        item.criticality === 'Critical' && item.tab !== 'resolved'
+          ? { ...item, tab: 'wip', status: 'in_progress' }
+          : item,
+      ),
+    );
     let updated = 0;
-    for (const issue of criticals) {
-      const response = await apiFetch(`/issues/${issue.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'in_progress' }) });
-      if (response.ok) updated += 1;
+    try {
+      for (const issue of criticals) {
+        const response = await apiFetch(`/issues/${issue.id}`, {
+          method: 'PATCH',
+          signal: controller.signal,
+          body: JSON.stringify({ status: 'in_progress' }),
+        });
+        if (response.ok) updated += 1;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      queryClient.setQueryData<Issue[]>(['issues'], previousIssues);
+      toast(errorMessage(error, 'Escalation failed'), 'err');
+      return;
+    } finally {
+      escalateControllerRef.current = null;
+      setSyncingIssueIds((current) => current.filter((id) => !criticalIds.includes(id)));
     }
     await refreshDashboard();
     toast(`${updated} critical issues escalated -> Incident Daddy`, updated ? 'err' : 'inf');
@@ -273,7 +365,7 @@ export function DashboardApp() {
   if (!mounted || (meQuery.isLoading && !authUser)) return <main className="boot-screen">Loading Bug Daddy...</main>;
 
   return (
-    <main className="bd-shell">
+    <main className="bd-shell" id="app-main" tabIndex={-1}>
       <Topbar
         stats={stats}
         roleView={roleView}
@@ -284,6 +376,11 @@ export function DashboardApp() {
         isAgentActive={agentActive}
       />
       <DemoTourBanner />
+      {hasDataError ? (
+        <div className="app-alert" role="alert">
+          Some dashboard data failed to load. We keep retrying in the background.
+        </div>
+      ) : null}
       <div className="app">
         <Sidebar view={view} setView={setView} isAdmin={isAdmin} stats={stats} />
         <section className="main">
@@ -293,6 +390,7 @@ export function DashboardApp() {
               charts={charts}
               issues={issues}
               feed={feed}
+              loadError={dashboardErrorText}
               loading={issuesQuery.isLoading || summaryQuery.isLoading}
               onExport={exportCSV}
               onEscalate={escalateAll}
@@ -317,6 +415,8 @@ export function DashboardApp() {
               setOriginFilter={setOriginFilter}
               services={services}
               issues={filteredIssues}
+              loadError={issuesErrorText}
+              syncingIssueIds={syncingIssueIds}
               loading={issuesQuery.isLoading}
               sortBy={(key) => {
                 setSortKey(key);
@@ -331,6 +431,7 @@ export function DashboardApp() {
           {view === 'sonar' ? (
             <SonarView
               status={sonarQuery.data}
+              loadError={sonarErrorText}
               loading={sonarQuery.isLoading}
               refreshing={sonarQuery.isFetching}
               invoking={invokeSonarMutation.isPending}
@@ -344,7 +445,7 @@ export function DashboardApp() {
             <SecurityScannerView addToast={toast} />
           ) : null}
           {view === 'admin' && isAdmin ? (
-            <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} toast={toast} refresh={() => usersQuery.refetch()} />
+            <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} loadError={adminErrorText} toast={toast} refresh={() => usersQuery.refetch()} />
           ) : null}
         </section>
       </div>

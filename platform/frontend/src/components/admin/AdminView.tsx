@@ -5,15 +5,18 @@ import { User, ToastKind } from '@/lib/types';
 import { apiJson, errorMessage } from '@/lib/api';
 import { PanelHeader } from '../shared/PanelHeader';
 import { motion } from 'framer-motion';
+import { AsyncActionButton } from '../shared/AsyncActionButton';
 
 export function AdminView({
   users,
   loading,
+  loadError,
   toast,
   refresh,
 }: {
   users: User[];
   loading: boolean;
+  loadError?: string;
   toast: (message: string, kind?: ToastKind) => void;
   refresh: () => void;
 }) {
@@ -69,6 +72,7 @@ export function AdminView({
           </button>
         }
       />
+      {loadError ? <div className="section-alert" role="alert">{loadError}</div> : null}
       <div className="admin-grid">
         <form
           className="admin-card admin-form"
@@ -110,9 +114,9 @@ export function AdminView({
             </select>
           </label>
           <div className="admin-actions">
-            <button className="btn pri" type="submit" disabled={createMutation.isPending}>
+            <AsyncActionButton className="btn pri" type="submit" pending={createMutation.isPending} pendingLabel="Creating...">
               Create User
-            </button>
+            </AsyncActionButton>
             <button
               className="btn"
               type="button"
