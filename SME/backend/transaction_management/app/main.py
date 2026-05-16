@@ -53,6 +53,7 @@ METRICS = {
 
 BUG_STATE = {
     'beneficiary_routing_bug_active': os.getenv('TX_BUG_BENEFICIARY_ROUTING_ACTIVE', 'true').lower() in {'1', 'true', 'yes', 'on'},
+    'delayed_posting_bug_active': os.getenv('TX_BUG_DELAYED_POSTING_ACTIVE', 'true').lower() in {'1', 'true', 'yes', 'on'},
 }
 # This flag is intentionally stored in source and can be flipped by the demo "Invoke AI"
 # code-fix endpoint to simulate an actual code-level remediation.
@@ -125,13 +126,13 @@ class DemoScenarioRequest(BaseModel):
 
 
 class BugFixRequest(BaseModel):
-    bug_key: Literal['beneficiary_routing_bug']
+    bug_key: Literal['beneficiary_routing_bug', 'delayed_posting_bug']
     resolved_by: str = Field(default='bugdaddy_agent')
     notes: str | None = None
 
 
 class BugResetRequest(BaseModel):
-    bug_key: Literal['beneficiary_routing_bug'] = 'beneficiary_routing_bug'
+    bug_key: Literal['beneficiary_routing_bug', 'delayed_posting_bug'] = 'beneficiary_routing_bug'
 
 
 def _trace_id_from_request(request: Request, x_trace_id: str | None = None) -> str:
@@ -332,7 +333,7 @@ def create_transfer(payload: TransferCreate, request: Request, db: Session = Dep
         external_ref=f'EXT-{uuid.uuid4().hex[:12]}',
     )
 
-    if 'delayed_posting' in anomalies:
+    if 'delayed_posting' in anomalies and BUG_STATE['delayed_posting_bug_active']:
         tx.status = 'POSTING_DELAYED'
         tx.posted_at = datetime.now(timezone.utc) + timedelta(hours=6)
 
@@ -765,6 +766,7 @@ def query_monitoring():
 def demo_bug_status():
     return {
         'beneficiary_routing_bug_active': BUG_STATE['beneficiary_routing_bug_active'],
+        'delayed_posting_bug_active': BUG_STATE['delayed_posting_bug_active'],
         'code_patch_applied': CODE_PATCH_APPLIED,
         'description': 'Large transfer beneficiary routing bug in posting path',
     }
@@ -772,9 +774,12 @@ def demo_bug_status():
 
 @app.post('/demo/bug/fix')
 def demo_fix_bug(payload: BugFixRequest, request: Request, db: Session = Depends(get_db)):
-    if payload.bug_key != 'beneficiary_routing_bug':
+    if payload.bug_key == 'beneficiary_routing_bug':
+        BUG_STATE['beneficiary_routing_bug_active'] = False
+    elif payload.bug_key == 'delayed_posting_bug':
+        BUG_STATE['delayed_posting_bug_active'] = False
+    else:
         raise HTTPException(status_code=400, detail='Unsupported bug key')
-    BUG_STATE['beneficiary_routing_bug_active'] = False
     db.add(TransactionAuditLog(
         trace_id=request.state.trace_id,
         action='demo.bug.fix',
@@ -783,11 +788,48 @@ def demo_fix_bug(payload: BugFixRequest, request: Request, db: Session = Depends
         details=json.dumps({'resolved_by': payload.resolved_by, 'notes': payload.notes}),
     ))
     db.commit()
-    return {'status': 'fixed', 'bug_key': payload.bug_key, 'beneficiary_routing_bug_active': False}
+    return {
+        'status': 'fixed',
+        'bug_key': payload.bug_key,
+        'beneficiary_routing_bug_active': BUG_STATE['beneficiary_routing_bug_active'],
+        'delayed_posting_bug_active': BUG_STATE['delayed_posting_bug_active'],
+    }
 
 
 @app.post('/demo/bug/fix-code')
 def demo_fix_bug_code(payload: BugFixRequest, request: Request, db: Session = Depends(get_db)):
+    if payload.bug_key == 'delayed_posting_bug':
+        now = datetime.now(timezone.utc)
+        patched = (
+            db.query(TransferTransaction)
+            .filter(TransferTransaction.status == 'POSTING_DELAYED')
+            .update(
+                {
+                    TransferTransaction.status: 'POSTED',
+                    TransferTransaction.posted_at: now,
+                    TransferTransaction.settled_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
+        BUG_STATE['delayed_posting_bug_active'] = False
+        db.add(TransactionAuditLog(
+            trace_id=request.state.trace_id,
+            action='demo.bug.fix_code',
+            entity_type='transaction_demo',
+            entity_id=payload.bug_key,
+            details=json.dumps({'resolved_by': payload.resolved_by, 'notes': payload.notes, 'patched_transactions': int(patched)}),
+        ))
+        db.commit()
+        return {
+            'status': 'fixed',
+            'mode': 'data_repair',
+            'bug_key': payload.bug_key,
+            'patched_transactions': int(patched),
+            'beneficiary_routing_bug_active': BUG_STATE['beneficiary_routing_bug_active'],
+            'delayed_posting_bug_active': BUG_STATE['delayed_posting_bug_active'],
+        }
+
     if payload.bug_key != 'beneficiary_routing_bug':
         raise HTTPException(status_code=400, detail='Unsupported bug key')
 
@@ -827,7 +869,12 @@ def demo_fix_bug_code(payload: BugFixRequest, request: Request, db: Session = De
 
 @app.post('/demo/bug/reset')
 def demo_reset_bug(payload: BugResetRequest, request: Request, db: Session = Depends(get_db)):
-    BUG_STATE['beneficiary_routing_bug_active'] = True
+    if payload.bug_key == 'beneficiary_routing_bug':
+        BUG_STATE['beneficiary_routing_bug_active'] = True
+    elif payload.bug_key == 'delayed_posting_bug':
+        BUG_STATE['delayed_posting_bug_active'] = True
+    else:
+        raise HTTPException(status_code=400, detail='Unsupported bug key')
     db.add(TransactionAuditLog(
         trace_id=request.state.trace_id,
         action='demo.bug.reset',
@@ -836,7 +883,12 @@ def demo_reset_bug(payload: BugResetRequest, request: Request, db: Session = Dep
         details='Intentional beneficiary routing bug re-enabled for demo baseline.',
     ))
     db.commit()
-    return {'status': 'reset', 'bug_key': payload.bug_key, 'beneficiary_routing_bug_active': True}
+    return {
+        'status': 'reset',
+        'bug_key': payload.bug_key,
+        'beneficiary_routing_bug_active': BUG_STATE['beneficiary_routing_bug_active'],
+        'delayed_posting_bug_active': BUG_STATE['delayed_posting_bug_active'],
+    }
 
 
 @app.post('/demo/bug/reset-code')

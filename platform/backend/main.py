@@ -3443,27 +3443,11 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
 
 def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any], actor_username: str):
     anomaly_type = detect_transaction_anomaly_type(issue_context)
-    fix_route: str | None = None
-    fix_payload: dict[str, Any] | None = None
-    reasoning_summary: str
-    fix_plan: str
-
-    if anomaly_type == "WRONG_BENEFICIARY":
-        fix_route = f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code"
-        fix_payload = {
-            "bug_key": "beneficiary_routing_bug",
-            "resolved_by": actor_username,
-            "notes": "Invoked via issues /agent/invoke flow",
-        }
-        reasoning_summary = (
-            "Detected WRONG_BENEFICIARY anomaly pattern and mapped it to beneficiary routing bug in transfer posting logic."
-        )
-        fix_plan = "Apply beneficiary routing code patch and re-run reconciliation."
-    else:
-        reasoning_summary = (
-            f"Detected {anomaly_type} anomaly pattern, but no supported automated remediation mapping exists in local transaction fast-path."
-        )
-        fix_plan = "Do not apply unrelated patch; fail gracefully and request manual/agentic investigation."
+    remediation = get_transaction_remediation_plan(anomaly_type, actor_username)
+    fix_route = remediation["route"]
+    fix_payload = remediation["payload"]
+    reasoning_summary = remediation["reasoning_summary"]
+    fix_plan = remediation["fix_plan"]
 
     conn = get_db()
     try:
@@ -3503,7 +3487,7 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
                     "error_message": error_message,
                     "result": {
                         "anomaly_type": anomaly_type,
-                        "supported_types": ["WRONG_BENEFICIARY"],
+                        "supported_types": sorted(list(transaction_supported_anomaly_types())),
                     },
                 },
             )
@@ -3564,6 +3548,21 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
             conn,
             session_id,
             {
+                "event_type": "tool.completed",
+                "node_id": "verify",
+                "node_name": "Verification Tool",
+                "agent_name": "bug_daddy",
+                "status": "completed",
+                "level": "success",
+                "title": "Post-fix reconciliation run completed",
+                "tool_name": "transaction_reconciliation_run",
+                "tool_output": recon_payload,
+            },
+        )
+        append_execution_event(
+            conn,
+            session_id,
+            {
                 "event_type": "session.completed",
                 "status": "succeeded",
                 "level": "success",
@@ -3575,6 +3574,48 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
         update_execution_session(conn, session_id, status_value="succeeded", summary="Transaction anomaly fixed via code patch.", ended=True)
     finally:
         conn.close()
+
+
+def transaction_supported_anomaly_types() -> set[str]:
+    return {"WRONG_BENEFICIARY", "DELAYED_POSTING"}
+
+
+def get_transaction_remediation_plan(anomaly_type: str, actor_username: str) -> dict[str, Any]:
+    notes = "Invoked via issues /agent/invoke flow"
+    if anomaly_type == "WRONG_BENEFICIARY":
+        return {
+            "route": f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
+            "payload": {
+                "bug_key": "beneficiary_routing_bug",
+                "resolved_by": actor_username,
+                "notes": notes,
+            },
+            "reasoning_summary": (
+                "Detected WRONG_BENEFICIARY anomaly pattern and mapped it to beneficiary routing bug in transfer posting logic."
+            ),
+            "fix_plan": "Apply beneficiary routing code patch and re-run reconciliation.",
+        }
+    if anomaly_type == "DELAYED_POSTING":
+        return {
+            "route": f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
+            "payload": {
+                "bug_key": "delayed_posting_bug",
+                "resolved_by": actor_username,
+                "notes": notes,
+            },
+            "reasoning_summary": (
+                "Detected DELAYED_POSTING anomaly pattern and mapped it to delayed posting remediation (repair delayed transactions and disable delayed posting bug)."
+            ),
+            "fix_plan": "Repair delayed postings, disable delayed posting bug, and re-run reconciliation.",
+        }
+    return {
+        "route": None,
+        "payload": None,
+        "reasoning_summary": (
+            f"Detected {anomaly_type} anomaly pattern, but no supported automated remediation mapping exists in local transaction fast-path."
+        ),
+        "fix_plan": "Do not apply unrelated patch; fail gracefully and request manual/agentic investigation.",
+    }
 
 
 def detect_transaction_anomaly_type(issue_context: dict[str, Any]) -> str:
@@ -3654,7 +3695,7 @@ def agent_invoke(
             if issue.get("source") == "transaction_reconciliation":
                 is_transaction_anomaly = True
                 transaction_anomaly_type = detect_transaction_anomaly_type(issue_context)
-                use_local_transaction_fix = transaction_anomaly_type == "WRONG_BENEFICIARY"
+                use_local_transaction_fix = transaction_anomaly_type in transaction_supported_anomaly_types()
                 if not payload.target:
                     payload.target = "bug_daddy"
         finally:
@@ -3811,7 +3852,7 @@ def agent_invoke(
                     "error_message": error_message,
                     "result": {
                         "anomaly_type": transaction_anomaly_type,
-                        "supported_types": ["WRONG_BENEFICIARY"],
+                        "supported_types": sorted(list(transaction_supported_anomaly_types())),
                         "fallback_to_agentcore": False,
                     },
                 },
