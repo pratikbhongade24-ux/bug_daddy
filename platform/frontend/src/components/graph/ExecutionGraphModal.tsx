@@ -491,7 +491,6 @@ export function ExecutionGraphModal({
     ack_target_minutes: fallbackSla(effectivePriority).ack,
     resolve_target_minutes: fallbackSla(effectivePriority).resolve,
   };
-
   return (
     <div className="modal-ov" role="dialog" aria-modal="true" onMouseDown={(event: MouseEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) onClose(); }}>
       <motion.div
