@@ -60,6 +60,7 @@ TRANSACTION_RECON_CRON_ENABLED = os.getenv("TRANSACTION_RECON_CRON_ENABLED", "tr
 TRANSACTION_RECON_CRON_INTERVAL_SEC = int(os.getenv("TRANSACTION_RECON_CRON_INTERVAL_SEC", "180"))
 TRANSACTION_RECON_HOURS_BACK = int(os.getenv("TRANSACTION_RECON_HOURS_BACK", "24"))
 TRANSACTION_BOOTSTRAP_ON_START = os.getenv("TRANSACTION_BOOTSTRAP_ON_START", "true").lower() in {"1", "true", "yes", "on"}
+TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE = os.getenv("TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE", "false").lower() in {"1", "true", "yes", "on"}
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -3496,6 +3497,29 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
 
 
 def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any], actor_username: str):
+    anomaly_type = detect_transaction_anomaly_type(issue_context)
+    fix_route: str | None = None
+    fix_payload: dict[str, Any] | None = None
+    reasoning_summary: str
+    fix_plan: str
+
+    if anomaly_type == "WRONG_BENEFICIARY":
+        fix_route = f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code"
+        fix_payload = {
+            "bug_key": "beneficiary_routing_bug",
+            "resolved_by": actor_username,
+            "notes": "Invoked via issues /agent/invoke flow",
+        }
+        reasoning_summary = (
+            "Detected WRONG_BENEFICIARY anomaly pattern and mapped it to beneficiary routing bug in transfer posting logic."
+        )
+        fix_plan = "Apply beneficiary routing code patch and re-run reconciliation."
+    else:
+        reasoning_summary = (
+            f"Detected {anomaly_type} anomaly pattern, but no supported automated remediation mapping exists in local transaction fast-path."
+        )
+        fix_plan = "Do not apply unrelated patch; fail gracefully and request manual/agentic investigation."
+
     conn = get_db()
     try:
         append_execution_event(
@@ -3509,21 +3533,44 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
                 "status": "running",
                 "level": "info",
                 "title": "Reasoning over reconciliation anomaly",
-                "reasoning_summary": "Detected WRONG_BENEFICIARY anomaly pattern and mapped to beneficiary routing bug in transfer posting logic.",
-                "result": {"issue_context": issue_context, "fix_plan": "Apply code patch and re-run reconciliation."},
+                "reasoning_summary": reasoning_summary,
+                "result": {"issue_context": issue_context, "anomaly_type": anomaly_type, "fix_plan": fix_plan},
             },
         )
     finally:
         conn.close()
 
-    try:
-        fix_resp = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
-            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor_username, "notes": "Invoked via issues /agent/invoke flow"},
-            timeout=20,
+    if not fix_route or not fix_payload:
+        error_message = (
+            f"No automated transaction fix is configured for anomaly type '{anomaly_type}'. "
+            "Avoided applying unrelated beneficiary routing patch."
         )
+        conn = get_db()
+        try:
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.failed",
+                    "status": "failed",
+                    "level": "error",
+                    "title": "Transaction anomaly has no supported automated fix",
+                    "error_message": error_message,
+                    "result": {
+                        "anomaly_type": anomaly_type,
+                        "supported_types": ["WRONG_BENEFICIARY"],
+                    },
+                },
+            )
+            update_execution_session(conn, session_id, status_value="failed", error_message=error_message, ended=True)
+        finally:
+            conn.close()
+        return
+
+    try:
+        fix_resp = requests.post(fix_route, json=fix_payload, timeout=20)
         fix_resp.raise_for_status()
-        fix_payload = fix_resp.json()
+        fix_result = fix_resp.json()
 
         recon_resp = requests.post(
             f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
@@ -3565,7 +3612,7 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
                 "level": "success",
                 "title": "Code patch applied",
                 "tool_name": "transaction_bug_fix_code",
-                "tool_output": fix_payload,
+                "tool_output": fix_result,
             },
         )
         append_execution_event(
@@ -3584,6 +3631,39 @@ def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any
     finally:
         conn.close()
 
+
+def detect_transaction_anomaly_type(issue_context: dict[str, Any]) -> str:
+    issue_type = str(issue_context.get("issue_type") or "").strip().lower()
+    description = str(issue_context.get("description") or "").strip().lower()
+    stack_trace = str(issue_context.get("stack_trace") or "").strip().lower()
+    combined_text = f"{issue_type}\n{description}\n{stack_trace}"
+
+    # Prefer structured issue_type first.
+    issue_type_map = {
+        "wrong_beneficiary": "WRONG_BENEFICIARY",
+        "wrong_beneficiary_transfer": "WRONG_BENEFICIARY",
+        "delayed_posting": "DELAYED_POSTING",
+        "missing_settlement": "MISSING_SETTLEMENT",
+        "amount_mismatch": "RECONCILIATION_MISMATCH",
+        "reconciliation_mismatch": "RECONCILIATION_MISMATCH",
+        "duplicate_transaction": "DUPLICATE_TRANSACTION",
+    }
+    if issue_type in issue_type_map:
+        return issue_type_map[issue_type]
+
+    # Fallback to conservative text matching.
+    if "wrong_beneficiary" in combined_text or "wrong beneficiary" in combined_text:
+        return "WRONG_BENEFICIARY"
+    if "delayed_posting" in combined_text or "posting delayed" in combined_text or "posting_delayed" in combined_text:
+        return "DELAYED_POSTING"
+    if "missing_settlement" in combined_text or "missing settlement" in combined_text:
+        return "MISSING_SETTLEMENT"
+    if "amount_mismatch" in combined_text or "reconciliation_mismatch" in combined_text:
+        return "RECONCILIATION_MISMATCH"
+    if "duplicate_transaction" in combined_text:
+        return "DUPLICATE_TRANSACTION"
+    return "UNKNOWN"
+
 @app.post("/agent/invoke")
 def agent_invoke(
     payload: AgentInvokeRequest,
@@ -3592,6 +3672,8 @@ def agent_invoke(
 ):
     issue_context: dict[str, Any] = {}
     is_transaction_anomaly = False
+    use_local_transaction_fix = False
+    transaction_anomaly_type = "UNKNOWN"
     if payload.issue_id is not None:
         conn = get_db()
         try:
@@ -3626,6 +3708,8 @@ def agent_invoke(
                     payload.logs = logs_list
             if issue.get("source") == "transaction_reconciliation":
                 is_transaction_anomaly = True
+                transaction_anomaly_type = detect_transaction_anomaly_type(issue_context)
+                use_local_transaction_fix = transaction_anomaly_type == "WRONG_BENEFICIARY"
                 if not payload.target:
                     payload.target = "bug_daddy"
         finally:
@@ -3633,9 +3717,9 @@ def agent_invoke(
 
     target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
     runtime_target = target
-    if is_transaction_anomaly:
+    if is_transaction_anomaly and use_local_transaction_fix:
         runtime_target = "bug_daddy"
-    if target == "bug_daddy" and not (
+    if (not is_transaction_anomaly) and target == "bug_daddy" and not (
         payload.metadata.get("jira_key")
         or payload.metadata.get("resolution_jira")
         or issue_context.get("resolution_jira")
@@ -3652,7 +3736,13 @@ def agent_invoke(
         "runtime_target": runtime_target,
         "workflow_key": workflow_key,
         "routing_source": "explicit_target" if payload.target else "backend_policy",
+        "transaction_anomaly_type": transaction_anomaly_type if is_transaction_anomaly else None,
+        "transaction_local_fix_supported": use_local_transaction_fix if is_transaction_anomaly else None,
     }
+    if is_transaction_anomaly and not use_local_transaction_fix:
+        metadata["transaction_fallback_policy"] = (
+            "agentcore" if TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE else "fail_fast"
+        )
     session_id = payload.session_id
 
     runtime_payload = {
@@ -3715,15 +3805,19 @@ def agent_invoke(
                 "level": "info",
                 "title": "Agent orchestration started",
                 "description": (
-                    "Running transaction anomaly remediation workflow."
-                    if is_transaction_anomaly
-                    else f"Invoking {runtime_target} through AgentCore."
+                    "Running local transaction anomaly remediation workflow."
+                    if is_transaction_anomaly and use_local_transaction_fix
+                    else (
+                        f"Transaction anomaly '{transaction_anomaly_type}' routed to AgentCore fallback workflow."
+                        if is_transaction_anomaly and TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE
+                        else f"Invoking {runtime_target} through AgentCore."
+                    )
                 ),
                 "agent_name": runtime_target,
                 "result": (
-                    {"mode": "local_transaction_fix"}
-                    if is_transaction_anomaly
-                    else {"runtime_arn": AGENTCORE_RUNTIME_ARN}
+                    {"mode": "local_transaction_fix", "anomaly_type": transaction_anomaly_type}
+                    if is_transaction_anomaly and use_local_transaction_fix
+                    else {"runtime_arn": AGENTCORE_RUNTIME_ARN, "anomaly_type": transaction_anomaly_type if is_transaction_anomaly else None}
                 ),
             },
         )
@@ -3733,19 +3827,53 @@ def agent_invoke(
             {
                 "event_type": "node.started",
                 "node_id": "esc",
-                "node_name": "Transaction Fix Runtime" if is_transaction_anomaly else "AgentCore Runtime",
+                "node_name": (
+                    "Transaction Fix Runtime"
+                    if is_transaction_anomaly and use_local_transaction_fix
+                    else "AgentCore Runtime"
+                ),
                 "agent_name": runtime_target,
                 "status": "running",
                 "level": "info",
-                "title": "Local remediation started" if is_transaction_anomaly else "AgentCore invocation started",
+                "title": (
+                    "Local remediation started"
+                    if is_transaction_anomaly and use_local_transaction_fix
+                    else "AgentCore invocation started"
+                ),
                 "input_summary": runtime_payload.get("prompt"),
             },
         )
     finally:
         conn.close()
 
-    if is_transaction_anomaly:
+    if is_transaction_anomaly and use_local_transaction_fix:
         bg_tasks.add_task(run_transaction_fix_background, session_id, issue_context, actor["username"])
+    elif is_transaction_anomaly and not TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE:
+        conn = get_db()
+        try:
+            error_message = (
+                f"No automated transaction fix is configured for anomaly type '{transaction_anomaly_type}'. "
+                "Fallback to AgentCore is disabled."
+            )
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.failed",
+                    "status": "failed",
+                    "level": "error",
+                    "title": "Unsupported transaction anomaly type",
+                    "error_message": error_message,
+                    "result": {
+                        "anomaly_type": transaction_anomaly_type,
+                        "supported_types": ["WRONG_BENEFICIARY"],
+                        "fallback_to_agentcore": False,
+                    },
+                },
+            )
+            update_execution_session(conn, session_id, status_value="failed", error_message=error_message, ended=True)
+        finally:
+            conn.close()
     else:
         bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
 

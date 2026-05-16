@@ -133,7 +133,7 @@ export function IssuesView(props: {
             <thead>
               <tr>
                 <th onClick={() => props.sortBy('id')}>Issue ID</th>
-                <th>Service</th>
+                <th>Source</th>
                 <th>Error</th>
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
                 <th>Criticality</th>

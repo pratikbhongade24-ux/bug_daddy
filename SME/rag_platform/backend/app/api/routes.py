@@ -37,6 +37,36 @@ def _query_variants(question: str) -> list[str]:
     return list(dict.fromkeys(v for v in variants if v))
 
 
+def _normalize_answer_text(answer: str) -> str:
+    text = (answer or '').replace('\r\n', '\n').replace('\r', '\n')
+    text = re.sub(r'(?m)^\s*#\s*#\s+', '## ', text)
+    text = re.sub(r'(?m)^(\s*#{1,6}\s*[^\n:]+):\s*-\s*', r'\1:\n- ', text)
+    text = re.sub(r'(?m)^(#{1,6})([A-Za-z])', r'\1 \2', text)
+    text = re.sub(r'(?m)^###([A-Za-z])', r'### \1', text)
+    text = re.sub(r'(?m)^##([A-Za-z])', r'## \1', text)
+    repl = {
+        'http://localhost:8001': 'Onboarding Service',
+        'http://localhost:8002': 'KYC Service',
+        'http://localhost:8003': 'Loan Disbursement Service',
+        'http://localhost:8004': 'Repayment Service',
+        'http://localhost:8005': 'Transaction Management Service',
+        'http://localhost:8000': 'BugDaddy API',
+        'http://localhost:3000': 'BugDaddy Dashboard',
+        'localhost:8001': 'Onboarding Service',
+        'localhost:8002': 'KYC Service',
+        'localhost:8003': 'Loan Disbursement Service',
+        'localhost:8004': 'Repayment Service',
+        'localhost:8005': 'Transaction Management Service',
+        'localhost:8000': 'BugDaddy API',
+        'localhost:3000': 'BugDaddy Dashboard',
+    }
+    for old, new in repl.items():
+        text = text.replace(old, new)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text
+
+
 @router.post('/ingest')
 def ingest(payload: IngestRequest, _: str = Depends(require_api_key), db: Session = Depends(get_db)):
     check_rate_limit('ingest:global', limit=10, window_sec=60)
@@ -155,6 +185,8 @@ def chat_stream(payload: ChatRequest, _: str = Depends(require_api_key), db: Ses
             'Return: answer + bullet citations with file paths and relevance.'
         )
         answer = bedrock_client.generate(prompt)
+
+    answer = _normalize_answer_text(answer)
 
     db.add(Message(conversation_id=conv.id, role='user', content=payload.question))
     db.flush()

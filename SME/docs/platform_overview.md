@@ -85,3 +85,4 @@ For semantic retrieval, index by:
 - `docs/runbook.md`
 - `docs/bugdaddy_production_guide.md`
 - `docs/transaction_management_service.md`
+- `docs/bugdaddy_architecture_hld_lld.md`
