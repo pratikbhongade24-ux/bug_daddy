@@ -584,6 +584,7 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "db", "to": "esc"},
             {"from": "esc", "to": "jag"},
             {"from": "esc", "to": "inc"},
+            {"from": "inc", "to": "sme"},
             {"from": "inc", "to": "irw"},
             {"from": "irw", "to": "irr"},
             {"from": "irr", "to": "irw"},
