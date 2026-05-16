@@ -1,6 +1,6 @@
 'use client';
 
-const GRAFANA_URL = 'http://13.205.34.252:3001';
+const GRAFANA_URL = '/grafana/';
 
 export function GrafanaView() {
   return (
@@ -11,7 +11,7 @@ export function GrafanaView() {
           <span className="grafana-badge">Live</span>
         </div>
         <a
-          href={GRAFANA_URL}
+          href="https://bugdaddy.in/grafana/"
           target="_blank"
           rel="noopener noreferrer"
           className="grafana-open-btn"
