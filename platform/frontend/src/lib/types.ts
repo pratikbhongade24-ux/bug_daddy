@@ -297,58 +297,5 @@ export interface SecurityFindingsResponse {
   total: number;
 }
 
-export interface TransactionDemoReport {
-  id: number;
-  report_ref: string;
-  status: string;
-  total_transfers: number;
-  mismatch_count: number;
-  missing_settlement_count: number;
-  duplicate_count: number;
-  generated_at: string | null;
-}
-
-export interface TransactionDemoAnalysis {
-  report_id: number;
-  summary: string;
-  root_causes: string[];
-  impacted_services: string[];
-}
-
-export interface TransactionDemoMetrics {
-  transfers_created: number;
-  reconciliation_runs: number;
-  mismatches_detected: number;
-  db_query_count: number;
-  db_slow_queries: number;
-}
-
-export interface TransactionBugStatus {
-  beneficiary_routing_bug_active: boolean;
-  code_patch_applied?: boolean;
-  description: string;
-}
-
-export interface TransactionVerifyFix {
-  before: {
-    report_id: number;
-    mismatch_count: number;
-    mismatch_types: Record<string, number>;
-  };
-  after: {
-    report_id: number;
-    mismatch_count: number;
-    mismatch_types: Record<string, number>;
-  };
-  bug_active_after: boolean;
-  code_change?: {
-    file: string;
-    function: string;
-    before: string;
-    after: string;
-    fix_action: string;
-  };
-}
-
-export type ViewName = 'dashboard' | 'issues' | 'ai_queue' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana' | 'transactions';
+export type ViewName = 'dashboard' | 'issues' | 'ai_queue' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana';
 export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';

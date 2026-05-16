@@ -20,6 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from schema_app import ensure_core_schema, schema_status, seed_core_data
+
 
 DB_HOST = os.getenv("DB_HOST", "database-1.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
@@ -55,10 +57,6 @@ AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "3"))
 AI_QUEUE_POLL_SECONDS = int(os.getenv("AI_QUEUE_POLL_SECONDS", "10"))
 AI_QUEUE_DEFAULT_LENGTH = int(os.getenv("AI_QUEUE_DEFAULT_LENGTH", "3"))
 AI_QUEUE_STARTED = False
-TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://localhost:8005").rstrip("/")
-TRANSACTION_RECON_HOURS_BACK = int(os.getenv("TRANSACTION_RECON_HOURS_BACK", "24"))
-TRANSACTION_BOOTSTRAP_ON_START = os.getenv("TRANSACTION_BOOTSTRAP_ON_START", "true").lower() in {"1", "true", "yes", "on"}
-TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE = os.getenv("TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE", "false").lower() in {"1", "true", "yes", "on"}
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -236,16 +234,35 @@ def json_or_none(value: Any) -> str | None:
 
 
 def get_db():
-    return pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
-        connect_timeout=10,
-    )
+    try:
+        return pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=10,
+        )
+    except pymysql.err.OperationalError as exc:
+        if not exc.args or exc.args[0] != 1049:
+            raise
+        if not re.fullmatch(r"[A-Za-z0-9_]+", DB_NAME):
+            raise RuntimeError("DB_NAME may only contain letters, numbers, and underscores") from exc
+        bootstrap_conn = pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=10,
+        )
+        with bootstrap_conn.cursor() as cur:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
+            cur.execute(f"USE `{DB_NAME}`")
+        return bootstrap_conn
 
 
 def hash_secret(value: str) -> str:
@@ -567,6 +584,7 @@ def default_workflow_graph(workflow_key: str) -> dict[str, Any]:
             {"from": "db", "to": "esc"},
             {"from": "esc", "to": "jag"},
             {"from": "esc", "to": "inc"},
+            {"from": "inc", "to": "sme"},
             {"from": "inc", "to": "irw"},
             {"from": "irw", "to": "irr"},
             {"from": "irr", "to": "irw"},
@@ -641,128 +659,6 @@ def map_issue(row: dict[str, Any]) -> dict[str, Any]:
         "latest_execution_session_id": latest_session_id,
         "execution_session_id": latest_session_id,
     }
-
-
-def _tx_issue_type(mismatch_type: str) -> str:
-    return f"tx_{str(mismatch_type or 'mismatch').lower()}"
-
-
-def _tx_frequency(severity: str) -> int:
-    sev = str(severity or "MEDIUM").upper()
-    if sev == "CRITICAL":
-        return 900
-    if sev == "HIGH":
-        return 700
-    if sev == "MEDIUM":
-        return 350
-    return 120
-
-
-def _sync_transaction_anomalies_to_issue_log(report: dict[str, Any], report_detail: dict[str, Any]):
-    mismatches = report_detail.get("mismatches") or []
-    active_fingerprints: set[str] = set()
-    report_id = report.get("id")
-    now_str = utc_now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            for mm in mismatches:
-                mismatch_id = int(mm.get("id") or 0)
-                mismatch_type = str(mm.get("mismatch_type") or "MISMATCH").upper()
-                transfer_id = mm.get("transfer_id")
-                fingerprint = f"tx_recon|{mismatch_type}|{transfer_id}|{mismatch_id}"
-                active_fingerprints.add(fingerprint)
-                description = f"{mismatch_type}: {mm.get('details') or 'Transaction reconciliation anomaly'}"
-                stack_trace = mm.get("root_cause_hint") or ""
-                severity = str(mm.get("severity") or "MEDIUM")
-                issue_type = _tx_issue_type(mismatch_type)
-                freq = _tx_frequency(severity)
-                execution_logs = json.dumps(
-                    {
-                        "report_id": report_id,
-                        "mismatch_id": mismatch_id,
-                        "mismatch_type": mismatch_type,
-                        "severity": severity,
-                        "details": mm.get("details"),
-                        "impacted_services": mm.get("impacted_services"),
-                        "root_cause_hint": mm.get("root_cause_hint"),
-                    }
-                )[:65000]
-
-                cur.execute("SELECT id, status FROM service_exception_log WHERE fingerprint = %s LIMIT 1", (fingerprint,))
-                existing = cur.fetchone()
-                if existing:
-                    status = existing.get("status")
-                    next_status = status if status in {"in_progress", "in_review"} else "open"
-                    resolved_at = None if next_status != "resolved" else now_str
-                    cur.execute(
-                        """
-                        UPDATE service_exception_log
-                        SET source = 'transaction_reconciliation',
-                            service_name = 'transaction-management',
-                            issue_type = %s,
-                            description = %s,
-                            stack_trace = %s,
-                            entire_execution_logs = %s,
-                            frequency = %s,
-                            last_seen = %s,
-                            status = %s,
-                            resolved_at = %s
-                        WHERE id = %s
-                        """,
-                        (issue_type, description, stack_trace, execution_logs, freq, now_str, next_status, resolved_at, existing["id"]),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        INSERT INTO service_exception_log (
-                          fingerprint, service_name, issue_type, source, description,
-                          stack_trace, entire_execution_logs, request_id, frequency,
-                          first_seen, last_seen, status, assigned_to, resolution_pr,
-                          resolution_jira, created_at, resolved_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            fingerprint,
-                            "transaction-management",
-                            issue_type,
-                            "transaction_reconciliation",
-                            description,
-                            stack_trace,
-                            execution_logs,
-                            f"tx-mismatch-{mismatch_id}",
-                            freq,
-                            now_str,
-                            now_str,
-                            "open",
-                            "BugDaddy Agent",
-                            None,
-                            None,
-                            now_str,
-                            None,
-                        ),
-                    )
-
-            cur.execute(
-                """
-                SELECT id, fingerprint FROM service_exception_log
-                WHERE source = 'transaction_reconciliation' AND status IN ('open', 'in_progress', 'in_review')
-                """
-            )
-            rows = cur.fetchall()
-            for row in rows:
-                if row["fingerprint"] in active_fingerprints:
-                    continue
-                cur.execute(
-                    """
-                    UPDATE service_exception_log
-                    SET status = 'resolved', resolved_at = %s, last_seen = %s
-                    WHERE id = %s
-                    """,
-                    (now_str, now_str, row["id"]),
-                )
-    finally:
-        conn.close()
 
 
 def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
@@ -1559,6 +1455,8 @@ def verify_execution_log_secret(x_agent_execution_secret: str | None = Header(de
 def ensure_schema_and_seed_data():
     conn = get_db()
     try:
+        ensure_core_schema(conn)
+        seed_core_data(conn)
         ensure_execution_schema(conn)
         with conn.cursor() as cur:
             cur.execute("SHOW COLUMNS FROM users LIKE 'username'")
@@ -1631,275 +1529,73 @@ def health_check():
         conn.close()
 
 
-@app.get("/demo/transaction/health")
-def transaction_demo_health(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
+@app.get("/admin/schema/status")
+def admin_schema_status(actor: dict[str, Any] = Depends(require_permission("users.read"))):
+    conn = get_db()
     try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/health", timeout=10)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction demo service unavailable: {exc}") from exc
-    return {"status": "ok", "service": "transaction_management", "upstream": response.json()}
+        return schema_status(conn)
+    finally:
+        conn.close()
 
 
-def _run_transaction_reconciliation_once(triggered_by: str = "manual") -> dict[str, Any]:
-    if TRANSACTION_BOOTSTRAP_ON_START:
-        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/bootstrap", timeout=20)
-    report_resp = requests.post(
-        f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
-        json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
-        timeout=30,
-    )
-    report_resp.raise_for_status()
-    report = report_resp.json()
-    analysis_resp = requests.get(
-        f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report['id']}/analysis",
-        timeout=30,
-    )
-    analysis_resp.raise_for_status()
-    analysis = analysis_resp.json()
-    detail_resp = requests.get(
-        f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report['id']}",
-        timeout=30,
-    )
-    detail_resp.raise_for_status()
-    report_detail = detail_resp.json()
-    _sync_transaction_anomalies_to_issue_log(report, report_detail)
-    return {"report": report, "analysis": analysis}
-
-
-@app.post("/demo/transaction/reconciliation/run")
-def transaction_demo_reconciliation_run(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
+@app.post("/admin/schema/seed")
+def admin_schema_seed(actor: dict[str, Any] = Depends(require_permission("users.update"))):
+    conn = get_db()
     try:
-        out = _run_transaction_reconciliation_once(triggered_by=actor["username"])
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction demo reconciliation failed: {exc}") from exc
-    return out
+        ensure_core_schema(conn)
+        seed_core_data(conn)
+        write_audit_log(conn, actor["id"], "schema.seed", "schema", DB_NAME)
+        return schema_status(conn)
+    finally:
+        conn.close()
 
 
-@app.post("/demo/transaction/bootstrap")
-def transaction_demo_bootstrap(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
+@app.get("/admin/microservices/overview")
+def admin_microservices_overview(actor: dict[str, Any] = Depends(require_permission("users.read"))):
+    conn = get_db()
     try:
-        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/bootstrap", timeout=20)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction demo bootstrap failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/seed")
-def transaction_demo_seed(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    try:
-        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/seed", timeout=40)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction seed failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/reset-seed")
-def transaction_demo_reset_seed(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    try:
-        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction reset seed failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/discrepancy")
-def transaction_demo_discrepancy(
-    payload: dict[str, Any],
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    amount = float(payload.get("amount") or 15000)
-    try:
-        response = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/transactions/demo/party-a-to-party-b-discrepancy",
-            json={"amount": amount},
-            timeout=20,
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction discrepancy simulation failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/bug-status")
-def transaction_demo_bug_status(
-    actor: dict[str, Any] = Depends(require_permission("issues.read")),
-):
-    try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/demo/bug-status", timeout=20)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction bug status fetch failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/bug/fix")
-def transaction_demo_bug_fix(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    try:
-        response = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
-            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor["username"], "notes": "Resolved via BugDaddy demo action"},
-            timeout=20,
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction bug fix failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/bug/reset")
-def transaction_demo_bug_reset(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    try:
-        response = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/demo/bug/reset-code",
-            json={"bug_key": "beneficiary_routing_bug"},
-            timeout=20,
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction bug reset failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/reports")
-def transaction_demo_reports(
-    limit: int = 20,
-    actor: dict[str, Any] = Depends(require_permission("issues.read")),
-):
-    try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports", params={"limit": min(limit, 200)}, timeout=20)
-        response.raise_for_status()
-        return {"items": response.json()}
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction report fetch failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/reports/{report_id}")
-def transaction_demo_report_detail(
-    report_id: int,
-    actor: dict[str, Any] = Depends(require_permission("issues.read")),
-):
-    try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report_id}", timeout=20)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction report detail fetch failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/reports/{report_id}/analysis")
-def transaction_demo_report_analysis(
-    report_id: int,
-    actor: dict[str, Any] = Depends(require_permission("issues.read")),
-):
-    try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report_id}/analysis", timeout=20)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction report analysis fetch failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/metrics")
-def transaction_demo_metrics(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
-    try:
-        response = requests.get(f"{TRANSACTION_SERVICE_URL}/metrics", timeout=20)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction metrics fetch failed: {exc}") from exc
-
-
-@app.post("/demo/transaction/verify-fix")
-def transaction_demo_verify_fix(
-    actor: dict[str, Any] = Depends(require_permission("issues.update")),
-):
-    def _count(detail: dict[str, Any]) -> dict[str, int]:
-        out: dict[str, int] = {}
-        for m in (detail.get("mismatches") or []):
-            key = str(m.get("mismatch_type") or "UNKNOWN")
-            out[key] = out.get(key, 0) + 1
-        return out
-
-    try:
-        requests.post(f"{TRANSACTION_SERVICE_URL}/demo/bug/reset", json={"bug_key": "beneficiary_routing_bug"}, timeout=20).raise_for_status()
-        requests.post(f"{TRANSACTION_SERVICE_URL}/demo/bug/reset-code", json={"bug_key": "beneficiary_routing_bug"}, timeout=20).raise_for_status()
-        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50).raise_for_status()
-        before_report = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
-            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
-            timeout=30,
-        ).json()
-        before_detail = requests.get(
-            f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{before_report['id']}",
-            timeout=30,
-        ).json()
-
-        requests.post(
-            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
-            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor["username"], "notes": "verify-fix flow"},
-            timeout=20,
-        ).raise_for_status()
-        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50).raise_for_status()
-        after_report = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
-            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
-            timeout=30,
-        ).json()
-        after_detail = requests.get(
-            f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{after_report['id']}",
-            timeout=30,
-        ).json()
-        bug_state = requests.get(f"{TRANSACTION_SERVICE_URL}/demo/bug-status", timeout=20).json()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Transaction before/after verification failed: {exc}") from exc
-
-    return {
-        "before": {
-            "report_id": before_report.get("id"),
-            "mismatch_count": before_report.get("mismatch_count"),
-            "mismatch_types": _count(before_detail),
-        },
-        "after": {
-            "report_id": after_report.get("id"),
-            "mismatch_count": after_report.get("mismatch_count"),
-            "mismatch_types": _count(after_detail),
-        },
-        "bug_active_after": bug_state.get("beneficiary_routing_bug_active"),
-        "code_change": {
-            "file": "SME/backend/transaction_management/app/main.py",
-            "function": "_apply_transfer",
-            "before": (
-                "if BUG_STATE['beneficiary_routing_bug_active'] and amount >= Decimal('20000'):\\n"
-                "    fallback = <other_account>\\n"
-                "    tx.intended_beneficiary_account_id = dst.id\\n"
-                "    tx.beneficiary_account_id = fallback.id\\n"
-                "    anomalies.append('wrong_beneficiary_transfer')"
-            ),
-            "after": (
-                "CODE_PATCH_APPLIED = True  # source patched by BugDaddy invoke flow\\n"
-                "if BUG_STATE['beneficiary_routing_bug_active'] and (not CODE_PATCH_APPLIED) and amount >= Decimal('20000'):\\n"
-                "    ... # this branch no longer executes after patch\\n"
-                "# transfer posts to intended beneficiary account"
-            ),
-            "fix_action": "Source patch applied via /demo/bug/fix-code, then service hot-reloads",
-        },
-    }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT service_name, bounded_context, owner_team, description, capabilities, health_status, updated_at
+                FROM ms_service_registry
+                ORDER BY service_name
+                """
+            )
+            services = cur.fetchall()
+            cur.execute(
+                """
+                SELECT service_name, operation, status, COUNT(*) AS total, MAX(created_at) AS last_seen
+                FROM ms_service_events
+                GROUP BY service_name, operation, status
+                ORDER BY service_name, operation, status
+                """
+            )
+            operation_counts = cur.fetchall()
+            cur.execute(
+                """
+                SELECT service_name, operation, request_id, customer_id, entity_type, entity_id, status, error_message, created_at
+                FROM ms_service_events
+                ORDER BY created_at DESC
+                LIMIT 50
+                """
+            )
+            recent_events = cur.fetchall()
+        for service in services:
+            if isinstance(service.get("capabilities"), str):
+                try:
+                    service["capabilities"] = json.loads(service["capabilities"])
+                except json.JSONDecodeError:
+                    pass
+            service["updated_at"] = dt_to_str(service.get("updated_at"))
+        for row in operation_counts:
+            row["total"] = int(row.get("total") or 0)
+            row["last_seen"] = dt_to_str(row.get("last_seen"))
+        for row in recent_events:
+            row["created_at"] = dt_to_str(row.get("created_at"))
+        return {"services": services, "operation_counts": operation_counts, "recent_events": recent_events}
+    finally:
+        conn.close()
 
 
 # Support routes — thin wrappers that inject external_user_id from the JWT actor,
@@ -3441,215 +3137,6 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
             conn.close()
 
 
-def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any], actor_username: str):
-    anomaly_type = detect_transaction_anomaly_type(issue_context)
-    remediation = get_transaction_remediation_plan(anomaly_type, actor_username)
-    fix_route = remediation["route"]
-    fix_payload = remediation["payload"]
-    reasoning_summary = remediation["reasoning_summary"]
-    fix_plan = remediation["fix_plan"]
-
-    conn = get_db()
-    try:
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "node.reasoning",
-                "node_id": "bug",
-                "node_name": "Bug Daddy",
-                "agent_name": "bug_daddy",
-                "status": "running",
-                "level": "info",
-                "title": "Reasoning over reconciliation anomaly",
-                "reasoning_summary": reasoning_summary,
-                "result": {"issue_context": issue_context, "anomaly_type": anomaly_type, "fix_plan": fix_plan},
-            },
-        )
-    finally:
-        conn.close()
-
-    if not fix_route or not fix_payload:
-        error_message = (
-            f"No automated transaction fix is configured for anomaly type '{anomaly_type}'. "
-            "Avoided applying unrelated beneficiary routing patch."
-        )
-        conn = get_db()
-        try:
-            append_execution_event(
-                conn,
-                session_id,
-                {
-                    "event_type": "session.failed",
-                    "status": "failed",
-                    "level": "error",
-                    "title": "Transaction anomaly has no supported automated fix",
-                    "error_message": error_message,
-                    "result": {
-                        "anomaly_type": anomaly_type,
-                        "supported_types": sorted(list(transaction_supported_anomaly_types())),
-                    },
-                },
-            )
-            update_execution_session(conn, session_id, status_value="failed", error_message=error_message, ended=True)
-        finally:
-            conn.close()
-        return
-
-    try:
-        fix_resp = requests.post(fix_route, json=fix_payload, timeout=20)
-        fix_resp.raise_for_status()
-        fix_result = fix_resp.json()
-
-        recon_resp = requests.post(
-            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
-            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
-            timeout=30,
-        )
-        recon_resp.raise_for_status()
-        recon_payload = recon_resp.json()
-    except Exception as exc:
-        conn = get_db()
-        try:
-            append_execution_event(
-                conn,
-                session_id,
-                {
-                    "event_type": "session.failed",
-                    "status": "failed",
-                    "level": "error",
-                    "title": "Transaction anomaly fix failed",
-                    "error_message": str(exc),
-                },
-            )
-            update_execution_session(conn, session_id, status_value="failed", error_message=str(exc), ended=True)
-        finally:
-            conn.close()
-        return
-
-    conn = get_db()
-    try:
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "tool.completed",
-                "node_id": "code",
-                "node_name": "Code Fix Tool",
-                "agent_name": "bug_daddy",
-                "status": "completed",
-                "level": "success",
-                "title": "Code patch applied",
-                "tool_name": "transaction_bug_fix_code",
-                "tool_output": fix_result,
-            },
-        )
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "tool.completed",
-                "node_id": "verify",
-                "node_name": "Verification Tool",
-                "agent_name": "bug_daddy",
-                "status": "completed",
-                "level": "success",
-                "title": "Post-fix reconciliation run completed",
-                "tool_name": "transaction_reconciliation_run",
-                "tool_output": recon_payload,
-            },
-        )
-        append_execution_event(
-            conn,
-            session_id,
-            {
-                "event_type": "session.completed",
-                "status": "succeeded",
-                "level": "success",
-                "title": "Transaction anomaly remediation completed",
-                "output_summary": "Applied code fix and triggered reconciliation run.",
-                "result": {"reconciliation_report": recon_payload},
-            },
-        )
-        update_execution_session(conn, session_id, status_value="succeeded", summary="Transaction anomaly fixed via code patch.", ended=True)
-    finally:
-        conn.close()
-
-
-def transaction_supported_anomaly_types() -> set[str]:
-    return {"WRONG_BENEFICIARY", "DELAYED_POSTING"}
-
-
-def get_transaction_remediation_plan(anomaly_type: str, actor_username: str) -> dict[str, Any]:
-    notes = "Invoked via issues /agent/invoke flow"
-    if anomaly_type == "WRONG_BENEFICIARY":
-        return {
-            "route": f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
-            "payload": {
-                "bug_key": "beneficiary_routing_bug",
-                "resolved_by": actor_username,
-                "notes": notes,
-            },
-            "reasoning_summary": (
-                "Detected WRONG_BENEFICIARY anomaly pattern and mapped it to beneficiary routing bug in transfer posting logic."
-            ),
-            "fix_plan": "Apply beneficiary routing code patch and re-run reconciliation.",
-        }
-    if anomaly_type == "DELAYED_POSTING":
-        return {
-            "route": f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
-            "payload": {
-                "bug_key": "delayed_posting_bug",
-                "resolved_by": actor_username,
-                "notes": notes,
-            },
-            "reasoning_summary": (
-                "Detected DELAYED_POSTING anomaly pattern and mapped it to delayed posting remediation (repair delayed transactions and disable delayed posting bug)."
-            ),
-            "fix_plan": "Repair delayed postings, disable delayed posting bug, and re-run reconciliation.",
-        }
-    return {
-        "route": None,
-        "payload": None,
-        "reasoning_summary": (
-            f"Detected {anomaly_type} anomaly pattern, but no supported automated remediation mapping exists in local transaction fast-path."
-        ),
-        "fix_plan": "Do not apply unrelated patch; fail gracefully and request manual/agentic investigation.",
-    }
-
-
-def detect_transaction_anomaly_type(issue_context: dict[str, Any]) -> str:
-    issue_type = str(issue_context.get("issue_type") or "").strip().lower()
-    description = str(issue_context.get("description") or "").strip().lower()
-    stack_trace = str(issue_context.get("stack_trace") or "").strip().lower()
-    combined_text = f"{issue_type}\n{description}\n{stack_trace}"
-
-    # Prefer structured issue_type first.
-    issue_type_map = {
-        "wrong_beneficiary": "WRONG_BENEFICIARY",
-        "wrong_beneficiary_transfer": "WRONG_BENEFICIARY",
-        "delayed_posting": "DELAYED_POSTING",
-        "missing_settlement": "MISSING_SETTLEMENT",
-        "amount_mismatch": "RECONCILIATION_MISMATCH",
-        "reconciliation_mismatch": "RECONCILIATION_MISMATCH",
-        "duplicate_transaction": "DUPLICATE_TRANSACTION",
-    }
-    if issue_type in issue_type_map:
-        return issue_type_map[issue_type]
-
-    # Fallback to conservative text matching.
-    if "wrong_beneficiary" in combined_text or "wrong beneficiary" in combined_text:
-        return "WRONG_BENEFICIARY"
-    if "delayed_posting" in combined_text or "posting delayed" in combined_text or "posting_delayed" in combined_text:
-        return "DELAYED_POSTING"
-    if "missing_settlement" in combined_text or "missing settlement" in combined_text:
-        return "MISSING_SETTLEMENT"
-    if "amount_mismatch" in combined_text or "reconciliation_mismatch" in combined_text:
-        return "RECONCILIATION_MISMATCH"
-    if "duplicate_transaction" in combined_text:
-        return "DUPLICATE_TRANSACTION"
-    return "UNKNOWN"
-
 @app.post("/agent/invoke")
 def agent_invoke(
     payload: AgentInvokeRequest,
@@ -3657,9 +3144,6 @@ def agent_invoke(
     actor: dict[str, Any] = Depends(require_permission("issues.update"))
 ):
     issue_context: dict[str, Any] = {}
-    is_transaction_anomaly = False
-    use_local_transaction_fix = False
-    transaction_anomaly_type = "UNKNOWN"
     if payload.issue_id is not None:
         conn = get_db()
         try:
@@ -3692,20 +3176,12 @@ def agent_invoke(
                     logs_list.append("Execution Logs:\n" + issue["entire_execution_logs"])
                 if logs_list:
                     payload.logs = logs_list
-            if issue.get("source") == "transaction_reconciliation":
-                is_transaction_anomaly = True
-                transaction_anomaly_type = detect_transaction_anomaly_type(issue_context)
-                use_local_transaction_fix = transaction_anomaly_type in transaction_supported_anomaly_types()
-                if not payload.target:
-                    payload.target = "bug_daddy"
         finally:
             conn.close()
 
     target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
     runtime_target = target
-    if is_transaction_anomaly and use_local_transaction_fix:
-        runtime_target = "bug_daddy"
-    if (not is_transaction_anomaly) and target == "bug_daddy" and not (
+    if target == "bug_daddy" and not (
         payload.metadata.get("jira_key")
         or payload.metadata.get("resolution_jira")
         or issue_context.get("resolution_jira")
@@ -3722,13 +3198,7 @@ def agent_invoke(
         "runtime_target": runtime_target,
         "workflow_key": workflow_key,
         "routing_source": "explicit_target" if payload.target else "backend_policy",
-        "transaction_anomaly_type": transaction_anomaly_type if is_transaction_anomaly else None,
-        "transaction_local_fix_supported": use_local_transaction_fix if is_transaction_anomaly else None,
     }
-    if is_transaction_anomaly and not use_local_transaction_fix:
-        metadata["transaction_fallback_policy"] = (
-            "agentcore" if TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE else "fail_fast"
-        )
     session_id = payload.session_id
 
     runtime_payload = {
@@ -3790,21 +3260,9 @@ def agent_invoke(
                 "status": "running",
                 "level": "info",
                 "title": "Agent orchestration started",
-                "description": (
-                    "Running local transaction anomaly remediation workflow."
-                    if is_transaction_anomaly and use_local_transaction_fix
-                    else (
-                        f"Transaction anomaly '{transaction_anomaly_type}' routed to AgentCore fallback workflow."
-                        if is_transaction_anomaly and TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE
-                        else f"Invoking {runtime_target} through AgentCore."
-                    )
-                ),
+                "description": f"Invoking {runtime_target} through AgentCore.",
                 "agent_name": runtime_target,
-                "result": (
-                    {"mode": "local_transaction_fix", "anomaly_type": transaction_anomaly_type}
-                    if is_transaction_anomaly and use_local_transaction_fix
-                    else {"runtime_arn": AGENTCORE_RUNTIME_ARN, "anomaly_type": transaction_anomaly_type if is_transaction_anomaly else None}
-                ),
+                "result": {"runtime_arn": AGENTCORE_RUNTIME_ARN},
             },
         )
         append_execution_event(
@@ -3813,55 +3271,18 @@ def agent_invoke(
             {
                 "event_type": "node.started",
                 "node_id": "esc",
-                "node_name": (
-                    "Transaction Fix Runtime"
-                    if is_transaction_anomaly and use_local_transaction_fix
-                    else "AgentCore Runtime"
-                ),
+                "node_name": "AgentCore Runtime",
                 "agent_name": runtime_target,
                 "status": "running",
                 "level": "info",
-                "title": (
-                    "Local remediation started"
-                    if is_transaction_anomaly and use_local_transaction_fix
-                    else "AgentCore invocation started"
-                ),
+                "title": "AgentCore invocation started",
                 "input_summary": runtime_payload.get("prompt"),
             },
         )
     finally:
         conn.close()
 
-    if is_transaction_anomaly and use_local_transaction_fix:
-        bg_tasks.add_task(run_transaction_fix_background, session_id, issue_context, actor["username"])
-    elif is_transaction_anomaly and not TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE:
-        conn = get_db()
-        try:
-            error_message = (
-                f"No automated transaction fix is configured for anomaly type '{transaction_anomaly_type}'. "
-                "Fallback to AgentCore is disabled."
-            )
-            append_execution_event(
-                conn,
-                session_id,
-                {
-                    "event_type": "session.failed",
-                    "status": "failed",
-                    "level": "error",
-                    "title": "Unsupported transaction anomaly type",
-                    "error_message": error_message,
-                    "result": {
-                        "anomaly_type": transaction_anomaly_type,
-                        "supported_types": sorted(list(transaction_supported_anomaly_types())),
-                        "fallback_to_agentcore": False,
-                    },
-                },
-            )
-            update_execution_session(conn, session_id, status_value="failed", error_message=error_message, ended=True)
-        finally:
-            conn.close()
-    else:
-        bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
+    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
 
     return {
         "message": "Agent orchestration started in background",

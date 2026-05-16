@@ -40,6 +40,7 @@ const archEdges: WorkflowEdge[] = [
   ['db', 'esc'],
   ['esc', 'jag'],
   ['esc', 'inc'],
+  ['inc', 'sme'],
   ['inc', 'irw'],
   ['irw', 'irr'],
   ['irr', 'irw'],

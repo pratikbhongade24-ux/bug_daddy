@@ -34,7 +34,6 @@ import type { SonarReport } from './sonar/SonarReportModal';
 const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
 const AiQueueView = dynamic(() => import('./admin/AiQueueView').then((mod) => mod.AiQueueView), { ssr: false, loading: () => sectionSkeleton });
 const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
-const TransactionDemoView = dynamic(() => import('./transaction/TransactionDemoView').then((mod) => mod.TransactionDemoView), { ssr: false, loading: () => sectionSkeleton });
 const GrafanaView = dynamic(() => import('./grafana/GrafanaView').then((mod) => mod.GrafanaView), { ssr: false, loading: () => sectionSkeleton });
 const KibanaView = dynamic(() => import('./kibana/KibanaView').then((mod) => mod.KibanaView), { ssr: false, loading: () => sectionSkeleton });
 const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
@@ -454,9 +453,6 @@ export function DashboardApp() {
           ) : null}
           {view === 'security' ? (
             <SecurityScannerView addToast={toast} />
-          ) : null}
-          {view === 'transactions' ? (
-            <TransactionDemoView addToast={toast} />
           ) : null}
           {view === 'ai_queue' && isAdmin ? (
             <AiQueueView
