@@ -140,21 +140,27 @@ def chat_stream(payload: ChatRequest, db: Session = Depends(get_db)):
     history = "\n".join(f"{m.role}: {m.content}" for m in reversed(history_rows) if m.content)
     context = "\n\n".join(f"[source={r['metadata'].get('file_path')}]\n{r['content']}" for r in compressed)
 
-    if ENABLE_GROUNDED_FALLBACK and not context.strip():
+    _is_casual = len(payload.question.split()) <= 6 and not any(
+        kw in payload.question.lower()
+        for kw in ("api", "service", "sql", "kyc", "loan", "disburse", "repay", "error", "flow", "schema", "table", "endpoint", "auth")
+    )
+
+    if ENABLE_GROUNDED_FALLBACK and not context.strip() and not _is_casual:
         answer = (
-            "I don't have enough grounded context to answer confidently yet. "
-            "Please ingest relevant docs or narrow your question by service/module."
+            "I don't have enough grounded context to answer that yet. "
+            "Please ingest relevant docs or narrow your question by service or module."
         )
     else:
         prompt = (
-            "You are an SME-grade assistant for banking loan platform engineering. "
-            "Answer with concise reasoning, architecture traceability, and implementation clarity.\n\n"
+            "You are an SME-grade assistant for a banking loan platform engineering team. "
+            "You help engineers with incidents, API contracts, KYC flows, disbursement logic, and architecture decisions.\n"
+            "For casual greetings or small talk, respond warmly and briefly, then offer to help with technical questions.\n\n"
             f"Conversation History:\n{history}\n\n"
             f"Question:\n{payload.question}\n\n"
             f"Retrieved Context:\n{context}\n\n"
-            "Rules: Use only retrieved context for factual claims. "
-            "If context is insufficient, explicitly say what is missing.\n"
-            "Return: answer + bullet citations with file paths and relevance."
+            "Rules: Use retrieved context for factual claims. "
+            "If context is insufficient for a technical question, say so explicitly.\n"
+            "Return a concise answer. For technical questions include bullet citations with file paths."
         )
         answer = bedrock_client.generate(prompt)
 
