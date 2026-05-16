@@ -93,7 +93,7 @@ export function DashboardOverview({
             }}
           />
           <HorizontalChart
-            title="WIP by Service"
+            title="Work in Progress by Service"
             rows={wipRows}
             onService={(service) => {
               setServiceFilter(service);
