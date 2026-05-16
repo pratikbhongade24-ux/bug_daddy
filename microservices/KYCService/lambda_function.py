@@ -10,6 +10,8 @@ SHARED_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SHARED_ROOT not in sys.path:
     sys.path.insert(0, SHARED_ROOT)
 
+from shared.logger import extract_trace_id, get_trace_id, make_logger, set_trace_id
+
 try:
     from shared.persistence import persist_operation, read_verification_history
 except Exception as exc:
@@ -24,8 +26,7 @@ def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def log(stage, payload):
-    print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
+log = make_logger(SERVICE_NAME)
 
 
 def parse_request(event):
@@ -50,6 +51,7 @@ def response(context, request_id, operation, payload, extra=None):
         "service": SERVICE_NAME,
         "requestId": request_id,
         "operation": operation,
+        "traceId": get_trace_id(),
         "requestTraceId": trace_id,
         "timestamp": iso_now(),
         "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")},
@@ -133,8 +135,10 @@ def route_request(request_id, payload, context):
 
 
 def lambda_handler(event, context):
+    trace_id = extract_trace_id(event)
+    set_trace_id(trace_id)
     request_id, payload = parse_request(event)
-    log("request_received", {"requestId": request_id, "payload": payload})
+    log("request_received", {"requestId": request_id, "traceId": trace_id, "payload": payload})
     try:
         result = route_request(request_id, payload, context)
         log("request_completed", {"requestId": request_id})

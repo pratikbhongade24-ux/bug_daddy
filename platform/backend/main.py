@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -15,7 +16,7 @@ import boto3
 from botocore.config import Config as BotocoreConfig
 import pymysql
 import requests
-from fastapi import Depends, FastAPI, Header, HTTPException, status, BackgroundTasks
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -58,6 +59,28 @@ AI_QUEUE_POLL_SECONDS = int(os.getenv("AI_QUEUE_POLL_SECONDS", "10"))
 AI_QUEUE_DEFAULT_LENGTH = int(os.getenv("AI_QUEUE_DEFAULT_LENGTH", "3"))
 AI_QUEUE_STARTED = False
 
+# ---------------------------------------------------------------------------
+# Distributed trace ID
+# ---------------------------------------------------------------------------
+TRACE_ID_HEADER = "x-trace-id"
+_trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
+
+
+def get_trace_id() -> str:
+    """Return the trace ID for the current request."""
+    return _trace_id_var.get()
+
+
+def log_request(method: str, path: str, trace_id: str) -> None:
+    """Emit a structured JSON line at the start of every request."""
+    print(json.dumps({
+        "traceId": trace_id,
+        "service": "platform-backend",
+        "stage": "request_received",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "payload": {"method": method, "path": path},
+    }))
+
 
 app = FastAPI(title="Bug Daddy API")
 app.add_middleware(
@@ -67,6 +90,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    """Extract or generate X-Trace-ID for every request and stamp it on the response."""
+    trace_id = (
+        request.headers.get("x-trace-id")
+        or request.headers.get("X-Trace-ID")
+        or ""
+    ).strip() or str(uuid.uuid4())
+    _trace_id_var.set(trace_id)
+    log_request(request.method, str(request.url.path), trace_id)
+    response = await call_next(request)
+    response.headers["X-Trace-ID"] = trace_id
+    return response
+
 
 class LoginRequest(BaseModel):
     identifier: str = Field(min_length=1, max_length=255)
