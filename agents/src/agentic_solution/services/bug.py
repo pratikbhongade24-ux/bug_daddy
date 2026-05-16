@@ -23,7 +23,7 @@ class BugDaddyRuntime:
         return build_bug_agents(
             self.config,
             tools={
-                "slack": self.tools.slack_tools, 
+                "slack": [],
                 "jira": self.tools.jira_tools, 
                 "bitbucket": self.tools.bitbucket_tools,
                 "github": self.tools.github_tools,

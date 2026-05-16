@@ -1,6 +1,10 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+# Python 3.13 + Node 22 LTS in one slim image — no apt-get needed for Node
+FROM nikolaik/python-nodejs:python3.13-nodejs22-slim
 
 WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 ENV UV_SYSTEM_PYTHON=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -16,7 +20,14 @@ ENV UV_SYSTEM_PYTHON=1 \
     JIRA_REVIEWER_ACCOUNT_ID=712020:db54222d-08dc-400b-9f00-4a812a18401c \
     JIRA_REVIEWER_EMAIL=bugdaddy.in@gmail.com \
     JIRA_REVIEWER_DISPLAY_NAME=BugDaddy \
-    GITHUB_TOKEN=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
+    GITHUB_TOKEN=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 \
+    SLACK_BOT_TOKEN=xoxb-10824136099831-11090936545382-IXSCRE6SLUQsbHvq1egZkICP \
+    SLACK_TEAM_ID=T0AQ8402XQF \
+    SLACK_DEFAULT_CHANNEL=C0B2QUEU4NN \
+    SLACK_MCP_TRANSPORT=stdio \
+    SLACK_MCP_COMMAND=npx \
+    SLACK_MCP_ARGS='["-y","@modelcontextprotocol/server-slack"]' \
+    SLACK_MCP_TOOL_ALLOWLIST='["slack_post_message","slack_list_channels","slack_get_channel_history","slack_join_channel"]'
 
 COPY pyproject.toml ./
 COPY main.py ./
@@ -25,8 +36,7 @@ COPY agentic_solution ./agentic_solution
 RUN uv pip install . \
     && uv pip install "aws-opentelemetry-distro>=0.10.1"
 
-RUN useradd -m -u 1000 bedrock_agentcore
-USER bedrock_agentcore
+USER pn
 
 EXPOSE 8080
 

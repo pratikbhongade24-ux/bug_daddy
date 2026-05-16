@@ -511,6 +511,8 @@ button:disabled { cursor: not-allowed; }
 .admin-grid { flex: 1; overflow: auto; padding: 1.5rem; display: grid; grid-template-columns: 380px 1fr; gap: 1.25rem; }
 .admin-card { padding: 1.5rem; }
 .admin-card-head { font-weight: 700; font-size: 1.1rem; margin-bottom: 1.25rem; color: var(--t); }
+.admin-card-head-spaced { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--bd); }
+.admin-stack { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
 .admin-form { display: flex; flex-direction: column; gap: 1rem; }
 .admin-form label { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--t2); }
 .admin-form input, .admin-form select { background: var(--s1); border: 1px solid var(--bd); color: var(--t); border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; transition: border-color 0.2s; }
@@ -518,6 +520,11 @@ button:disabled { cursor: not-allowed; }
 .admin-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
 .admin-list-card { min-width: 0; padding: 0; display: flex; flex-direction: column; }
 .admin-list-wrap { overflow: auto; flex: 1; }
+.queue-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.queue-kpis div { border: 1px solid var(--bd); border-radius: 8px; padding: 0.75rem; background: var(--s1); display: flex; flex-direction: column; gap: 0.35rem; }
+.queue-kpis span, .queue-status-row span:last-child { color: var(--t3); font-size: 0.76rem; }
+.queue-kpis strong { color: var(--t); font-size: 1.15rem; font-family: var(--mono); }
+.queue-status-row { display: flex; align-items: center; gap: 0.75rem; }
 
 .sonar-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
 .sonar-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }

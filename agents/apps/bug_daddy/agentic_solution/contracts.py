@@ -95,3 +95,26 @@ class BugResponse(BaseModel):
     review_response: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+FeatureDisposition = Literal["pull_request", "rework_required", "review_required"]
+
+
+class FeatureRequest(BaseModel):
+    prd: str
+    source: str = "api"
+    service_name: str | None = None
+    repository: str | None = None
+    kb_context: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class FeatureResponse(BaseModel):
+    component: Literal["feature_daddy"] = "feature_daddy"
+    feature_name: str
+    summary: str
+    disposition: FeatureDisposition
+    jira_key: str | None = None
+    pr_url: str | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)

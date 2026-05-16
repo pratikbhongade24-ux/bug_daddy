@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generator
 
 from mcp import StdioServerParameters, stdio_client
 from strands.tools.mcp import MCPClient
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class MCPToolBundle:
-    slack_tools: list[Any]
+    slack_config: MCPServerConfig
     jira_tools: list[Any]
     bitbucket_tools: list[Any]
     github_read_write_tools: list[Any]
@@ -28,27 +30,49 @@ class MCPToolBundle:
     diagnostics: dict[str, Any]
 
     @property
+    def slack_enabled(self) -> bool:
+        return self.slack_config.enabled
+
+    @property
     def github_tools(self) -> list[Any]:
         return self.github_read_write_tools + self.github_pr_tools
+
+
+@contextlib.contextmanager
+def slack_client_context(bundle: "MCPToolBundle") -> Generator[list[Any], None, None]:
+    """Open a live Slack MCP client for the duration of a request and yield its tools."""
+    if not bundle.slack_enabled:
+        yield []
+        return
+    client = _client_for(bundle.slack_config)
+    with client:
+        tools = client.list_tools_sync()
+        yield _filter_tools(bundle.slack_config, tools)
 
 
 def load_mcp_tools(config: AppConfig) -> MCPToolBundle:
     diagnostics: dict[str, Any] = {}
 
-    slack_tools = _load_tools_for_server(config.slack, diagnostics)
+    # Slack is kept as a config reference — opened per-request via slack_client_context()
+    # so the stdio process stays alive while the agent actually calls tools.
+    if config.slack.enabled:
+        diagnostics["slack"] = {"status": "configured"}
+    else:
+        diagnostics["slack"] = {"status": "disabled"}
+
     jira_tools = _load_tools_for_server(config.jira, diagnostics)
     native_jira_tools = get_native_jira_tools()
     diagnostics["jira_native"] = native_jira_diagnostics()
     jira_tools = jira_tools + native_jira_tools
     bitbucket_tools = _load_tools_for_server(config.bitbucket, diagnostics)
-    
+
     github_mcp_tools = _load_tools_for_server(config.github, diagnostics)
     native_github_rw = get_native_github_read_write_tools()
     native_github_pr = get_native_github_pr_tools()
     diagnostics["github_native"] = native_github_diagnostics()
 
     return MCPToolBundle(
-        slack_tools=slack_tools,
+        slack_config=config.slack,
         jira_tools=jira_tools,
         bitbucket_tools=bitbucket_tools,
         github_read_write_tools=github_mcp_tools + native_github_rw,
@@ -64,7 +88,8 @@ def _load_tools_for_server(server: MCPServerConfig, diagnostics: dict[str, Any])
 
     try:
         client = _client_for(server)
-        tools = client.list_tools_sync()
+        with client:
+            tools = client.list_tools_sync()
         filtered = _filter_tools(server, tools)
         diagnostics[server.name] = {
             "status": "loaded",
@@ -94,6 +119,7 @@ def _client_for(server: MCPServerConfig) -> MCPClient:
             StdioServerParameters(
                 command=server.command,
                 args=server.args,
+                env=os.environ.copy(),
             )
         )
     )

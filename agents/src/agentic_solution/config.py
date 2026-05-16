@@ -70,6 +70,7 @@ class AppConfig:
     incident_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="incident_daddy"))
     reviewer_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="reviewer_daddy"))
     sme_agent: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="sme_agent"))
+    feature_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="feature_daddy"))
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -95,6 +96,7 @@ class AppConfig:
             incident_daddy=_peer_config_from_env("INCIDENT_DADDY", "incident_daddy"),
             reviewer_daddy=_peer_config_from_env("REVIEWER_DADDY", "reviewer_daddy"),
             sme_agent=_peer_config_from_env("SME_AGENT", "sme_agent"),
+            feature_daddy=_peer_config_from_env("FEATURE_DADDY", "feature_daddy"),
         )
 
 
