@@ -3,7 +3,6 @@ import os
 import traceback
 from datetime import datetime, timezone
 
-
 SERVICE_NAME = "BankStatementService"
 
 
@@ -13,6 +12,15 @@ def iso_now():
 
 def log(stage, payload):
     print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
+
+
+def safe_int(value, default=3):
+    """Convert value to int safely, falling back to default on failure."""
+    try:
+        return int(value)
+    except Exception:
+        log("warning", {"message": f"Invalid int conversion for pages='{value}', using default {default}"})
+        return default
 
 
 def parse_request(event):
@@ -51,11 +59,30 @@ def response(context, request_id, operation, payload, extra=None):
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
+def error_response(context, request_id, exc):
+    err_body = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "error": str(exc),
+        "timestamp": iso_now(),
+    }
+    return {"statusCode": 400, "body": json.dumps(err_body)}
+
+
+def validate_simulate_bug(flag):
+    allowed = {"negative_pages", "amount_cast", "missing_bucket", None}
+    if flag not in allowed:
+        raise ValueError(f"Invalid simulateBug flag: {flag}")
+
+
 def parse_statement(payload):
-    pages = int(payload.get("pages", 3))
+    # Validate simulateBug flag early
+    validate_simulate_bug(payload.get("simulateBug"))
+    pages = safe_int(payload.get("pages", 3), default=3)
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
     log("parse_statement", statement)
     if payload.get("simulateBug") == "negative_pages":
+        # This will raise IndexError intentionally for the simulated bug
         return list(range(pages))[10]
     return statement
 
@@ -68,7 +95,10 @@ def build_transactions(statement, payload):
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        try:
+            int("not-a-number")
+        except Exception as e:
+            raise ValueError("Simulated bug 'amount_cast' triggered invalid int conversion") from e
     return transactions
 
 
@@ -128,4 +158,4 @@ def lambda_handler(event, context):
     except Exception as exc:
         print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        return error_response(context, request_id, exc)
