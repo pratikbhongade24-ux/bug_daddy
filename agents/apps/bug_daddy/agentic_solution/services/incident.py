@@ -177,11 +177,13 @@ class IncidentDaddyRuntime:
 
     def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport, logger: ExecutionLogger) -> None:
         slack_message = _format_slack_report(report)
+        print(f"[DEBUG] Slack message being sent:\n{slack_message}")
         started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
         try:
-            agents.slack_notifier(
+            response = agents.slack_notifier(
                 f"Post this exact message to Slack channel C0B2QUEU4NN using slack_post_message:\n\n{slack_message}"
             )
+            print(f"[DEBUG] Slack notifier response:\n{response}")
             logger.node_completed("slk", "Slack Notifier", "Slack notification sent", started, "ok")
         except Exception as exc:
             logger.node_failed("slk", "Slack Notifier", "Slack notification failed", started, exc)

@@ -5,7 +5,7 @@ from typing import Any
 
 from agentic_solution.config import AppConfig, PeerAgentConfig
 from agentic_solution.peer import PeerInvocationError
-from agentic_solution.services import bug, incident, reviewer, sme, classifier, slack_intake
+from agentic_solution.services import bug, incident, reviewer, sme, classifier
 
 
 @dataclass(slots=True)
@@ -27,13 +27,10 @@ class CombinedBugDaddyRuntime:
     reviewer_daddy: reviewer.ReviewerDaddyRuntime
     sme_agent: sme.SMEAgentRuntime
     classifier: classifier.ClassifierRuntime
-    slack_intake: slack_intake.SlackIntakeRuntime
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         target = _target_from_payload(payload)
 
-        if target == "slack_intake":
-            return self.slack_intake.handle(payload)
         if target == "sme_agent":
             return self.sme_agent.handle(payload)
         if target == "reviewer_daddy":
@@ -54,7 +51,6 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
     bug_runtime = bug.build_runtime(cfg)
     incident_runtime = incident.build_runtime(cfg)
     classifier_runtime = classifier.build_runtime(cfg)
-    slack_intake_runtime = slack_intake.build_runtime(cfg)
 
     local_peers = LocalPeerRuntimeClient(
         {
@@ -75,7 +71,6 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
         reviewer_daddy=reviewer_runtime,
         sme_agent=sme_runtime,
         classifier=classifier_runtime,
-        slack_intake=slack_intake_runtime,
     )
 
 
@@ -99,14 +94,10 @@ def _target_from_payload(payload: dict[str, Any]) -> str:
             "sme": "sme_agent",
             "sme_agent": "sme_agent",
             "classifier": "classifier",
-            "slack_intake": "slack_intake",
-            "slack": "slack_intake",
         }
         if normalized in aliases:
             return aliases[normalized]
 
-    if payload.get("source") == "slack" or "slack_thread_ts" in payload or "thread_ts" in payload:
-        return "slack_intake"
     if "question" in payload and "context" in payload:
         return "sme_agent"
     if {"issue", "plan", "fix_proposal"}.issubset(payload):
