@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Generator
 
@@ -118,6 +119,7 @@ def _client_for(server: MCPServerConfig) -> MCPClient:
             StdioServerParameters(
                 command=server.command,
                 args=server.args,
+                env=os.environ.copy(),
             )
         )
     )
