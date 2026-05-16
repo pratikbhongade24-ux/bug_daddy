@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 
 SERVICE_NAME = "KYCService"
 
+# Configurable mock score for face match simulation
+MOCK_FACE_SCORE = float(os.getenv("MOCK_FACE_SCORE", "0.0"))
+
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
@@ -67,8 +70,18 @@ def verify_aadhaar(payload, context, request_id):
 def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
+    # Safe simulation for face threshold – use configurable mock score instead of division by zero
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
+        return response(
+            context,
+            request_id,
+            "runFaceMatch",
+            payload,
+            {
+                "faceMatch": {"score": MOCK_FACE_SCORE, "result": "MATCHED"},
+                "message": "Face match run completed (simulated)",
+            },
+        )
     return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
 
 
