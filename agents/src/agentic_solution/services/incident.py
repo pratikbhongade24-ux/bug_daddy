@@ -12,6 +12,7 @@ from agentic_solution.config import AppConfig
 from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IncidentSLAKPI, IssueContext
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_incident_severity
+from agentic_solution.jira_tools import jira_create_issue, native_jira_tools_enabled
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools, slack_client_context
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
 
@@ -76,6 +77,7 @@ class IncidentDaddyRuntime:
 
         incident_report = self._write_and_review_report(agents, request, analysis_raw, orchestration_raw, sme_summary, logger)
         self._post_report_to_slack(incident_report, logger)
+        self._create_jira_incident(incident_report, request, logger)
 
         severity = orchestration.get("severity") or infer_incident_severity(f"{request.prompt}\n{analysis_raw}\n{orchestration_raw}")
         priority = _effective_priority(request.priority, str(severity))
@@ -209,6 +211,46 @@ class IncidentDaddyRuntime:
             logger.node_completed("slk", "Slack Notifier", "Slack notification sent", started, "ok")
         except Exception as exc:
             logger.node_failed("slk", "Slack Notifier", "Slack notification failed", started, exc)
+
+    def _create_jira_incident(self, report: IncidentReport, request: IncidentRequest, logger: ExecutionLogger) -> None:
+        if not native_jira_tools_enabled():
+            started = logger.node_started("jira", "Jira", "Create Jira incident")
+            logger.node_failed(
+                "jira", "Jira", "Jira incident creation skipped", started,
+                RuntimeError("Native Jira not configured — JIRA_EMAIL or JIRA_API_TOKEN is not set"),
+            )
+            return
+
+        started = logger.node_started("jira", "Jira", "Create Jira incident")
+        try:
+            sev_label = (report.severity or "unknown").upper()
+            priority_map = {"p0": "Highest", "p1": "High", "p2": "Medium", "p3": "Low", "p4": "Lowest"}
+            jira_priority = priority_map.get(str(report.priority).lower(), "Medium")
+            description_lines = [
+                f"Severity: {sev_label}",
+                f"Priority: {report.priority.upper()}",
+                f"Criticality: {report.criticality}",
+                f"Owner: {report.owner or 'Unknown'}",
+                f"Status: {report.status}",
+                "",
+                f"Blast Radius: {report.blast_radius or 'Under investigation'}",
+                f"Root Cause: {report.root_cause or 'Under investigation'}",
+            ]
+            if report.actions_taken:
+                description_lines += ["", "Actions Taken:"] + [f"- {a}" for a in report.actions_taken]
+            if request.service_name:
+                description_lines = [f"Service: {request.service_name}", ""] + description_lines
+
+            result = jira_create_issue(
+                summary=f"[INCIDENT][{sev_label}] {report.title}",
+                description="\n".join(description_lines),
+                issue_type="Task",
+                priority=jira_priority,
+                labels=["incident", sev_label.lower()],
+            )
+            logger.node_completed("jira", "Jira", "Jira incident created", started, result.get("browse_url") or result.get("key"), result)
+        except Exception as exc:
+            logger.node_failed("jira", "Jira", "Jira incident creation failed", started, exc)
 
     def _query_sme(self, request: IncidentRequest) -> tuple[str, dict[str, Any]]:
         if not self.config.sme_agent.enabled:
