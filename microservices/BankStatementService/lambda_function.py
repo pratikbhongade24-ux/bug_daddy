@@ -67,8 +67,12 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
-    if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+    # Guard against the test‑only simulateBug flag. The flag is only honoured when the
+    # environment variable ENABLE_SIMULATE_BUG is set to "true". In production the
+    # flag is ignored, preventing an unhandled ValueError.
+    if os.getenv("ENABLE_SIMULATE_BUG", "false").lower() == "true" and payload.get("simulateBug") == "amount_cast":
+        # Raise a controlled error that can be caught by the caller if needed.
+        raise ValueError("Simulated bug triggered: amount_cast")
     return transactions
 
 
