@@ -24,10 +24,11 @@ class BugDaddyRuntime:
             self.config,
             tools={
                 "slack": [],
-                "jira": self.tools.jira_tools, 
+                "jira": self.tools.jira_tools,
                 "bitbucket": self.tools.bitbucket_tools,
                 "github": self.tools.github_tools,
-                "github_read_write": self.tools.github_read_write_tools
+                "github_read_only": self.tools.github_read_only_tools,
+                "github_read_write": self.tools.github_read_write_tools,
             },
         )
 

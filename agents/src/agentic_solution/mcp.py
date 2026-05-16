@@ -11,6 +11,7 @@ from strands.tools.mcp import MCPClient
 
 from agentic_solution.config import AppConfig, MCPServerConfig
 from agentic_solution.github_tools import (
+    get_native_github_read_only_tools,
     get_native_github_read_write_tools,
     get_native_github_pr_tools,
     native_github_diagnostics
@@ -25,6 +26,7 @@ class MCPToolBundle:
     slack_config: MCPServerConfig
     jira_tools: list[Any]
     bitbucket_tools: list[Any]
+    github_read_only_tools: list[Any]
     github_read_write_tools: list[Any]
     github_pr_tools: list[Any]
     diagnostics: dict[str, Any]
@@ -67,6 +69,7 @@ def load_mcp_tools(config: AppConfig) -> MCPToolBundle:
     bitbucket_tools = _load_tools_for_server(config.bitbucket, diagnostics)
 
     github_mcp_tools = _load_tools_for_server(config.github, diagnostics)
+    native_github_ro = get_native_github_read_only_tools()
     native_github_rw = get_native_github_read_write_tools()
     native_github_pr = get_native_github_pr_tools()
     diagnostics["github_native"] = native_github_diagnostics()
@@ -75,6 +78,10 @@ def load_mcp_tools(config: AppConfig) -> MCPToolBundle:
         slack_config=config.slack,
         jira_tools=jira_tools,
         bitbucket_tools=bitbucket_tools,
+        # MCP tools from the github server are passed through to both bundles — we don't
+        # introspect them for write semantics, so callers needing strict read-only behavior
+        # should rely on the native tools and an MCP allowlist (GITHUB_MCP_TOOL_ALLOWLIST).
+        github_read_only_tools=github_mcp_tools + native_github_ro,
         github_read_write_tools=github_mcp_tools + native_github_rw,
         github_pr_tools=native_github_pr,
         diagnostics=diagnostics,

@@ -117,14 +117,25 @@ def github_create_pull_request(
     })
 
 
-def get_native_github_read_write_tools() -> list[Any]:
-    """Return the list of native GitHub tools for reading and writing files/branches."""
+def get_native_github_read_only_tools() -> list[Any]:
+    """Return the list of native GitHub tools that only read repo state."""
     return [
         github_list_files,
         github_get_file_content,
+    ]
+
+
+def get_native_github_write_tools() -> list[Any]:
+    """Return the list of native GitHub tools that mutate repo state (branches, files)."""
+    return [
         github_create_branch,
         github_update_file,
     ]
+
+
+def get_native_github_read_write_tools() -> list[Any]:
+    """Read + write tools — kept for callers that need both."""
+    return get_native_github_read_only_tools() + get_native_github_write_tools()
 
 
 def get_native_github_pr_tools() -> list[Any]:
