@@ -50,17 +50,20 @@ def register_mandate(payload, context, request_id):
 
 
 def validate_mandate(payload, context, request_id):
-    mandate = load_mandate(payload)
+    # Graceful handling for simulated bug flag
     if payload.get("simulateBug") == "mandate_lookup":
-        [][1]
+        # Return a controlled error response instead of raising an exception
+        return response(context, request_id, "validateMandate", payload, {"error": "Simulated mandate lookup failure", "status": "FAILED"})
+    mandate = load_mandate(payload)
     return response(context, request_id, "validateMandate", payload, {"validation": {"mandateId": mandate["mandateId"], "status": "VALID", "retryEligible": False}, "message": "Mandate validation completed"})
 
 
 def execute_debit(payload, context, request_id):
+    # Graceful handling for simulated bug flag
+    if payload.get("simulateBug") == "execute_type":
+        return response(context, request_id, "executeDebit", payload, {"error": "Simulated execute type failure", "status": "FAILED"})
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
-    if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
