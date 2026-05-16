@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agentic_solution.agents import IncidentAgentBundle, build_incident_agents
+from strands import Agent
+
+from agentic_solution.agents import IncidentAgentBundle, build_incident_agents, _build_model
+from agentic_solution.prompts import SLACK_NOTIFIER_PROMPT
 from agentic_solution.config import AppConfig
 from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IssueContext
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_incident_severity
-from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
+from agentic_solution.mcp import MCPToolBundle, load_mcp_tools, slack_client_context
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
 
 
@@ -23,8 +26,8 @@ class IncidentDaddyRuntime:
         return build_incident_agents(
             self.config,
             tools={
-                "slack": self.tools.slack_tools, 
-                "jira": self.tools.jira_tools, 
+                "slack": [],  # slack_notifier is rebuilt with live tools inside _post_report_to_slack
+                "jira": self.tools.jira_tools,
                 "bitbucket": self.tools.bitbucket_tools,
                 "github": self.tools.github_tools
             },
@@ -71,7 +74,7 @@ class IncidentDaddyRuntime:
         logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration_raw)
 
         incident_report = self._write_and_review_report(agents, request, analysis_raw, orchestration_raw, sme_summary, logger)
-        self._post_report_to_slack(agents, incident_report, logger)
+        self._post_report_to_slack(incident_report, logger)
 
         severity = orchestration.get("severity") or infer_incident_severity(f"{request.prompt}\n{analysis_raw}\n{orchestration_raw}")
         handoff = bool(orchestration.get("bug_daddy_handoff", False))
@@ -175,23 +178,27 @@ class IncidentDaddyRuntime:
         fallback_severity = infer_incident_severity(f"{request.prompt}\n{analysis}")
         return _build_incident_report(draft, draft_raw, fallback_severity)
 
-    def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport, logger: ExecutionLogger) -> None:
-        if not agents.slack_notifier.tools:
+    def _post_report_to_slack(self, report: IncidentReport, logger: ExecutionLogger) -> None:
+        if not self.tools.slack_enabled:
             started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
             logger.node_failed(
-                "slk", "Slack Notifier", "Slack notification failed", started,
-                RuntimeError("Slack MCP tools not loaded — SLACK_MCP_COMMAND is not configured in the environment"),
+                "slk", "Slack Notifier", "Slack notification skipped", started,
+                RuntimeError("Slack MCP not configured — SLACK_MCP_COMMAND is not set"),
             )
             return
 
         slack_message = _format_slack_report(report)
-        print(f"[DEBUG] Slack message being sent:\n{slack_message}")
         started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
         try:
-            response = agents.slack_notifier(
-                f"Post this exact message to Slack channel C0B2QUEU4NN using slack_post_message:\n\n{slack_message}"
-            )
-            print(f"[DEBUG] Slack notifier response:\n{response}")
+            with slack_client_context(self.tools) as slack_tools:
+                notifier = Agent(
+                    model=_build_model(self.config),
+                    system_prompt=SLACK_NOTIFIER_PROMPT,
+                    tools=slack_tools,
+                )
+                notifier(
+                    f"Post this exact message to Slack channel C0B2QUEU4NN using slack_post_message:\n\n{slack_message}"
+                )
             logger.node_completed("slk", "Slack Notifier", "Slack notification sent", started, "ok")
         except Exception as exc:
             logger.node_failed("slk", "Slack Notifier", "Slack notification failed", started, exc)
