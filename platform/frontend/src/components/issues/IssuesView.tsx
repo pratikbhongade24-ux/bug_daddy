@@ -47,6 +47,12 @@ function slaTargets(priority: string) {
   return map[priority] || map.p2;
 }
 
+function minutesToHoursLabel(minutes: number): string {
+  const hours = minutes / 60;
+  const rounded = Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(1)));
+  return `${rounded}h`;
+}
+
 export function IssuesView(props: {
   stats: Record<string, number>;
   tab: IssueTab;
@@ -159,7 +165,7 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('id')}>Issue ID</th>
                 <th>Source</th>
                 <th>Error</th>
-                <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
+                <th onClick={() => props.sortBy('freq')}>Freq</th>
                 <th>Priority</th>
                 <th>SLA</th>
                 <th>Criticality</th>
@@ -257,9 +263,9 @@ export const IssueRow = memo(function IssueRow({
           const resolve = !kpi ? t.resolve : kpi.resolve_target_minutes;
           return (
             <span>
-              A:{ack}m
+              A:{minutesToHoursLabel(ack)}
               <br />
-              R:{resolve}m
+              R:{minutesToHoursLabel(resolve)}
             </span>
           );
         })()}

@@ -1,4 +1,4 @@
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useMemo, useState } from 'react';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { Power, RefreshCcw, Shield, SlidersHorizontal } from 'lucide-react';
 import { AiQueueStatus, User, ToastKind } from '@/lib/types';
@@ -36,6 +36,12 @@ export function AdminView({
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ username: '', email: '', full_name: '', password: '', role_name: 'user', status: 'active' });
   const [queueLength, setQueueLength] = useState('');
+  const [queueSearch, setQueueSearch] = useState('');
+  const [queueStatusFilter, setQueueStatusFilter] = useState('');
+  const [queueSort, setQueueSort] = useState<'updated_desc' | 'updated_asc' | 'attempts_desc'>('updated_desc');
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
   
   const createMutation = useMutation({
     mutationFn: () => apiJson<User>('/admin/users', { method: 'POST', body: JSON.stringify({ ...form, full_name: form.full_name || null }) }),
@@ -48,6 +54,46 @@ export function AdminView({
   });
   const queueConfig = aiQueue?.config;
   const displayQueueLength = queueLength || String(queueConfig?.queue_length ?? 3);
+  const queueItems = aiQueue?.items || [];
+  const queueStatuses = Array.from(new Set(queueItems.map((i) => i.status).filter(Boolean))).sort();
+
+  const filteredQueueItems = useMemo(() => {
+    const q = queueSearch.trim().toLowerCase();
+    const rows = queueItems
+      .filter((item) => !queueStatusFilter || item.status === queueStatusFilter)
+      .filter((item) => {
+        if (!q) return true;
+        return (
+          String(item.issue_id).includes(q) ||
+          (item.service_name || '').toLowerCase().includes(q) ||
+          (item.worker_id || '').toLowerCase().includes(q) ||
+          (item.status || '').toLowerCase().includes(q)
+        );
+      });
+    if (queueSort === 'attempts_desc') {
+      return [...rows].sort((a, b) => b.attempts - a.attempts);
+    }
+    if (queueSort === 'updated_asc') {
+      return [...rows].sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
+    }
+    return [...rows].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+  }, [queueItems, queueSearch, queueStatusFilter, queueSort]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return users
+      .filter((user) => !userRoleFilter || user.role === userRoleFilter)
+      .filter((user) => !userStatusFilter || user.status === userStatusFilter)
+      .filter((user) => {
+        if (!q) return true;
+        return (
+          user.username.toLowerCase().includes(q) ||
+          user.email.toLowerCase().includes(q) ||
+          (user.full_name || '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [users, userSearch, userRoleFilter, userStatusFilter]);
 
   const updateQueueMutation = useMutation({
     mutationFn: (payload: { is_active?: boolean; queue_length?: number }) => apiJson('/admin/ai-queue', { method: 'PATCH', body: JSON.stringify(payload) }),
@@ -219,7 +265,26 @@ export function AdminView({
         </div>
         <section className="admin-card admin-list-card">
           <div className="admin-card-head">AI Queue Activity</div>
-          <div className="admin-list-wrap">
+          <div className="admin-table-toolbar">
+            <input
+              className="admin-table-search"
+              placeholder="Search issue/service/worker..."
+              value={queueSearch}
+              onChange={(event) => setQueueSearch(event.target.value)}
+            />
+            <select className="admin-table-select" value={queueStatusFilter} onChange={(event) => setQueueStatusFilter(event.target.value)}>
+              <option value="">All status</option>
+              {queueStatuses.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <select className="admin-table-select" value={queueSort} onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}>
+              <option value="updated_desc">Latest first</option>
+              <option value="updated_asc">Oldest first</option>
+              <option value="attempts_desc">Highest attempts</option>
+            </select>
+          </div>
+          <div className="admin-list-wrap queue-activity-wrap">
             <table className="admin-table">
               <colgroup>
                 <col className="aq-col-issue" />
@@ -240,22 +305,41 @@ export function AdminView({
                 </tr>
               </thead>
               <tbody>
-                {(aiQueue?.items || []).map((item) => (
+                {filteredQueueItems.map((item) => (
                   <tr key={item.id}>
                     <td className="td-id">#{item.issue_id}</td>
                     <td className="td-own">{item.service_name || '-'}</td>
                     <td><span className={`admin-badge qstat ${queueStatusClass(item.status)}`}>{item.status}</span></td>
                     <td className="td-desc" title={item.worker_id || ''}>{item.worker_id || '-'}</td>
-                    <td className="td-own">{item.attempts}</td>
+                    <td className="td-own"><span className="attempt-pill">{item.attempts}</span></td>
                     <td>{item.updated_at ? new Date(item.updated_at).toLocaleString('en-IN') : '-'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {queueLoading ? <div className="empty-state">Loading queue...</div> : null}
-            {!queueLoading && !(aiQueue?.items || []).length ? <div className="empty-state">No queue activity yet.</div> : null}
+            {!queueLoading && !filteredQueueItems.length ? <div className="empty-state">No queue activity matches these filters.</div> : null}
           </div>
           <div className="admin-card-head admin-card-head-spaced">Users</div>
+          <div className="admin-table-toolbar">
+            <input
+              className="admin-table-search"
+              placeholder="Search username/email/name..."
+              value={userSearch}
+              onChange={(event) => setUserSearch(event.target.value)}
+            />
+            <select className="admin-table-select" value={userRoleFilter} onChange={(event) => setUserRoleFilter(event.target.value)}>
+              <option value="">All roles</option>
+              <option value="admin">admin</option>
+              <option value="user">user</option>
+            </select>
+            <select className="admin-table-select" value={userStatusFilter} onChange={(event) => setUserStatusFilter(event.target.value)}>
+              <option value="">All status</option>
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+              <option value="locked">locked</option>
+            </select>
+          </div>
           <div className="admin-list-wrap">
             <table className="admin-table">
               <thead>
@@ -269,7 +353,7 @@ export function AdminView({
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr key={user.id}>
                     <td>{user.username}</td>
                     <td>{user.email}</td>
@@ -293,7 +377,7 @@ export function AdminView({
               </tbody>
             </table>
             {loading ? <div className="empty-state">Loading users...</div> : null}
-            {!loading && !users.length ? <div className="empty-state">No users found.</div> : null}
+            {!loading && !filteredUsers.length ? <div className="empty-state">No users match these filters.</div> : null}
           </div>
         </section>
       </div>
