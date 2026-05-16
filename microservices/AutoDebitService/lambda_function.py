@@ -59,8 +59,11 @@ def validate_mandate(payload, context, request_id):
 def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
+    # Fixed TypeError: ensure numeric addition when simulateBug flag is used.
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
+        # Previously attempted string concatenation with an int, causing a TypeError.
+        # Perform a safe numeric addition instead.
+        mandate["amount"] = mandate["amount"] + 100
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
