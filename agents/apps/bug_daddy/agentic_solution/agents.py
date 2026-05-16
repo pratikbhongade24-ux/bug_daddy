@@ -16,6 +16,7 @@ from agentic_solution.prompts import (
     INCIDENT_ORCHESTRATOR_PROMPT,
     INCIDENT_REPORT_WRITER_PROMPT,
     INCIDENT_REPORT_REVIEWER_PROMPT,
+    SLACK_NOTIFIER_PROMPT,
     REVIEWER_PROMPT,
     SME_AGENT_PROMPT,
     CLASSIFIER_PROMPT,
@@ -28,6 +29,7 @@ class IncidentAgentBundle:
     orchestrator: Agent
     report_writer: Agent
     report_reviewer: Agent
+    slack_notifier: Agent
 
 
 @dataclass(slots=True)
@@ -59,6 +61,7 @@ def build_incident_agents(config: AppConfig, tools: dict[str, list[Any]]) -> Inc
         ),
         report_writer=Agent(model=model, system_prompt=INCIDENT_REPORT_WRITER_PROMPT, tools=[]),
         report_reviewer=Agent(model=model, system_prompt=INCIDENT_REPORT_REVIEWER_PROMPT, tools=[]),
+        slack_notifier=Agent(model=model, system_prompt=SLACK_NOTIFIER_PROMPT, tools=tools["slack"]),
     )
 
 
