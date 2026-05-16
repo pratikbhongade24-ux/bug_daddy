@@ -38,7 +38,7 @@ git pull origin "${BRANCH}"
 echo "Building frontend..."
 cd "${REMOTE_ROOT}/platform/frontend"
 rm -rf node_modules
-npm ci --omit=dev
+npm ci
 npm run build
 
 # Reload if the pm2 entry exists, otherwise start fresh. pm2's treekill handles

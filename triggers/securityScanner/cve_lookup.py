@@ -74,6 +74,8 @@ def lookup_cves(
 
     if not name or version in ("unknown", "latest", ""):
         return []
+    if comp_type in ("os_package", "container_image"):
+        return []
 
     results: list[dict] = []
 
@@ -82,7 +84,7 @@ def lookup_cves(
     # For pip/npm packages use OSV only — it's instant, no rate limit, and
     # more accurate for package-level CVEs. NVD keyword search is too noisy
     # for individual packages and would add 7s delay per package.
-    if comp_type in ("pip_package", "npm_package", "package"):
+    if comp_type in ("pip_package", "npm_package"):
         if ecosystem:
             results.extend(_osv_query(name, version, ecosystem))
     else:
@@ -137,7 +139,9 @@ def _nvd_query(name: str, version: str, api_key: str | None) -> list[dict]:
         score, severity = _extract_nvd_cvss(cve.get("metrics", {}))
         hits.append({
             "cve_id": cve_id,
+            "aliases": [cve_id] if cve_id else [],
             "source": "nvd",
+            "tool_name": "NVD",
             "severity": severity,
             "cvss_score": score,
             "description": description[:500],
@@ -180,15 +184,30 @@ def _osv_query(name: str, version: str, ecosystem: str) -> list[dict]:
     hits = []
     for vuln in resp.json().get("vulns", []):
         severity, score = _extract_osv_severity(vuln.get("severity", []))
+        vuln_id, aliases = _canonical_osv_id(vuln)
         hits.append({
-            "cve_id": vuln.get("id", ""),
+            "cve_id": vuln_id,
+            "aliases": aliases,
             "source": "osv",
+            "tool_name": "OSV",
             "severity": severity,
             "cvss_score": score,
             "description": (vuln.get("summary") or vuln.get("details") or "")[:500],
             "published": vuln.get("published", "")[:10],
         })
     return hits
+
+
+def _canonical_osv_id(vuln: dict) -> tuple[str, list[str]]:
+    ids = [vuln.get("id", ""), *(vuln.get("aliases") or [])]
+    aliases = []
+    for value in ids:
+        if value and value not in aliases:
+            aliases.append(value)
+    for value in aliases:
+        if value.startswith("CVE-"):
+            return value, aliases
+    return (aliases[0] if aliases else "unknown"), aliases
 
 
 def _extract_osv_severity(severity_list: list[dict]) -> tuple[str, float | None]:
@@ -218,7 +237,7 @@ def _resolve_ecosystem(name: str, comp_type: str) -> str | None:
     if name in _RUNTIME_TO_ECOSYSTEM:
         return _RUNTIME_TO_ECOSYSTEM[name]
     # Pip packages extracted from Lambda zip
-    if comp_type in ("package", "pip_package"):
+    if comp_type == "pip_package":
         return "PyPI"
     # npm packages extracted from Lambda zip
     if comp_type == "npm_package":
