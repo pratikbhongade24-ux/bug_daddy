@@ -56,20 +56,6 @@ function withEta(items: Issue[]) {
   return items.map((issue, index) => ({ ...issue, eta: eta(index + 1), origin: issue.source }));
 }
 
-function hasPermission(user: User | null, permission: string) {
-  if (!user) return false;
-  try {
-    const token = localStorage.getItem('bugDaddyAccessToken');
-    if (!token) return false;
-    const encoded = token.split('.')[1];
-    const padded = encoded + '='.repeat((4 - (encoded.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
-    return Array.isArray(payload.permissions) && payload.permissions.includes(permission);
-  } catch {
-    return false;
-  }
-}
-
 export function DashboardApp() {
   const queryClient = useQueryClient();
   const [mounted, setMounted] = useState(false);
@@ -110,7 +96,7 @@ export function DashboardApp() {
   }
 
   function setView(nextView: ViewName) {
-    if ((nextView === 'admin' || nextView === 'ai_queue') && !hasPermission(authUser, 'users.read')) {
+    if ((nextView === 'admin' || nextView === 'ai_queue') && authUser?.role !== 'admin') {
       toast('Admin access required', 'err');
       return;
     }
@@ -169,12 +155,12 @@ export function DashboardApp() {
   const usersQuery = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: () => apiJson<ListResponse<User>>('/admin/users'),
-    enabled: view === 'admin' && hasPermission(authUser, 'users.read'),
+    enabled: view === 'admin' && authUser?.role === 'admin',
   });
   const aiQueueQuery = useQuery({
     queryKey: ['admin', 'ai-queue'],
     queryFn: () => apiJson<AiQueueStatus>('/admin/ai-queue'),
-    enabled: (view === 'admin' || view === 'ai_queue') && hasPermission(authUser, 'users.read'),
+    enabled: (view === 'admin' || view === 'ai_queue') && authUser?.role === 'admin',
     refetchInterval: view === 'admin' || view === 'ai_queue' ? 15_000 : false,
   });
 
@@ -182,7 +168,7 @@ export function DashboardApp() {
   const charts = chartsQuery.data || emptyCharts;
   const issues = issuesQuery.data || emptyIssues;
   const feed = feedQuery.data?.items || [];
-  const isAdmin = authUser?.role === 'admin' && hasPermission(authUser, 'users.read');
+  const isAdmin = authUser?.role === 'admin';
   const dashboardHardError =
     (summaryQuery.isError && !summaryQuery.data) ||
     (chartsQuery.isError && !chartsQuery.data) ||
