@@ -67,8 +67,21 @@ def verify_aadhaar(payload, context, request_id):
 def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
+    # Guard against the intentional simulated bug that caused a ZeroDivisionError.
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Log the full payload for audit purposes.
+        log("simulate_bug_triggered", payload)
+        # Return a controlled response instead of raising an exception.
+        simulated_response = {
+            "faceMatch": {
+                "score": None,
+                "result": "SIMULATED_ERROR",
+                "error": "face_threshold flag triggered"
+            },
+            "message": "Face match simulation triggered – safe response returned"
+        }
+        return response(context, request_id, "runFaceMatch", payload, simulated_response)
+    # Normal execution path.
     return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
 
 
