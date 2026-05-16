@@ -37,6 +37,8 @@ class ReviewerDaddyRuntime:
         logger = ExecutionLogger.from_payload(payload, "reviewer_daddy")
         request = ReviewRequest.model_validate(payload)
 
+        logger.update_issue_status_to_review()
+
         if self.config.dry_run:
             started = logger.node_started("rev", "Reviewer Daddy", "Dry-run final AI review")
             response = ReviewResponse(
@@ -58,7 +60,13 @@ class ReviewerDaddyRuntime:
 
         pr_url: str | None = None
         if disposition == "pull_request":
-            match = _PR_URL_RE.search(review_text)
+            # Search reviewer's own text first; fall back to fix_proposal / strategy_plan
+            # because the reviewer often approves without repeating the PR URL.
+            match = (
+                _PR_URL_RE.search(review_text)
+                or _PR_URL_RE.search(request.fix_proposal or "")
+                or _PR_URL_RE.search(request.strategy_plan or "")
+            )
             if match:
                 pr_url = match.group(0)
                 logger.map_pull_request_resolution(pr_url)

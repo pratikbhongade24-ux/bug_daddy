@@ -1,17 +1,17 @@
-from agentic_solution.config import AppConfig
+from datetime import datetime, timedelta, timezone
+
 from agentic_solution.heuristics import (
     infer_incident_severity,
     infer_review_disposition,
     is_non_code_resolution,
     needs_bug_handoff,
 )
+from agentic_solution.config import AppConfig
 from agentic_solution.mcp import MCPToolBundle
+from agentic_solution.contracts import IncidentRequest
+from agentic_solution.services.incident import _compute_sla_kpis, _effective_criticality, _effective_priority
 from agentic_solution.services.classifier import ClassifierRuntime
-from agentic_solution.services.combined import (
-    LocalPeerRuntimeClient,
-    _enable_local_peers,
-    _target_from_payload,
-)
+from agentic_solution.services.combined import LocalPeerRuntimeClient, _enable_local_peers, _target_from_payload
 
 
 class DummyRuntime:
@@ -27,24 +27,31 @@ def test_infer_incident_severity_detects_sev1_markers():
     assert infer_incident_severity("P1 outage affecting all customers") == "sev1"
 
 
-def test_needs_bug_handoff_is_disabled_by_design():
-    """The legacy keyword sweep fired too broadly — bug routing is now
-    classifier-driven. Heuristic stays a no-op stub by contract."""
-    assert needs_bug_handoff("Exception in checkout service", "stack trace attached") is False
+def test_needs_bug_handoff_detects_code_signals():
+    assert needs_bug_handoff("Exception in checkout service", "stack trace attached") is True
 
 
 def test_is_non_code_resolution_detects_jira_only_path():
     assert is_non_code_resolution("This is a non-code operational fix", "jira-only resolution") is True
 
 
-def test_infer_review_disposition_detects_rework():
-    """The hardened heuristic accepts the explicit "rejected" phrase as
-    well as "send back for rework". The previous test phrasing fell
-    between regex variants — this is the canonical form."""
-    assert (
-        infer_review_disposition("This patch is rejected — send back for rework")
-        == "rework_required"
+def test_is_non_code_resolution_overrides_critic_verdict_when_body_describes_code_fix():
+    strategy = (
+        "Edited microservices/AutoDebitService/lambda_function.py at line 63 to "
+        "cast the value to str. Branch fix/BUG-101 opened in PR #48."
     )
+    critic = "Looks good.\n[STRATEGY_VERDICT: NON_CODE]"
+    assert is_non_code_resolution(strategy, critic) is False
+
+
+def test_is_non_code_resolution_honors_critic_non_code_when_body_is_operational():
+    strategy = "Update the runbook and assign the Jira ticket to the on-call. No code changes."
+    critic = "Agreed.\n[STRATEGY_VERDICT: NON_CODE]"
+    assert is_non_code_resolution(strategy, critic) is True
+
+
+def test_infer_review_disposition_detects_rework():
+    assert infer_review_disposition("Reject this patch and send for rework") == "rework_required"
 
 
 def test_combined_runtime_target_detection():
@@ -97,20 +104,10 @@ def test_classifier_creates_jira_before_bug_handoff(monkeypatch):
 
     config = AppConfig()
     _enable_local_peers(config)
-    tools = MCPToolBundle(
-        slack_config=config.slack,
-        jira_tools=[],
-        bitbucket_tools=[],
-        github_read_only_tools=[],
-        github_read_write_tools=[],
-        github_pr_tools=[],
-        diagnostics={},
-    )
+    tools = MCPToolBundle([], [], [], [], {})
     peers = DummyPeers()
     runtime = ClassifierRuntime(config=config, tools=tools, peers=peers)
-    # ClassifierRuntime is a slots dataclass — patch at the class level
-    # so monkeypatch doesn't try to assign to an instance __dict__.
-    monkeypatch.setattr(ClassifierRuntime, "_build_agent", lambda self: DummyClassifierAgent())
+    monkeypatch.setattr(runtime, "_build_agent", lambda: DummyClassifierAgent())
     monkeypatch.setattr("agentic_solution.services.classifier.jira_create_issue", fake_create_issue)
 
     response = runtime.handle(
@@ -125,8 +122,24 @@ def test_classifier_creates_jira_before_bug_handoff(monkeypatch):
 
     assert response == {"component": "bug_daddy", "summary": "ok"}
     assert created["summary"].startswith("[Bug Daddy] kyc-service")
-    assert created["issue_type"] == "Bug"
+    assert created["issue_type"] == "Task"
     assert peers.peer.name == "bug_daddy"
     assert peers.payload["resolution_jira"] == "BUG-123"
     assert peers.payload["metadata"]["jira_key"] == "BUG-123"
     assert peers.payload["metadata"]["request_id"] == "req-1"
+
+
+def test_incident_sla_kpis_and_priority_criticality_defaults():
+    opened_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+    acknowledged_at = opened_at + timedelta(minutes=10)
+    request = IncidentRequest(prompt="P1 outage", opened_at=opened_at, acknowledged_at=acknowledged_at)
+
+    priority = _effective_priority("unknown", "sev1")
+    criticality = _effective_criticality("unknown", "sev1")
+    kpis = _compute_sla_kpis(request, priority)
+
+    assert priority == "p1"
+    assert criticality == "critical"
+    assert kpis.ack_target_minutes == 15
+    assert kpis.time_to_ack_minutes == 10
+    assert kpis.ack_breached is False

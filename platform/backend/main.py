@@ -931,6 +931,11 @@ def _runtime_payload_for_issue(
         "execution_callback_url": AGENT_EXECUTION_CALLBACK_URL,
         "execution_log_secret": AGENT_EXECUTION_LOG_SECRET,
     }
+    # Also set these at the top level so ExecutionLogger.from_payload can read them directly
+    if AGENT_EXECUTION_CALLBACK_URL:
+        runtime_payload["execution_log_endpoint"] = AGENT_EXECUTION_CALLBACK_URL.rstrip("/")
+    if AGENT_EXECUTION_LOG_SECRET:
+        runtime_payload["execution_log_secret"] = AGENT_EXECUTION_LOG_SECRET
     append_execution_event(
         conn,
         session_id,
@@ -1212,18 +1217,33 @@ def ensure_execution_schema(conn):
               triggered_by   VARCHAR(255) NULL,
               current_phase  VARCHAR(100) NULL,
               phase_detail   TEXT NULL,
+              assets_count   INT NOT NULL DEFAULT 0,
+              dependencies_count INT NOT NULL DEFAULT 0,
               findings_count INT NOT NULL DEFAULT 0,
               critical_count INT NOT NULL DEFAULT 0,
               high_count     INT NOT NULL DEFAULT 0,
+              tools_json     JSON NULL,
+              report_json    LONGTEXT NULL,
               error_message  TEXT NULL,
               started_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               completed_at   DATETIME NULL,
               created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               INDEX idx_security_sessions_status (status),
               INDEX idx_security_sessions_created (created_at)
             )
             """
         )
+        for column_name, definition in [
+            ("assets_count", "INT NOT NULL DEFAULT 0 AFTER phase_detail"),
+            ("dependencies_count", "INT NOT NULL DEFAULT 0 AFTER assets_count"),
+            ("tools_json", "JSON NULL AFTER high_count"),
+            ("report_json", "LONGTEXT NULL AFTER tools_json"),
+            ("updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at"),
+        ]:
+            cur.execute("SHOW COLUMNS FROM security_scan_sessions LIKE %s", (column_name,))
+            if not cur.fetchone():
+                cur.execute(f"ALTER TABLE security_scan_sessions ADD COLUMN {column_name} {definition}")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS ai_queue_config (
@@ -1272,6 +1292,19 @@ def ensure_execution_schema(conn):
             cur.execute("ALTER TABLE ai_queue_items DROP INDEX uq_ai_queue_issue_active")
             cur.execute("ALTER TABLE ai_queue_items ADD INDEX idx_ai_queue_issue_status (issue_id, status)")
     seed_workflow_definitions(conn)
+
+
+def fail_interrupted_security_sessions(conn) -> None:
+    now = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE security_scan_sessions
+               SET status = 'failed',
+                   error_message = 'Scan interrupted by backend restart before completion.',
+                   completed_at = %s
+               WHERE status = 'processing'""",
+            (now,),
+        )
 
 
 def seed_workflow_definitions(conn):
@@ -1497,6 +1530,7 @@ def ensure_schema_and_seed_data():
         ensure_core_schema(conn)
         seed_core_data(conn)
         ensure_execution_schema(conn)
+        fail_interrupted_security_sessions(conn)
         with conn.cursor() as cur:
             cur.execute("SHOW COLUMNS FROM users LIKE 'username'")
             if not cur.fetchone():
@@ -2842,6 +2876,35 @@ def map_agent_execution_pull_request_resolution(
     return _map_execution_resolution(session_id, resolution_pr=resolution_pr)
 
 
+@app.post("/agent/executions/{session_id}/issue-status")
+def update_agent_execution_issue_status(
+    session_id: str,
+    _secret: None = Depends(verify_execution_log_secret),
+):
+    """Move the linked issue status to in_review when reviewer_daddy takes ownership."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Execution session not found")
+        issue_id = row.get("issue_id")
+        if not issue_id:
+            raise HTTPException(status_code=400, detail="Execution session is not linked to an issue")
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE service_exception_log SET status = 'in_review' WHERE id = %s AND status = 'in_progress'",
+                (issue_id,),
+            )
+        return fetch_issue_by_id(conn, issue_id)
+    finally:
+        conn.close()
+
+
 @app.get("/agent/workflows/{workflow_key}")
 def get_agent_workflow(
     workflow_key: str,
@@ -2978,7 +3041,7 @@ def _extract_pull_request_url(result: dict[str, Any]) -> str | None:
             return str(review_response["pr_url"])
 
     for artifact in candidates:
-        if not isinstance(artifact, dict) or artifact.get("type") != "pull_request":
+        if not isinstance(artifact, dict):
             continue
         content = artifact.get("content", "")
         if isinstance(content, dict):
@@ -3349,26 +3412,65 @@ def _update_security_session(conn, session_id: str, **fields):
         )
 
 
-def _upsert_cve_finding(conn, finding: dict, scan_date: str, now: str):
+def _canonical_security_vuln_id(finding: dict) -> str:
+    aliases = finding.get("aliases") or []
+    ids = [finding.get("cve_id", ""), *aliases]
+    for value in ids:
+        if isinstance(value, str) and value.startswith("CVE-"):
+            return value
+    for value in ids:
+        if isinstance(value, str) and value:
+            return value
+    return "unknown"
+
+
+def _security_finding_fingerprint(finding: dict) -> str:
     import hashlib as _hashlib
-    cve_id = finding.get("cve_id", "unknown")
+
+    asset_id = (
+        finding.get("asset_id")
+        or finding.get("function_arn")
+        or finding.get("resource_id")
+        or finding.get("service")
+        or "unknown"
+    )
+    identity = "|".join([
+        "security_scanner",
+        _canonical_security_vuln_id(finding).strip().lower(),
+        str(asset_id).strip().lower(),
+        str(finding.get("component") or finding.get("package_name") or "unknown").strip().lower(),
+    ])
+    return _hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _security_tool_name(finding: dict) -> str:
+    return str(finding.get("tool_name") or finding.get("source") or "unknown").upper()
+
+
+def _upsert_cve_finding(conn, finding: dict, scan_date: str, now: str) -> str:
+    cve_id = _canonical_security_vuln_id(finding)
     service = finding.get("service", "unknown")
     severity = finding.get("severity", "UNKNOWN").upper()
     severity_map = {"CRITICAL": "cve_critical", "HIGH": "cve_high", "MEDIUM": "cve_medium", "LOW": "cve_low"}
     issue_type = severity_map.get(severity, "cve_low")
-    fingerprint = _hashlib.sha256(f"security_scanner|{cve_id}|{service}".encode()).hexdigest()
-    description = f"[{cve_id}] {finding.get('description', '')}"[:1000]
+    fingerprint = _security_finding_fingerprint(finding)
+    tool_name = _security_tool_name(finding)
+    finding = {**finding, "cve_id": cve_id, "tool_name": tool_name, "fingerprint": fingerprint}
+    description = f"[{tool_name}] [{cve_id}] {finding.get('description', '')}"[:1000]
     stack_trace = "\n".join([
         f"CVE ID:    {cve_id}",
+        f"Tool:      {tool_name}",
         f"Source:    {finding.get('source', '')}",
         f"Severity:  {severity}  CVSS: {finding.get('cvss_score', 'N/A')}",
         f"Component: {finding.get('component', '')} {finding.get('affected_version', '')} ({finding.get('component_type', '')})",
         f"Service:   {service} ({finding.get('asset_type', '')})",
+        f"Asset:     {finding.get('asset_id', '')}",
+        f"Fix:       {finding.get('fixed_version', '')}",
         f"Published: {finding.get('published', '')}",
         "",
         f"Description: {finding.get('description', '')}",
     ])[:65000]
-    execution_logs = json.dumps(finding, indent=2)[:65000]
+    execution_logs = json.dumps(finding, indent=2, default=str)[:65000]
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM service_exception_log WHERE fingerprint = %s LIMIT 1",
@@ -3379,7 +3481,9 @@ def _upsert_cve_finding(conn, finding: dict, scan_date: str, now: str):
             cur.execute(
                 """UPDATE service_exception_log
                    SET last_seen = %s, description = %s, stack_trace = %s,
-                       entire_execution_logs = %s, issue_type = %s
+                       entire_execution_logs = %s, issue_type = %s,
+                       resolved_at = CASE WHEN status = 'resolved' THEN NULL ELSE resolved_at END,
+                       status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END
                    WHERE id = %s""",
                 (f"{scan_date} 00:00:00", description, stack_trace, execution_logs, issue_type, existing["id"]),
             )
@@ -3398,6 +3502,89 @@ def _upsert_cve_finding(conn, finding: dict, scan_date: str, now: str):
                     "open", None, None, None, now, None,
                 ),
             )
+    return fingerprint
+
+
+def _close_stale_security_findings(conn, seen_fingerprints: set[str], now: str) -> int:
+    with conn.cursor() as cur:
+        if seen_fingerprints:
+            placeholders = ", ".join(["%s"] * len(seen_fingerprints))
+            cur.execute(
+                f"""UPDATE service_exception_log
+                    SET status = 'resolved', resolved_at = %s
+                    WHERE source = 'security_scanner'
+                      AND status IN ('open', 'in_progress', 'in_review')
+                      AND fingerprint NOT IN ({placeholders})""",
+                [now, *sorted(seen_fingerprints)],
+            )
+        else:
+            cur.execute(
+                """UPDATE service_exception_log
+                   SET status = 'resolved', resolved_at = %s
+                   WHERE source = 'security_scanner'
+                     AND status IN ('open', 'in_progress', 'in_review')""",
+                (now,),
+            )
+        return cur.rowcount
+
+
+def _security_tool_breakdown(report: dict, findings: list[dict]) -> list[dict]:
+    tool_rows = [dict(item) for item in report.get("tool_results", [])]
+    grouped: dict[str, dict] = {}
+    for finding in findings:
+        key = str(finding.get("tool_name") or finding.get("source") or "unknown")
+        current = grouped.setdefault(key, {
+            "tool": key,
+            "category": "vulnerability_source",
+            "status": "ok",
+            "findings": 0,
+            "critical": 0,
+            "high": 0,
+            "message": "",
+        })
+        current["findings"] += 1
+        if finding.get("severity") == "CRITICAL":
+            current["critical"] += 1
+        if finding.get("severity") == "HIGH":
+            current["high"] += 1
+    tool_rows.extend(grouped.values())
+    return tool_rows
+
+
+def _dedupe_security_findings(findings: list[dict]) -> list[dict]:
+    severity_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
+    deduped: dict[str, dict] = {}
+    for finding in findings:
+        fingerprint = _security_finding_fingerprint(finding)
+        normalized = {**finding, "fingerprint": fingerprint, "cve_id": _canonical_security_vuln_id(finding)}
+        existing = deduped.get(fingerprint)
+        if not existing:
+            deduped[fingerprint] = normalized
+            continue
+        existing_tools = {str(existing.get("tool_name") or existing.get("source") or "unknown")}
+        existing_tools.add(str(normalized.get("tool_name") or normalized.get("source") or "unknown"))
+        existing["tool_name"] = " / ".join(sorted(existing_tools))
+        aliases = []
+        for value in [*(existing.get("aliases") or []), *(normalized.get("aliases") or [])]:
+            if value and value not in aliases:
+                aliases.append(value)
+        existing["aliases"] = aliases
+        if severity_rank.get(normalized.get("severity", "UNKNOWN"), 4) < severity_rank.get(existing.get("severity", "UNKNOWN"), 4):
+            for key in ("severity", "cvss_score", "description", "published", "fixed_version", "remediation"):
+                if normalized.get(key):
+                    existing[key] = normalized[key]
+    return list(deduped.values())
+
+
+def _json_loads_safe(value: Any, default: Any):
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return default
 
 
 def run_security_scan_background(session_id: str, triggered_by: str):
@@ -3425,22 +3612,46 @@ def run_security_scan_background(session_id: str, triggered_by: str):
 
         # Phase 1 — inventory
         _update_security_session(conn, session_id, current_phase="inventory", phase_detail="Discovering AWS assets...")
-        from aws_inventory import inventory_all
-        assets = inventory_all(SECURITY_SCANNER_AWS_REGION, session=_scanner_session)
+        from aws_inventory import inventory_full
+        inventory = inventory_full(SECURITY_SCANNER_AWS_REGION, session=_scanner_session)
+        assets = inventory["assets"]
+        dependencies = inventory["dependencies"]
+        tool_results = inventory["tool_results"]
+        _update_security_session(
+            conn,
+            session_id,
+            assets_count=len(assets),
+            dependencies_count=len(dependencies),
+            tools_json=json.dumps(tool_results, default=str),
+            phase_detail=f"Discovered {len(assets)} assets and {len(dependencies)} dependency edges.",
+        )
 
         # Phase 2 — package extraction
         _update_security_session(conn, session_id, current_phase="package_extraction", phase_detail="Extracting Lambda deployment packages...")
         from lambda_package_extractor import extract_lambda_dependencies
         lmb = _scanner_session.client("lambda")
+        extracted_lambdas = 0
+        extracted_packages = 0
         for asset in assets:
             if asset["asset_type"] != "lambda" or asset.get("package_type") == "Image":
                 continue
             _update_security_session(conn, session_id, phase_detail=f"Extracting: {asset['service']}")
             pkgs = extract_lambda_dependencies(lmb, asset["service"])
+            extracted_lambdas += 1
+            extracted_packages += len(pkgs)
             runtime = asset.get("runtime", "")
             comp_type = "npm_package" if runtime.startswith("nodejs") else "pip_package"
             for pkg in pkgs:
                 asset["components"].append({"type": comp_type, "name": pkg["name"], "version": pkg["version"]})
+        tool_results.append({
+            "tool": "lambda_package_extractor",
+            "category": "dependency_source",
+            "status": "ok",
+            "assets": extracted_lambdas,
+            "findings": 0,
+            "packages": extracted_packages,
+            "message": "",
+        })
 
         # Phase 3 — CVE lookup
         _update_security_session(conn, session_id, current_phase="cve_lookup", phase_detail="Starting CVE lookup...")
@@ -3453,24 +3664,55 @@ def run_security_scan_background(session_id: str, triggered_by: str):
                 if not name or version in ("unknown", "latest", ""):
                     continue
                 _update_security_session(conn, session_id, phase_detail=f"Checking {name} {version}")
-                findings = lookup_cves(component, asset.get("service", ""), asset.get("asset_type", ""))
+                findings = lookup_cves(component, asset.get("service", ""), asset.get("asset_type", ""), os.getenv("NVD_API_KEY"))
+                for finding in findings:
+                    finding.setdefault("asset_id", asset.get("asset_id") or asset.get("function_arn") or asset.get("instance_id") or asset.get("service"))
+                    finding.setdefault("asset_type", asset.get("asset_type", ""))
+                    finding.setdefault("service", asset.get("service", ""))
                 all_findings.extend(findings)
+        tool_results.append({
+            "tool": "osv_nvd",
+            "category": "vulnerability_source",
+            "status": "ok",
+            "findings": len(all_findings),
+            "message": "",
+        })
+
+        # Phase 3b — Inspector
+        _update_security_session(conn, session_id, phase_detail="Collecting AWS Inspector active findings...")
+        from aws_inspector import collect_inspector_findings
+        inspector_findings, inspector_result = collect_inspector_findings(
+            SECURITY_SCANNER_AWS_REGION,
+            session=_scanner_session,
+        )
+        all_findings.extend(inspector_findings)
+        tool_results.append(inspector_result)
+        all_findings = _dedupe_security_findings(all_findings)
 
         # Phase 4 — save findings
         _update_security_session(conn, session_id, current_phase="report", phase_detail="Saving findings to database...")
+        from report import build_report
+        report = build_report(assets, all_findings, dependencies=dependencies, tool_results=tool_results)
         critical = sum(1 for f in all_findings if f.get("severity") == "CRITICAL")
         high = sum(1 for f in all_findings if f.get("severity") == "HIGH")
+        seen_fingerprints: set[str] = set()
         for finding in all_findings:
-            _upsert_cve_finding(conn, finding, scan_date, now)
+            seen_fingerprints.add(_upsert_cve_finding(conn, finding, scan_date, now))
+        stale_closed = _close_stale_security_findings(conn, seen_fingerprints, now)
+        tool_breakdown = _security_tool_breakdown(report, all_findings)
 
         _update_security_session(
             conn, session_id,
             status="completed",
             current_phase="report",
-            phase_detail=f"Done — {len(all_findings)} CVE(s) found",
+            phase_detail=f"Done — {len(all_findings)} unique CVE finding(s), {stale_closed} stale finding(s) closed",
+            assets_count=len(assets),
+            dependencies_count=len(dependencies),
             findings_count=len(all_findings),
             critical_count=critical,
             high_count=high,
+            tools_json=json.dumps(tool_breakdown, default=str),
+            report_json=json.dumps(report, default=str),
             completed_at=now,
         )
 
@@ -3527,23 +3769,25 @@ def list_security_sessions(
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT session_id, status, triggered_by, current_phase, phase_detail,
-                          findings_count, critical_count, high_count, error_message,
-                          started_at, completed_at, created_at
+                          assets_count, dependencies_count, findings_count, critical_count, high_count,
+                          tools_json, error_message, started_at, completed_at, created_at
                    FROM security_scan_sessions
                    ORDER BY created_at DESC
                    LIMIT %s""",
                 (min(limit, 50),),
             )
             rows = cur.fetchall()
-        sessions = [
-            {
+        sessions = []
+        for r in rows:
+            item = {
                 **r,
                 "started_at": dt_to_str(r.get("started_at")),
                 "completed_at": dt_to_str(r.get("completed_at")),
                 "created_at": dt_to_str(r.get("created_at")),
+                "tools": _json_loads_safe(r.get("tools_json"), []),
             }
-            for r in rows
-        ]
+            item.pop("tools_json", None)
+            sessions.append(item)
         in_progress = any(s["status"] == "processing" for s in sessions)
     finally:
         conn.close()
@@ -3560,8 +3804,8 @@ def get_security_session_progress(
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT session_id, status, triggered_by, current_phase, phase_detail,
-                          findings_count, critical_count, high_count, error_message,
-                          started_at, completed_at, created_at
+                          assets_count, dependencies_count, findings_count, critical_count, high_count,
+                          tools_json, report_json, error_message, started_at, completed_at, created_at
                    FROM security_scan_sessions WHERE session_id = %s LIMIT 1""",
                 (session_id,),
             )
@@ -3570,12 +3814,17 @@ def get_security_session_progress(
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
-    return {
+    response = {
         **row,
         "started_at": dt_to_str(row.get("started_at")),
         "completed_at": dt_to_str(row.get("completed_at")),
         "created_at": dt_to_str(row.get("created_at")),
+        "tools": _json_loads_safe(row.get("tools_json"), []),
+        "report": _json_loads_safe(row.get("report_json"), None),
     }
+    response.pop("tools_json", None)
+    response.pop("report_json", None)
+    return response
 
 
 @app.get("/security/findings")
@@ -3608,7 +3857,8 @@ def list_security_findings(
         with conn.cursor() as cur:
             cur.execute(
                 f"""SELECT id, fingerprint, service_name, issue_type, source, description,
-                           stack_trace, request_id, frequency, first_seen, last_seen, status, created_at
+                           stack_trace, entire_execution_logs, request_id, frequency,
+                           first_seen, last_seen, status, created_at
                     FROM service_exception_log
                     WHERE {where}
                     ORDER BY FIELD(issue_type,'cve_critical','cve_high','cve_medium','cve_low'), last_seen DESC
@@ -3616,17 +3866,27 @@ def list_security_findings(
                 params,
             )
             rows = cur.fetchall()
-        items = [
-            {
+        items = []
+        for r in rows:
+            metadata = _json_loads_safe(r.get("entire_execution_logs"), {})
+            item = {
                 **r,
                 "first_seen": dt_to_str(r.get("first_seen")),
                 "last_seen": dt_to_str(r.get("last_seen")),
                 "created_at": dt_to_str(r.get("created_at")),
                 "severity": r["issue_type"].replace("cve_", "").upper() if r.get("issue_type", "").startswith("cve_") else "UNKNOWN",
-                "cve_id": r.get("request_id", ""),
+                "cve_id": metadata.get("cve_id") or r.get("request_id", ""),
+                "tool_name": metadata.get("tool_name") or metadata.get("source") or "unknown",
+                "component": metadata.get("component") or "",
+                "component_type": metadata.get("component_type") or "",
+                "affected_version": metadata.get("affected_version") or "",
+                "fixed_version": metadata.get("fixed_version") or "",
+                "asset_type": metadata.get("asset_type") or "",
+                "asset_id": metadata.get("asset_id") or "",
+                "cvss_score": metadata.get("cvss_score"),
             }
-            for r in rows
-        ]
+            item.pop("entire_execution_logs", None)
+            items.append(item)
     finally:
         conn.close()
     return {"items": items, "total": len(items)}

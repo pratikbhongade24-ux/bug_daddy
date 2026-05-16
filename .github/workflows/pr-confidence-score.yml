@@ -31,7 +31,7 @@ jobs:
             const sha = pr.head.sha;
 
             // Weights: tests(0.35), quality checks(0.20), risk(0.20), diff quality(0.15), history(0.10)
-            // History is static neutral until a historical signal pipeline is added.
+            // History is estimated from commit verification + collaboration metadata.
             const WEIGHTS = {
               tests: 0.35,
               checks: 0.20,
@@ -81,10 +81,11 @@ jobs:
 
             const tests = allSignals.filter(s => testsRegex.test(s.name));
             const qualityChecks = allSignals.filter(s => checksRegex.test(s.name));
+            const consideredSignals = allSignals.filter(s => !ignoreRegex.test(s.name));
 
             function scoreFromSignals(signalList) {
               const considered = signalList.filter(s => !ignoreRegex.test(s.name));
-              if (considered.length === 0) return 0.6; // neutral fallback
+              if (considered.length === 0) return null;
               const passStates = new Set(["success", "completed", "neutral", "skipped"]);
               let points = 0;
               for (const s of considered) {
@@ -95,8 +96,17 @@ jobs:
               return points / considered.length;
             }
 
-            const testsScoreRaw = scoreFromSignals(tests);
-            const checksScoreRaw = scoreFromSignals(qualityChecks);
+            const globalSignalsScore = scoreFromSignals(consideredSignals);
+            const testsScoreSignal = scoreFromSignals(tests);
+            const checksScoreSignal = scoreFromSignals(qualityChecks);
+
+            const hasTestFile = files.some(f => /(test|tests|spec|__tests__)/i.test(f.filename || ""));
+            const testsScoreRaw =
+              testsScoreSignal ??
+              (globalSignalsScore !== null ? Math.max(0, globalSignalsScore - 0.05) : (hasTestFile ? 0.65 : 0.50));
+            const checksScoreRaw =
+              checksScoreSignal ??
+              (globalSignalsScore !== null ? globalSignalsScore : 0.55);
 
             const fileCount = files.length;
             const additions = files.reduce((n, f) => n + (f.additions || 0), 0);
@@ -123,7 +133,29 @@ jobs:
             else if (fileCount > 12) diffScoreRaw -= 0.10;
             diffScoreRaw = Math.max(0, Math.min(1, diffScoreRaw));
 
-            const historyScoreRaw = 0.70; // neutral-good default until historical telemetry is integrated
+            const commitsResp = await github.rest.pulls.listCommits({
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+            const commits = commitsResp.data || [];
+            const verifiedCommits = commits.filter(c => c?.commit?.verification?.verified).length;
+            const verifiedRatio = commits.length ? (verifiedCommits / commits.length) : 0.5;
+
+            const linkedIssuePattern = /(?:#\d+|\b[A-Z]{2,10}-\d+\b)/;
+            const hasLinkedIssue = linkedIssuePattern.test(pr.title || "") || linkedIssuePattern.test(pr.body || "");
+            const hasAssignees = Array.isArray(pr.assignees) && pr.assignees.length > 0;
+            const hasRequestedReviewers = (Array.isArray(pr.requested_reviewers) && pr.requested_reviewers.length > 0)
+              || (Array.isArray(pr.requested_teams) && pr.requested_teams.length > 0);
+            const draftPenalty = pr.draft ? 0.08 : 0;
+
+            let historyScoreRaw = 0.45 + (verifiedRatio * 0.35);
+            if (hasLinkedIssue) historyScoreRaw += 0.10;
+            if (hasAssignees) historyScoreRaw += 0.05;
+            if (hasRequestedReviewers) historyScoreRaw += 0.05;
+            historyScoreRaw -= draftPenalty;
+            historyScoreRaw = Math.max(0, Math.min(1, historyScoreRaw));
 
             const weighted =
               (WEIGHTS.tests * testsScoreRaw) +
@@ -153,6 +185,9 @@ jobs:
               `  - Files changed: **${fileCount}**`,
               `  - Lines changed (add+del): **${totalChanges}**`,
               `  - Risk-tagged files: **${riskyFiles.length}**`,
+              `  - Signals considered: **${consideredSignals.length}**`,
+              `  - Verified commits: **${verifiedCommits}/${commits.length || 0}**`,
+              `  - Linked issue/Jira key: **${hasLinkedIssue ? "yes" : "no"}**`,
               "",
               "_This is a reviewer aid, not a correctness guarantee._"
             ].join("\n");
@@ -193,4 +228,3 @@ jobs:
 
             core.setOutput("score", finalScore.toFixed(2));
             core.setOutput("level", level);
-

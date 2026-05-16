@@ -80,6 +80,18 @@ export interface Issue {
   frequency: number;
   freq: number;
   criticality: 'Critical' | 'High' | 'Medium' | 'Low' | string;
+  severity?: 'sev1' | 'sev2' | 'sev3' | 'unknown' | string;
+  priority?: 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'unknown' | string;
+  sla_kpis?: {
+    ack_target_minutes: number;
+    resolve_target_minutes: number;
+    time_to_ack_minutes?: number | null;
+    time_to_resolve_minutes?: number | null;
+    ack_remaining_minutes?: number | null;
+    resolve_remaining_minutes?: number | null;
+    ack_breached?: boolean;
+    resolve_breached?: boolean;
+  } | null;
   agent_target: string;
   workflow_key: string;
   status: string;
@@ -260,13 +272,50 @@ export interface SecurityScanSession {
   triggered_by: string | null;
   current_phase: SecurityPhase | null;
   phase_detail: string | null;
+  assets_count: number;
+  dependencies_count: number;
   findings_count: number;
   critical_count: number;
   high_count: number;
+  tools?: SecurityToolResult[];
+  report?: SecurityScanReport | null;
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string | null;
+}
+
+export interface SecurityToolResult {
+  tool: string;
+  category: string;
+  status: 'ok' | 'error' | string;
+  assets?: number;
+  edges?: number;
+  findings?: number;
+  critical?: number;
+  high?: number;
+  packages?: number;
+  message?: string;
+}
+
+export interface SecurityScanReport {
+  summary?: {
+    total_assets?: number;
+    total_dependencies?: number;
+    total_cves?: number;
+    critical?: number;
+    high?: number;
+    tools_ok?: number;
+    tools_error?: number;
+  };
+  dependencies?: Array<{
+    source: string;
+    target: string;
+    relationship: string;
+    source_type?: string;
+    target_type?: string;
+    via?: string;
+  }>;
 }
 
 export interface SecuritySessionsResponse {
@@ -282,6 +331,14 @@ export interface SecurityFinding {
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
   cve_id: string;
   source: string;
+  tool_name: string;
+  component: string;
+  component_type: string;
+  affected_version: string;
+  fixed_version: string;
+  asset_type: string;
+  asset_id: string;
+  cvss_score: number | null;
   description: string | null;
   stack_trace: string | null;
   request_id: string | null;

@@ -6,6 +6,28 @@ import { GitBranch, X, Cloud, FlaskConical, ShieldCheck, ClipboardList, Database
 import { apiJson } from '@/lib/api';
 import { Issue, ExecutionEvent, WorkflowNode, WorkflowEdge, WorkflowGraph, ListResponse } from '@/lib/types';
 
+function normalizedPriority(issue: Issue): string {
+  const raw = (issue.priority || '').toLowerCase();
+  if (['p0', 'p1', 'p2', 'p3', 'p4'].includes(raw)) return raw;
+  const crit = (issue.criticality || '').toLowerCase();
+  if (crit === 'critical') return 'p1';
+  if (crit === 'high') return 'p2';
+  if (crit === 'medium') return 'p3';
+  if (crit === 'low') return 'p4';
+  return 'p2';
+}
+
+function fallbackSla(priority: string) {
+  const map: Record<string, { ack: number; resolve: number }> = {
+    p0: { ack: 5, resolve: 60 },
+    p1: { ack: 15, resolve: 240 },
+    p2: { ack: 30, resolve: 480 },
+    p3: { ack: 60, resolve: 1440 },
+    p4: { ack: 240, resolve: 4320 },
+  };
+  return map[priority] || map.p2;
+}
+
 // Graph utilities from DashboardApp.tsx
 const archNodes: WorkflowNode[] = [
   { id: 'cw', x: 100, y: 20, icon: 'CW', label: 'CloudWatch', sub: 'Microservices', color: 'var(--c6)', type: 'trigger' },
@@ -388,12 +410,22 @@ export function ExecutionGraphModal({
   function endPan() { dragRef.current = null; }
 
   function copyContext() {
+    const priority = normalizedPriority(issue);
+    const sla = issue.sla_kpis || {
+      ack_target_minutes: fallbackSla(priority).ack,
+      resolve_target_minutes: fallbackSla(priority).resolve,
+      ack_remaining_minutes: null,
+      resolve_remaining_minutes: null,
+      ack_breached: false,
+      resolve_breached: false,
+    };
     const lines: string[] = [
       `=== Execution Context ===`,
       `Issue:       ${issue.jiraId}`,
       `Service:     ${issue.service} (${issue.shortSvc})`,
       `Error:       ${issue.err}`,
       `Criticality: ${issue.criticality}`,
+      `Priority:    ${priority.toUpperCase()}`,
       `Frequency:   ${issue.frequency}`,
       `Status:      ${issue.status}`,
       `Owner:       ${issue.owner}`,
@@ -405,6 +437,14 @@ export function ExecutionGraphModal({
       `First Seen:  ${issue.first_seen || 'N/A'}`,
       `Last Seen:   ${issue.last_seen || 'N/A'}`,
     ];
+    lines.push(
+      `SLA Ack Target: ${sla.ack_target_minutes}m`,
+      `SLA Resolve Target: ${sla.resolve_target_minutes}m`,
+      `SLA Ack Remaining: ${sla.ack_remaining_minutes ?? 'N/A'}m`,
+      `SLA Resolve Remaining: ${sla.resolve_remaining_minutes ?? 'N/A'}m`,
+      `SLA Ack Breached: ${sla.ack_breached ? 'YES' : 'NO'}`,
+      `SLA Resolve Breached: ${sla.resolve_breached ? 'YES' : 'NO'}`,
+    );
     if (issue.description) lines.push(`Description: ${issue.description}`);
     if (issue.stack_trace) lines.push(`\n--- Stack Trace ---\n${issue.stack_trace}`);
     if (events.length) {
@@ -446,6 +486,11 @@ export function ExecutionGraphModal({
     return '';
   }
 
+  const effectivePriority = normalizedPriority(issue);
+  const effectiveSla = issue.sla_kpis || {
+    ack_target_minutes: fallbackSla(effectivePriority).ack,
+    resolve_target_minutes: fallbackSla(effectivePriority).resolve,
+  };
   return (
     <div className="modal-ov" role="dialog" aria-modal="true" onMouseDown={(event: MouseEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) onClose(); }}>
       <motion.div
@@ -458,7 +503,19 @@ export function ExecutionGraphModal({
         <div className="modal-hdr">
           <div>
             <div className="modal-title"><GitBranch size={18} /> {isSummary ? 'Execution Summary' : 'Live Execution Graph'} <span>Issue {issue.id}</span></div>
-            <div className="modal-sub">{issue.shortSvc} / freq={issue.freq} / {issue.criticality} / {sessionId || 'workflow preview'}</div>
+            <div className="modal-sub">
+              {issue.shortSvc}
+              {' / '}
+              freq={issue.freq}
+              {' / '}
+              prio={effectivePriority.toUpperCase()}
+              {' / '}
+              sla=A{effectiveSla.ack_target_minutes}m/R{effectiveSla.resolve_target_minutes}m
+              {' / '}
+              {issue.criticality}
+              {' / '}
+              {sessionId || 'workflow preview'}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button className="modal-close" onClick={copyContext} style={{ opacity: copied ? 0.75 : 1 }}>

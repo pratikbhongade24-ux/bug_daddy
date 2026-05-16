@@ -85,7 +85,7 @@ export function DashboardOverview({
         <div className="sec-label animate-enter stagger-2">Service Distribution</div>
         <div className="hcharts-grid animate-enter stagger-3">
           <HorizontalChart
-            title="Backlog by Service"
+            title="Backlog"
             rows={backlogRows}
             onService={(service) => {
               setServiceFilter(service);
@@ -93,7 +93,7 @@ export function DashboardOverview({
             }}
           />
           <HorizontalChart
-            title="Work in Progress by Service"
+            title="Work in Progress"
             rows={wipRows}
             onService={(service) => {
               setServiceFilter(service);

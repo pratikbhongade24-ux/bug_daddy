@@ -85,6 +85,13 @@ def execute_debit(payload, context, request_id):
     log("execute_debit", mandate)
     if payload.get("simulateBug") == "execute_type":
         mandate["amount"] + "100"
+    # Bug: mandate_str_amount — BankStatementService's summarizeCashflow returns
+    # avgMonthlyCredit as a string due to a type coercion bug in the cashflow parser.
+    # AutoDebit uses that value as the debit amount, then tries to add a numeric fee → TypeError.
+    if payload.get("simulateBug") == "mandate_str_amount":
+        amount_from_cashflow = payload.get("amount", "4500")  # arrives as str from BankStatement
+        processing_fee = 50                                    # numeric constant
+        total = amount_from_cashflow + processing_fee          # TypeError: can only concatenate str to str
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 

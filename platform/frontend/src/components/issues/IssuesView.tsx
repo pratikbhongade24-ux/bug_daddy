@@ -25,6 +25,34 @@ function formatTimestamp(value: string | null | undefined) {
   });
 }
 
+function normalizedPriority(issue: Issue): string {
+  const raw = (issue.priority || '').toLowerCase();
+  if (['p0', 'p1', 'p2', 'p3', 'p4'].includes(raw)) return raw;
+  const crit = (issue.criticality || '').toLowerCase();
+  if (crit === 'critical') return 'p1';
+  if (crit === 'high') return 'p2';
+  if (crit === 'medium') return 'p3';
+  if (crit === 'low') return 'p4';
+  return 'p2';
+}
+
+function slaTargets(priority: string) {
+  const map: Record<string, { ack: number; resolve: number }> = {
+    p0: { ack: 5, resolve: 60 },
+    p1: { ack: 15, resolve: 240 },
+    p2: { ack: 30, resolve: 480 },
+    p3: { ack: 60, resolve: 1440 },
+    p4: { ack: 240, resolve: 4320 },
+  };
+  return map[priority] || map.p2;
+}
+
+function minutesToHoursLabel(minutes: number): string {
+  const hours = minutes / 60;
+  const rounded = Number.isInteger(hours) ? String(hours) : String(Number(hours.toFixed(1)));
+  return `${rounded}h`;
+}
+
 export function IssuesView(props: {
   stats: Record<string, number>;
   tab: IssueTab;
@@ -124,6 +152,8 @@ export function IssuesView(props: {
               <col className="col-service" />
               <col className="col-error" />
               <col className="col-frequency" />
+              <col className="col-priority" />
+              <col className="col-sla" />
               <col className="col-criticality" />
               <col className="col-owner" />
               {showJiraColumn ? <col className="col-jira" /> : null}
@@ -135,7 +165,9 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('id')}>Issue ID</th>
                 <th>Source</th>
                 <th>Error</th>
-                <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
+                <th onClick={() => props.sortBy('freq')}>Freq</th>
+                <th>Priority</th>
+                <th>SLA</th>
                 <th>Criticality</th>
                 <th>Owner</th>
                 {showJiraColumn ? <th>Jira</th> : null}
@@ -216,6 +248,27 @@ export const IssueRow = memo(function IssueRow({
         <span className={clsx('freq', issue.frequency > 400 ? 'hi' : issue.frequency > 100 ? 'med' : 'low')}>
           {issue.frequency}
         </span>
+      </td>
+      <td>
+        <span className={clsx('badge', 'prio', `prio-${normalizedPriority(issue)}`)}>
+          {normalizedPriority(issue).toUpperCase()}
+        </span>
+      </td>
+      <td className="td-own">
+        {(() => {
+          const p = normalizedPriority(issue);
+          const kpi = issue.sla_kpis;
+          const t = slaTargets(p);
+          const ack = !kpi ? t.ack : kpi.ack_target_minutes;
+          const resolve = !kpi ? t.resolve : kpi.resolve_target_minutes;
+          return (
+            <span>
+              A:{minutesToHoursLabel(ack)}
+              <br />
+              R:{minutesToHoursLabel(resolve)}
+            </span>
+          );
+        })()}
       </td>
       <td>
         <span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span>
