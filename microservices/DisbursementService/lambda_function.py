@@ -59,8 +59,13 @@ def validate_account(payload, context, request_id):
 def release_funds(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
+    # Removed unsafe simulation that caused ZeroDivisionError.
+    # If simulation is needed in non‑production, guard it with an environment check.
     if payload.get("simulateBug") == "release_zero":
-        disbursement["amount"] / 0
+        # In non‑prod environments we can raise a controlled error for testing.
+        if os.getenv("STAGE") != "prod":
+            raise ValueError("Simulated release zero bug triggered")
+        # In production the flag is ignored to avoid crashes.
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
 
 
