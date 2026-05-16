@@ -12,7 +12,6 @@ import type {
   Issue,
   ListResponse,
   SonarInvokeResponse,
-  SonarReportUrl,
   SonarStatus,
   User,
   ViewName,
@@ -29,6 +28,8 @@ const sectionSkeleton = <div className="view-skeleton" aria-busy="true" />;
 const DashboardOverview = dynamic(() => import('./dashboard/DashboardOverview').then((mod) => mod.DashboardOverview), { ssr: false, loading: () => sectionSkeleton });
 const IssuesView = dynamic(() => import('./issues/IssuesView').then((mod) => mod.IssuesView), { ssr: false, loading: () => sectionSkeleton });
 const SonarView = dynamic(() => import('./sonar/SonarView').then((mod) => mod.SonarView), { ssr: false, loading: () => sectionSkeleton });
+const SonarReportModal = dynamic(() => import('./sonar/SonarReportModal').then((mod) => mod.SonarReportModal), { ssr: false, loading: () => null });
+import type { SonarReport } from './sonar/SonarReportModal';
 const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
 const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
 const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
@@ -78,6 +79,7 @@ export function DashboardApp() {
   const [sortDir, setSortDir] = useState(-1);
   const [prioritizeLoading, setPrioritizeLoading] = useState<Record<number, string>>({});
   const [modalIssue, setModalIssue] = useState<{ issue: Issue; summary: boolean; sessionId?: string } | null>(null);
+  const [sonarReportModal, setSonarReportModal] = useState<{ date: string; report: SonarReport | null; loading: boolean; error?: string } | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
   const [agentActive, setAgentActive] = useState(false);
@@ -235,12 +237,12 @@ export function DashboardApp() {
   });
 
   async function openSonarReport(reportDate: string) {
+    setSonarReportModal({ date: reportDate, report: null, loading: true });
     try {
-      const data = await apiJson<SonarReportUrl>(`/sonar/reports/${reportDate}/url`);
-      window.open(data.url, '_blank', 'noopener,noreferrer');
-      toast(`Presigned URL ready for ${reportDate}`, 'ok');
+      const data = await apiJson<SonarReport>(`/sonar/reports/${reportDate}/data`);
+      setSonarReportModal({ date: reportDate, report: data, loading: false });
     } catch (error) {
-      toast(errorMessage(error, 'Could not open Sonar report'), 'err');
+      setSonarReportModal({ date: reportDate, report: null, loading: false, error: errorMessage(error, 'Could not load Sonar report') });
     }
   }
 
@@ -462,6 +464,15 @@ export function DashboardApp() {
             setAgentActive(false);
             await refreshDashboard();
           }}
+        />
+      ) : null}
+      {sonarReportModal ? (
+        <SonarReportModal
+          date={sonarReportModal.date}
+          report={sonarReportModal.report}
+          loading={sonarReportModal.loading}
+          error={sonarReportModal.error}
+          onClose={() => setSonarReportModal(null)}
         />
       ) : null}
       <ToastContainer toasts={toasts} />
