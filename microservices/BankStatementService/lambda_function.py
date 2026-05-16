@@ -67,8 +67,15 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
+    # Guard against accidental activation of test‑only bug simulation in production.
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        # The simulateBug flag is intended for internal testing only. In production we ignore it.
+        # If explicit testing is required, set the environment variable ENABLE_SIMULATE_BUG="true".
+        if os.getenv("ENABLE_SIMULATE_BUG") == "true":
+            # Preserve original test behaviour for controlled environments.
+            int("not-a-number")
+        else:
+            print("WARN: simulateBug 'amount_cast' ignored in production environment")
     return transactions
 
 
