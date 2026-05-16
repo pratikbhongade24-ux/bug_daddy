@@ -22,8 +22,8 @@ ENV UV_SYSTEM_PYTHON=1 \
     SLACK_DEFAULT_CHANNEL=C0B2QUEU4NN \
     SLACK_MCP_TRANSPORT=stdio \
     SLACK_MCP_COMMAND=npx \
-    SLACK_MCP_ARGS=["-y","@modelcontextprotocol/server-slack"] \
-    SLACK_MCP_TOOL_ALLOWLIST=["slack_post_message","slack_list_channels","slack_get_channel_history","slack_join_channel"]
+    SLACK_MCP_ARGS='["-y","@modelcontextprotocol/server-slack"]' \
+    SLACK_MCP_TOOL_ALLOWLIST='["slack_post_message","slack_list_channels","slack_get_channel_history","slack_join_channel"]'
 
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
     && rm -rf /var/lib/apt/lists/*
