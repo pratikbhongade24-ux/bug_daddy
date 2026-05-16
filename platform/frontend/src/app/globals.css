@@ -1933,6 +1933,44 @@ body { font-size: 15px; }
 .support-widget-input button:disabled { opacity: 0.55; }
 .support-widget-input .ghost { background: transparent; }
 
+.support-conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+}
+.support-conv-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #dce8e2;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.support-conv-item:hover { border-color: #10b981; background: #f0fdf8; }
+.support-conv-item.active { border-color: #10b981; background: #ecfdf5; }
+.support-conv-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #173c31;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.support-conv-date {
+  font-size: 0.68rem;
+  color: #67867a;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 @media (max-width: 720px) {
   .support-fab { right: 0.8rem; bottom: 0.8rem; }
   .support-widget {

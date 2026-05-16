@@ -14,6 +14,12 @@ type ChatMessage = {
   citations?: Array<{ file_path?: string; score?: number }>;
 };
 
+type ConversationMeta = {
+  id: number;
+  title: string;
+  updated_at: string;
+};
+
 type WidgetState = {
   open: boolean;
   minimized: boolean;
@@ -66,6 +72,9 @@ export function SupportChatWidget() {
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+  const [loadingConvs, setLoadingConvs] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
@@ -199,6 +208,38 @@ export function SupportChatWidget() {
   function resetConversation() {
     setState({ open: true, minimized: false, sessionId: createSessionId(), conversationId: null, messages: [] });
     setError(null);
+    setShowHistory(false);
+  }
+
+  async function openHistory() {
+    setShowHistory(true);
+    setLoadingConvs(true);
+    try {
+      const convs = await apiJson<ConversationMeta[]>(`/support/conversations`);
+      setConversations(convs);
+    } catch {
+      setConversations([]);
+    } finally {
+      setLoadingConvs(false);
+    }
+  }
+
+  async function switchConversation(conv: ConversationMeta) {
+    setShowHistory(false);
+    setLoadingHistory(true);
+    setError(null);
+    try {
+      const messages = await apiJson<ChatMessage[]>(`/support/messages/${conv.id}`);
+      setState((prev) => ({
+        ...prev,
+        conversationId: conv.id,
+        messages: messages.map((m) => m.role === 'assistant' ? { ...m, content: normalizeAssistantText(m.content) } : m),
+      }));
+    } catch {
+      setError('Failed to load conversation');
+    } finally {
+      setLoadingHistory(false);
+    }
   }
 
   if (!mounted) return null;
@@ -225,59 +266,86 @@ export function SupportChatWidget() {
             </div>
           </div>
           <div className="support-widget-actions">
+            <button type="button" onClick={resetConversation} aria-label="New conversation" title="New conversation">
+              + New
+            </button>
+            <button type="button" onClick={showHistory ? () => setShowHistory(false) : openHistory} aria-label="Conversation history">
+              {showHistory ? 'Back' : 'History'}
+            </button>
             <button type="button" onClick={() => setState((prev) => ({ ...prev, minimized: !prev.minimized }))} aria-label="Minimize">
-              {state.minimized ? 'Expand' : 'Min'}
+              {state.minimized ? '▲' : '▼'}
             </button>
             <button type="button" onClick={() => setState((prev) => ({ ...prev, open: false }))} aria-label="Close">
-              Close
+              ✕
             </button>
           </div>
         </header>
 
         {!state.minimized ? (
           <>
-            <div className="support-widget-body" ref={bodyRef}>
-              {loadingHistory ? <div className="support-info">Loading previous conversation...</div> : null}
-              {state.messages.length === 0 && !loadingHistory ? (
-                <div className="support-info">Ask about KYC, disbursement, API contracts, SQL flows, or architecture decisions.</div>
-              ) : null}
-              {state.messages.map((msg, idx) => (
-                <article key={`${msg.role}-${idx}-${msg.content.length}`} className={`support-msg-wrap ${msg.role === 'user' ? 'user' : 'bot'}`}>
-                  <span className="support-msg-role">{msg.role === 'user' ? 'You' : 'Assistant'}</span>
-                  <div className={`support-msg ${msg.role === 'user' ? 'user' : 'bot'}`}>
-                    {msg.role === 'assistant' ? (
-                      <div className="support-md">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content || (sending ? 'Thinking...' : '')}
-                        </ReactMarkdown>
+            {showHistory ? (
+              <div className="support-widget-body support-conv-list">
+                {loadingConvs ? (
+                  <div className="support-info">Loading conversations...</div>
+                ) : conversations.length === 0 ? (
+                  <div className="support-info">No past conversations found.</div>
+                ) : (
+                  conversations.map((conv) => (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      className={`support-conv-item${conv.id === state.conversationId ? ' active' : ''}`}
+                      onClick={() => void switchConversation(conv)}
+                    >
+                      <span className="support-conv-title">{conv.title || `Conversation #${conv.id}`}</span>
+                      <span className="support-conv-date">{new Date(conv.updated_at).toLocaleDateString()}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="support-widget-body" ref={bodyRef}>
+                  {loadingHistory ? <div className="support-info">Loading conversation...</div> : null}
+                  {state.messages.length === 0 && !loadingHistory ? (
+                    <div className="support-info">Ask about KYC, disbursement, API contracts, SQL flows, or architecture decisions.</div>
+                  ) : null}
+                  {state.messages.map((msg, idx) => (
+                    <article key={`${msg.role}-${idx}-${msg.content.length}`} className={`support-msg-wrap ${msg.role === 'user' ? 'user' : 'bot'}`}>
+                      <span className="support-msg-role">{msg.role === 'user' ? 'You' : 'Assistant'}</span>
+                      <div className={`support-msg ${msg.role === 'user' ? 'user' : 'bot'}`}>
+                        {msg.role === 'assistant' ? (
+                          <div className="support-md">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.content || (sending ? 'Thinking...' : '')}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <p>{msg.content}</p>
+                        )}
                       </div>
-                    ) : (
-                      <p>{msg.content}</p>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
+                    </article>
+                  ))}
+                </div>
 
-            {error ? <div className="support-error">{error}</div> : null}
+                {error ? <div className="support-error">{error}</div> : null}
 
-            <footer className="support-widget-input">
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void sendMessage();
-                }}
-                placeholder="Ask support..."
-                maxLength={6000}
-              />
-              <button type="button" disabled={!canSend} onClick={() => void sendMessage()}>
-                {sending ? '...' : 'Send'}
-              </button>
-              <button type="button" className="ghost" onClick={resetConversation}>
-                New
-              </button>
-            </footer>
+                <footer className="support-widget-input">
+                  <input
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void sendMessage();
+                    }}
+                    placeholder="Ask support..."
+                    maxLength={6000}
+                  />
+                  <button type="button" disabled={!canSend} onClick={() => void sendMessage()}>
+                    {sending ? '...' : 'Send'}
+                  </button>
+                </footer>
+              </>
+            )}
           </>
         ) : null}
       </section>
