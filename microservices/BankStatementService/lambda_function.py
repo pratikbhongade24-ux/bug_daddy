@@ -67,8 +67,7 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
-    if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+    # Removed simulateBug "amount_cast" branch that caused an unhandled ValueError.
     return transactions
 
 
