@@ -2893,14 +2893,6 @@ def list_security_findings(
     return {"items": items, "total": len(items)}
 
 
-JIRA_WEBHOOK_SECRET = os.getenv("JIRA_WEBHOOK_SECRET")
-
-
-def _verify_jira_webhook_secret(x_jira_webhook_secret: str | None = Header(default=None)):
-    if JIRA_WEBHOOK_SECRET and x_jira_webhook_secret != JIRA_WEBHOOK_SECRET:
-        raise HTTPException(status_code=401, detail="Invalid Jira webhook secret")
-
-
 def _jira_issue_type_to_bug_daddy(jira_issue_type: str) -> str:
     mapping = {
         "Bug": "jira_bug",
@@ -2914,10 +2906,7 @@ def _jira_issue_type_to_bug_daddy(jira_issue_type: str) -> str:
 
 
 @app.post("/webhooks/jira", status_code=200)
-def jira_webhook(
-    payload: dict[str, Any],
-    _: None = Depends(_verify_jira_webhook_secret),
-):
+def jira_webhook(payload: dict[str, Any]):
     """
     Jira webhook endpoint. Configure in Jira as:
       URL: https://<your-host>/webhooks/jira
