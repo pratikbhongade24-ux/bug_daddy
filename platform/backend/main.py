@@ -5,6 +5,8 @@ import json
 import os
 import re
 import secrets
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -45,6 +47,11 @@ SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "
 SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
 SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
 SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
+TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://localhost:8005").rstrip("/")
+TRANSACTION_RECON_CRON_ENABLED = os.getenv("TRANSACTION_RECON_CRON_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+TRANSACTION_RECON_CRON_INTERVAL_SEC = int(os.getenv("TRANSACTION_RECON_CRON_INTERVAL_SEC", "180"))
+TRANSACTION_RECON_HOURS_BACK = int(os.getenv("TRANSACTION_RECON_HOURS_BACK", "24"))
+TRANSACTION_BOOTSTRAP_ON_START = os.getenv("TRANSACTION_BOOTSTRAP_ON_START", "true").lower() in {"1", "true", "yes", "on"}
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -55,6 +62,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+TRANSACTION_RECON_STATE: dict[str, Any] = {
+    "enabled": TRANSACTION_RECON_CRON_ENABLED,
+    "interval_sec": TRANSACTION_RECON_CRON_INTERVAL_SEC,
+    "hours_back": TRANSACTION_RECON_HOURS_BACK,
+    "last_run_at": None,
+    "last_status": "never",
+    "last_report_id": None,
+    "last_mismatch_count": None,
+    "last_error": None,
+}
+_TRANSACTION_RECON_STOP = threading.Event()
 
 
 
@@ -626,6 +645,128 @@ def map_issue(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _tx_issue_type(mismatch_type: str) -> str:
+    return f"tx_{str(mismatch_type or 'mismatch').lower()}"
+
+
+def _tx_frequency(severity: str) -> int:
+    sev = str(severity or "MEDIUM").upper()
+    if sev == "CRITICAL":
+        return 900
+    if sev == "HIGH":
+        return 700
+    if sev == "MEDIUM":
+        return 350
+    return 120
+
+
+def _sync_transaction_anomalies_to_issue_log(report: dict[str, Any], report_detail: dict[str, Any]):
+    mismatches = report_detail.get("mismatches") or []
+    active_fingerprints: set[str] = set()
+    report_id = report.get("id")
+    now_str = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            for mm in mismatches:
+                mismatch_id = int(mm.get("id") or 0)
+                mismatch_type = str(mm.get("mismatch_type") or "MISMATCH").upper()
+                transfer_id = mm.get("transfer_id")
+                fingerprint = f"tx_recon|{mismatch_type}|{transfer_id}|{mismatch_id}"
+                active_fingerprints.add(fingerprint)
+                description = f"{mismatch_type}: {mm.get('details') or 'Transaction reconciliation anomaly'}"
+                stack_trace = mm.get("root_cause_hint") or ""
+                severity = str(mm.get("severity") or "MEDIUM")
+                issue_type = _tx_issue_type(mismatch_type)
+                freq = _tx_frequency(severity)
+                execution_logs = json.dumps(
+                    {
+                        "report_id": report_id,
+                        "mismatch_id": mismatch_id,
+                        "mismatch_type": mismatch_type,
+                        "severity": severity,
+                        "details": mm.get("details"),
+                        "impacted_services": mm.get("impacted_services"),
+                        "root_cause_hint": mm.get("root_cause_hint"),
+                    }
+                )[:65000]
+
+                cur.execute("SELECT id, status FROM service_exception_log WHERE fingerprint = %s LIMIT 1", (fingerprint,))
+                existing = cur.fetchone()
+                if existing:
+                    status = existing.get("status")
+                    next_status = status if status in {"in_progress", "in_review"} else "open"
+                    resolved_at = None if next_status != "resolved" else now_str
+                    cur.execute(
+                        """
+                        UPDATE service_exception_log
+                        SET source = 'transaction_reconciliation',
+                            service_name = 'transaction-management',
+                            issue_type = %s,
+                            description = %s,
+                            stack_trace = %s,
+                            entire_execution_logs = %s,
+                            frequency = %s,
+                            last_seen = %s,
+                            status = %s,
+                            resolved_at = %s
+                        WHERE id = %s
+                        """,
+                        (issue_type, description, stack_trace, execution_logs, freq, now_str, next_status, resolved_at, existing["id"]),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO service_exception_log (
+                          fingerprint, service_name, issue_type, source, description,
+                          stack_trace, entire_execution_logs, request_id, frequency,
+                          first_seen, last_seen, status, assigned_to, resolution_pr,
+                          resolution_jira, created_at, resolved_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            fingerprint,
+                            "transaction-management",
+                            issue_type,
+                            "transaction_reconciliation",
+                            description,
+                            stack_trace,
+                            execution_logs,
+                            f"tx-mismatch-{mismatch_id}",
+                            freq,
+                            now_str,
+                            now_str,
+                            "open",
+                            "BugDaddy Agent",
+                            None,
+                            None,
+                            now_str,
+                            None,
+                        ),
+                    )
+
+            cur.execute(
+                """
+                SELECT id, fingerprint FROM service_exception_log
+                WHERE source = 'transaction_reconciliation' AND status IN ('open', 'in_progress', 'in_review')
+                """
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                if row["fingerprint"] in active_fingerprints:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE service_exception_log
+                    SET status = 'resolved', resolved_at = %s, last_seen = %s
+                    WHERE id = %s
+                    """,
+                    (now_str, now_str, row["id"]),
+                )
+    finally:
+        conn.close()
+
+
 def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -1077,6 +1218,14 @@ def startup_event():
     except Exception:
         import logging
         logging.getLogger(__name__).exception("RAG DB init failed — support chat will be unavailable")
+    if TRANSACTION_RECON_CRON_ENABLED:
+        thread = threading.Thread(target=_transaction_recon_scheduler, daemon=True, name="transaction-recon-cron")
+        thread.start()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    _TRANSACTION_RECON_STOP.set()
 
 
 @app.get("/")
@@ -1094,6 +1243,308 @@ def health_check():
         return {"status": "healthy", "database": "connected"}
     finally:
         conn.close()
+
+
+@app.get("/demo/transaction/health")
+def transaction_demo_health(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/health", timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction demo service unavailable: {exc}") from exc
+    return {"status": "ok", "service": "transaction_management", "upstream": response.json()}
+
+
+def _run_transaction_reconciliation_once(triggered_by: str = "manual") -> dict[str, Any]:
+    if TRANSACTION_BOOTSTRAP_ON_START:
+        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/bootstrap", timeout=20)
+    report_resp = requests.post(
+        f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
+        json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
+        timeout=30,
+    )
+    report_resp.raise_for_status()
+    report = report_resp.json()
+    analysis_resp = requests.get(
+        f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report['id']}/analysis",
+        timeout=30,
+    )
+    analysis_resp.raise_for_status()
+    analysis = analysis_resp.json()
+    detail_resp = requests.get(
+        f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report['id']}",
+        timeout=30,
+    )
+    detail_resp.raise_for_status()
+    report_detail = detail_resp.json()
+    _sync_transaction_anomalies_to_issue_log(report, report_detail)
+    TRANSACTION_RECON_STATE.update(
+        {
+            "last_run_at": dt_to_str(utc_now()),
+            "last_status": "success",
+            "last_report_id": report.get("id"),
+            "last_mismatch_count": report.get("mismatch_count"),
+            "last_error": None,
+            "last_triggered_by": triggered_by,
+        }
+    )
+    return {"report": report, "analysis": analysis}
+
+
+def _transaction_recon_scheduler():
+    while not _TRANSACTION_RECON_STOP.is_set():
+        try:
+            _run_transaction_reconciliation_once(triggered_by="cron")
+        except Exception as exc:
+            TRANSACTION_RECON_STATE.update(
+                {
+                    "last_run_at": dt_to_str(utc_now()),
+                    "last_status": "failed",
+                    "last_error": str(exc),
+                    "last_triggered_by": "cron",
+                }
+            )
+        _TRANSACTION_RECON_STOP.wait(max(30, TRANSACTION_RECON_CRON_INTERVAL_SEC))
+
+
+@app.post("/demo/transaction/reconciliation/run")
+def transaction_demo_reconciliation_run(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        out = _run_transaction_reconciliation_once(triggered_by=actor["username"])
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction demo reconciliation failed: {exc}") from exc
+    return out
+
+
+@app.post("/demo/transaction/bootstrap")
+def transaction_demo_bootstrap(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/bootstrap", timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction demo bootstrap failed: {exc}") from exc
+
+
+@app.post("/demo/transaction/seed")
+def transaction_demo_seed(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/seed", timeout=40)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction seed failed: {exc}") from exc
+
+
+@app.post("/demo/transaction/reset-seed")
+def transaction_demo_reset_seed(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        response = requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction reset seed failed: {exc}") from exc
+
+
+@app.post("/demo/transaction/discrepancy")
+def transaction_demo_discrepancy(
+    payload: dict[str, Any],
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    amount = float(payload.get("amount") or 15000)
+    try:
+        response = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/transactions/demo/party-a-to-party-b-discrepancy",
+            json={"amount": amount},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction discrepancy simulation failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/bug-status")
+def transaction_demo_bug_status(
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/demo/bug-status", timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction bug status fetch failed: {exc}") from exc
+
+
+@app.post("/demo/transaction/bug/fix")
+def transaction_demo_bug_fix(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        response = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
+            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor["username"], "notes": "Resolved via BugDaddy demo action"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction bug fix failed: {exc}") from exc
+
+
+@app.post("/demo/transaction/bug/reset")
+def transaction_demo_bug_reset(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    try:
+        response = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/demo/bug/reset-code",
+            json={"bug_key": "beneficiary_routing_bug"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction bug reset failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/reports")
+def transaction_demo_reports(
+    limit: int = 20,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports", params={"limit": min(limit, 200)}, timeout=20)
+        response.raise_for_status()
+        return {"items": response.json()}
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction report fetch failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/reports/{report_id}")
+def transaction_demo_report_detail(
+    report_id: int,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report_id}", timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction report detail fetch failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/reports/{report_id}/analysis")
+def transaction_demo_report_analysis(
+    report_id: int,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{report_id}/analysis", timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction report analysis fetch failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/metrics")
+def transaction_demo_metrics(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
+    try:
+        response = requests.get(f"{TRANSACTION_SERVICE_URL}/metrics", timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction metrics fetch failed: {exc}") from exc
+
+
+@app.get("/demo/transaction/cron/status")
+def transaction_demo_cron_status(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
+    return TRANSACTION_RECON_STATE
+
+
+@app.post("/demo/transaction/verify-fix")
+def transaction_demo_verify_fix(
+    actor: dict[str, Any] = Depends(require_permission("issues.update")),
+):
+    def _count(detail: dict[str, Any]) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for m in (detail.get("mismatches") or []):
+            key = str(m.get("mismatch_type") or "UNKNOWN")
+            out[key] = out.get(key, 0) + 1
+        return out
+
+    try:
+        requests.post(f"{TRANSACTION_SERVICE_URL}/demo/bug/reset", json={"bug_key": "beneficiary_routing_bug"}, timeout=20).raise_for_status()
+        requests.post(f"{TRANSACTION_SERVICE_URL}/demo/bug/reset-code", json={"bug_key": "beneficiary_routing_bug"}, timeout=20).raise_for_status()
+        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50).raise_for_status()
+        before_report = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
+            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
+            timeout=30,
+        ).json()
+        before_detail = requests.get(
+            f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{before_report['id']}",
+            timeout=30,
+        ).json()
+
+        requests.post(
+            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
+            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor["username"], "notes": "verify-fix flow"},
+            timeout=20,
+        ).raise_for_status()
+        requests.post(f"{TRANSACTION_SERVICE_URL}/transactions/demo/reset-seed", timeout=50).raise_for_status()
+        after_report = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
+            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
+            timeout=30,
+        ).json()
+        after_detail = requests.get(
+            f"{TRANSACTION_SERVICE_URL}/reconciliation/reports/{after_report['id']}",
+            timeout=30,
+        ).json()
+        bug_state = requests.get(f"{TRANSACTION_SERVICE_URL}/demo/bug-status", timeout=20).json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Transaction before/after verification failed: {exc}") from exc
+
+    return {
+        "before": {
+            "report_id": before_report.get("id"),
+            "mismatch_count": before_report.get("mismatch_count"),
+            "mismatch_types": _count(before_detail),
+        },
+        "after": {
+            "report_id": after_report.get("id"),
+            "mismatch_count": after_report.get("mismatch_count"),
+            "mismatch_types": _count(after_detail),
+        },
+        "bug_active_after": bug_state.get("beneficiary_routing_bug_active"),
+        "code_change": {
+            "file": "SME/backend/transaction_management/app/main.py",
+            "function": "_apply_transfer",
+            "before": (
+                "if BUG_STATE['beneficiary_routing_bug_active'] and amount >= Decimal('20000'):\\n"
+                "    fallback = <other_account>\\n"
+                "    tx.intended_beneficiary_account_id = dst.id\\n"
+                "    tx.beneficiary_account_id = fallback.id\\n"
+                "    anomalies.append('wrong_beneficiary_transfer')"
+            ),
+            "after": (
+                "CODE_PATCH_APPLIED = True  # source patched by BugDaddy invoke flow\\n"
+                "if BUG_STATE['beneficiary_routing_bug_active'] and (not CODE_PATCH_APPLIED) and amount >= Decimal('20000'):\\n"
+                "    ... # this branch no longer executes after patch\\n"
+                "# transfer posts to intended beneficiary account"
+            ),
+            "fix_action": "Source patch applied via /demo/bug/fix-code, then service hot-reloads",
+        },
+    }
 
 
 # Support routes — thin wrappers that inject external_user_id from the JWT actor,
@@ -2478,15 +2929,11 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
             )
             update_execution_session(conn, session_id, status_value="succeeded", summary=summary, ended=True)
 
-            # Map Jira ticket back to service_exception_log
             jira_key = _extract_jira_key(result)
             pr_url = _extract_pull_request_url(result)
             if jira_key:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
-                        (session_id,),
-                    )
+                    cur.execute("SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
                     row = cur.fetchone()
                 issue_id = row["issue_id"] if row else None
                 if issue_id:
@@ -2502,10 +2949,7 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                         )
             if pr_url:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s",
-                        (session_id,),
-                    )
+                    cur.execute("SELECT issue_id FROM agent_execution_sessions WHERE session_id = %s", (session_id,))
                     row = cur.fetchone()
                 issue_id = row["issue_id"] if row else None
                 if issue_id:
@@ -2553,6 +2997,96 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
         finally:
             conn.close()
 
+
+def run_transaction_fix_background(session_id: str, issue_context: dict[str, Any], actor_username: str):
+    conn = get_db()
+    try:
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "node.reasoning",
+                "node_id": "bug",
+                "node_name": "Bug Daddy",
+                "agent_name": "bug_daddy",
+                "status": "running",
+                "level": "info",
+                "title": "Reasoning over reconciliation anomaly",
+                "reasoning_summary": "Detected WRONG_BENEFICIARY anomaly pattern and mapped to beneficiary routing bug in transfer posting logic.",
+                "result": {"issue_context": issue_context, "fix_plan": "Apply code patch and re-run reconciliation."},
+            },
+        )
+    finally:
+        conn.close()
+
+    try:
+        fix_resp = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/demo/bug/fix-code",
+            json={"bug_key": "beneficiary_routing_bug", "resolved_by": actor_username, "notes": "Invoked via issues /agent/invoke flow"},
+            timeout=20,
+        )
+        fix_resp.raise_for_status()
+        fix_payload = fix_resp.json()
+
+        recon_resp = requests.post(
+            f"{TRANSACTION_SERVICE_URL}/reconciliation/run",
+            json={"hours_back": TRANSACTION_RECON_HOURS_BACK},
+            timeout=30,
+        )
+        recon_resp.raise_for_status()
+        recon_payload = recon_resp.json()
+    except Exception as exc:
+        conn = get_db()
+        try:
+            append_execution_event(
+                conn,
+                session_id,
+                {
+                    "event_type": "session.failed",
+                    "status": "failed",
+                    "level": "error",
+                    "title": "Transaction anomaly fix failed",
+                    "error_message": str(exc),
+                },
+            )
+            update_execution_session(conn, session_id, status_value="failed", error_message=str(exc), ended=True)
+        finally:
+            conn.close()
+        return
+
+    conn = get_db()
+    try:
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "tool.completed",
+                "node_id": "code",
+                "node_name": "Code Fix Tool",
+                "agent_name": "bug_daddy",
+                "status": "completed",
+                "level": "success",
+                "title": "Code patch applied",
+                "tool_name": "transaction_bug_fix_code",
+                "tool_output": fix_payload,
+            },
+        )
+        append_execution_event(
+            conn,
+            session_id,
+            {
+                "event_type": "session.completed",
+                "status": "succeeded",
+                "level": "success",
+                "title": "Transaction anomaly remediation completed",
+                "output_summary": "Applied code fix and triggered reconciliation run.",
+                "result": {"reconciliation_report": recon_payload},
+            },
+        )
+        update_execution_session(conn, session_id, status_value="succeeded", summary="Transaction anomaly fixed via code patch.", ended=True)
+    finally:
+        conn.close()
+
 @app.post("/agent/invoke")
 def agent_invoke(
     payload: AgentInvokeRequest,
@@ -2560,6 +3094,7 @@ def agent_invoke(
     actor: dict[str, Any] = Depends(require_permission("issues.update"))
 ):
     issue_context: dict[str, Any] = {}
+    is_transaction_anomaly = False
     if payload.issue_id is not None:
         conn = get_db()
         try:
@@ -2578,6 +3113,7 @@ def agent_invoke(
                 "stack_trace": issue["stack_trace"],
                 "frequency": issue["frequency"],
                 "service_name": issue["service"],
+                "source": issue.get("source"),
             }
             if not payload.service_name:
                 payload.service_name = issue["service"]
@@ -2591,11 +3127,17 @@ def agent_invoke(
                     logs_list.append("Execution Logs:\n" + issue["entire_execution_logs"])
                 if logs_list:
                     payload.logs = logs_list
+            if issue.get("source") == "transaction_reconciliation":
+                is_transaction_anomaly = True
+                if not payload.target:
+                    payload.target = "bug_daddy"
         finally:
             conn.close()
 
     target = payload.target or (route_issue_agent(issue_context) if issue_context else "incident_daddy")
     runtime_target = target
+    if is_transaction_anomaly:
+        runtime_target = "bug_daddy"
     if target == "bug_daddy" and not (
         payload.metadata.get("jira_key")
         or payload.metadata.get("resolution_jira")
@@ -2675,9 +3217,17 @@ def agent_invoke(
                 "status": "running",
                 "level": "info",
                 "title": "Agent orchestration started",
-                "description": f"Invoking {runtime_target} through AgentCore.",
+                "description": (
+                    "Running transaction anomaly remediation workflow."
+                    if is_transaction_anomaly
+                    else f"Invoking {runtime_target} through AgentCore."
+                ),
                 "agent_name": runtime_target,
-                "result": {"runtime_arn": AGENTCORE_RUNTIME_ARN},
+                "result": (
+                    {"mode": "local_transaction_fix"}
+                    if is_transaction_anomaly
+                    else {"runtime_arn": AGENTCORE_RUNTIME_ARN}
+                ),
             },
         )
         append_execution_event(
@@ -2686,18 +3236,21 @@ def agent_invoke(
             {
                 "event_type": "node.started",
                 "node_id": "esc",
-                "node_name": "AgentCore Runtime",
+                "node_name": "Transaction Fix Runtime" if is_transaction_anomaly else "AgentCore Runtime",
                 "agent_name": runtime_target,
                 "status": "running",
                 "level": "info",
-                "title": "AgentCore invocation started",
+                "title": "Local remediation started" if is_transaction_anomaly else "AgentCore invocation started",
                 "input_summary": runtime_payload.get("prompt"),
             },
         )
     finally:
         conn.close()
 
-    bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
+    if is_transaction_anomaly:
+        bg_tasks.add_task(run_transaction_fix_background, session_id, issue_context, actor["username"])
+    else:
+        bg_tasks.add_task(run_agent_background, session_id, runtime_payload, runtime_target)
 
     return {
         "message": "Agent orchestration started in background",

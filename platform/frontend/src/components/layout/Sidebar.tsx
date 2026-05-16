@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { LayoutDashboard, Bug, ShieldCheck, Users, ScanSearch, BarChart2, Search } from 'lucide-react';
+import { LayoutDashboard, Bug, ShieldCheck, Users, ScanSearch, BarChart2, Search, Landmark } from 'lucide-react';
 import { ViewName } from '@/lib/types';
 
 export function Sidebar({
@@ -28,6 +28,9 @@ export function Sidebar({
         </button>
         <button type="button" aria-current={view === 'security' ? 'page' : undefined} className={clsx('nav-item', view === 'security' && 'active')} onClick={() => setView('security')}>
           <ScanSearch size={16} /> Security Scanner
+        </button>
+        <button type="button" aria-current={view === 'transactions' ? 'page' : undefined} className={clsx('nav-item', view === 'transactions' && 'active')} onClick={() => setView('transactions')}>
+          <Landmark size={16} /> Data Integrity
         </button>
         <button type="button" aria-current={view === 'grafana' ? 'page' : undefined} className={clsx('nav-item', view === 'grafana' && 'active')} onClick={() => setView('grafana')}>
           <BarChart2 size={16} /> Grafana

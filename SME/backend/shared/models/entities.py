@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -169,3 +170,198 @@ class RepaymentTransaction(Base, AuditMixin):
     channel = Column(String(30), nullable=False)
 
     emi = relationship("EMISchedule", back_populates="repayments")
+
+
+class TransactionParty(Base, AuditMixin):
+    __tablename__ = "parties"
+    __table_args__ = (
+        Index("ix_tx_parties_code", "party_code", unique=True),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    party_code = Column(String(40), nullable=False)
+    party_name = Column(String(120), nullable=False)
+    party_type = Column(
+        Enum("INDIVIDUAL", "BUSINESS", "INTERNAL", name="tx_party_type_enum"),
+        nullable=False,
+        server_default="INDIVIDUAL",
+    )
+    status = Column(
+        Enum("ACTIVE", "INACTIVE", "BLOCKED", name="tx_party_status_enum"),
+        nullable=False,
+        server_default="ACTIVE",
+    )
+
+
+class TransactionAccount(Base, AuditMixin):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        Index("ix_tx_accounts_number", "account_number", unique=True),
+        Index("ix_tx_accounts_party", "party_id"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    party_id = Column(Integer, ForeignKey("transaction.parties.id", ondelete="RESTRICT"), nullable=False)
+    account_number = Column(String(40), nullable=False)
+    account_type = Column(
+        Enum("SAVINGS", "CURRENT", "SETTLEMENT", "NODAL", name="tx_account_type_enum"),
+        nullable=False,
+        server_default="SAVINGS",
+    )
+    currency = Column(String(10), nullable=False, server_default="INR")
+    available_balance = Column(Numeric(14, 2), nullable=False, server_default="0")
+    ledger_balance = Column(Numeric(14, 2), nullable=False, server_default="0")
+    status = Column(
+        Enum("ACTIVE", "DORMANT", "FROZEN", name="tx_account_status_enum"),
+        nullable=False,
+        server_default="ACTIVE",
+    )
+
+
+class TransferTransaction(Base, AuditMixin):
+    __tablename__ = "transfers"
+    __table_args__ = (
+        Index("ix_tx_transfers_ref", "transfer_ref", unique=True),
+        Index("ix_tx_transfers_status", "status"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    transfer_ref = Column(String(60), nullable=False)
+    source_account_id = Column(Integer, ForeignKey("transaction.accounts.id", ondelete="RESTRICT"), nullable=False)
+    beneficiary_account_id = Column(Integer, ForeignKey("transaction.accounts.id", ondelete="RESTRICT"), nullable=False)
+    intended_beneficiary_account_id = Column(Integer, ForeignKey("transaction.accounts.id", ondelete="RESTRICT"), nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    fee_amount = Column(Numeric(14, 2), nullable=False, server_default="0")
+    status = Column(
+        Enum("INITIATED", "POSTED", "SETTLED", "FAILED", "POSTING_DELAYED", name="tx_transfer_status_enum"),
+        nullable=False,
+        server_default="INITIATED",
+    )
+    initiated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    settled_at = Column(DateTime(timezone=True), nullable=True)
+    anomaly_flags = Column(Text, nullable=True)
+    external_ref = Column(String(80), nullable=True)
+    parent_transfer_id = Column(Integer, ForeignKey("transaction.transfers.id", ondelete="SET NULL"), nullable=True)
+
+
+class LedgerEntry(Base, AuditMixin):
+    __tablename__ = "ledger_entries"
+    __table_args__ = (
+        Index("ix_tx_ledger_transfer", "transfer_id"),
+        Index("ix_tx_ledger_account", "account_id"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(Integer, ForeignKey("transaction.transfers.id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("transaction.accounts.id", ondelete="RESTRICT"), nullable=False)
+    entry_type = Column(Enum("DEBIT", "CREDIT", name="tx_entry_type_enum"), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    running_balance = Column(Numeric(14, 2), nullable=True)
+    source_system = Column(String(30), nullable=False, server_default="core_ledger")
+    posting_status = Column(
+        Enum("POSTED", "PENDING", "FAILED", name="tx_posting_status_enum"),
+        nullable=False,
+        server_default="POSTED",
+    )
+    trace_id = Column(String(100), nullable=True)
+
+
+class SettlementRecord(Base, AuditMixin):
+    __tablename__ = "settlement_records"
+    __table_args__ = (
+        Index("ix_tx_settle_transfer", "transfer_id", unique=True),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    transfer_id = Column(Integer, ForeignKey("transaction.transfers.id", ondelete="CASCADE"), nullable=False)
+    expected_amount = Column(Numeric(14, 2), nullable=False)
+    settled_amount = Column(Numeric(14, 2), nullable=False, server_default="0")
+    settlement_status = Column(
+        Enum("PENDING", "SETTLED", "MISMATCH", "MISSING", name="tx_settlement_status_enum"),
+        nullable=False,
+        server_default="PENDING",
+    )
+    settlement_system = Column(String(30), nullable=False, server_default="payment_switch")
+    settled_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ReconciliationReport(Base, AuditMixin):
+    __tablename__ = "reconciliation_reports"
+    __table_args__ = (
+        Index("ix_tx_recon_generated", "generated_at"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    report_ref = Column(String(60), nullable=False, unique=True)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    window_end = Column(DateTime(timezone=True), nullable=False)
+    status = Column(
+        Enum("COMPLETED", "FAILED", "PARTIAL", name="tx_recon_status_enum"),
+        nullable=False,
+        server_default="COMPLETED",
+    )
+    generated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    total_transfers = Column(Integer, nullable=False, server_default="0")
+    mismatch_count = Column(Integer, nullable=False, server_default="0")
+    missing_settlement_count = Column(Integer, nullable=False, server_default="0")
+    duplicate_count = Column(Integer, nullable=False, server_default="0")
+    analysis_summary = Column(Text, nullable=True)
+
+
+class ReconciliationMismatch(Base, AuditMixin):
+    __tablename__ = "reconciliation_mismatches"
+    __table_args__ = (
+        Index("ix_tx_recon_mismatch_report", "report_id"),
+        Index("ix_tx_recon_mismatch_type", "mismatch_type"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    report_id = Column(Integer, ForeignKey("transaction.reconciliation_reports.id", ondelete="CASCADE"), nullable=False)
+    transfer_id = Column(Integer, ForeignKey("transaction.transfers.id", ondelete="SET NULL"), nullable=True)
+    mismatch_type = Column(
+        Enum(
+            "WRONG_BENEFICIARY",
+            "DUPLICATE",
+            "MISSING_SETTLEMENT",
+            "AMOUNT_MISMATCH",
+            "DELAYED_POSTING",
+            "DEBIT_CREDIT_SWAP",
+            name="tx_mismatch_type_enum",
+        ),
+        nullable=False,
+    )
+    severity = Column(
+        Enum("LOW", "MEDIUM", "HIGH", "CRITICAL", name="tx_severity_enum"),
+        nullable=False,
+        server_default="MEDIUM",
+    )
+    details = Column(Text, nullable=False)
+    impacted_services = Column(Text, nullable=True)
+    root_cause_hint = Column(Text, nullable=True)
+    resolved = Column(Boolean, nullable=False, server_default="false")
+
+
+class TransactionAuditLog(Base, AuditMixin):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_tx_audit_trace", "trace_id"),
+        Index("ix_tx_audit_action", "action"),
+        {"schema": "transaction"},
+    )
+
+    id = Column(Integer, primary_key=True)
+    trace_id = Column(String(100), nullable=True)
+    action = Column(String(80), nullable=False)
+    actor = Column(String(80), nullable=False, server_default="system")
+    entity_type = Column(String(80), nullable=False)
+    entity_id = Column(String(80), nullable=True)
+    status = Column(String(30), nullable=False, server_default="success")
+    details = Column(Text, nullable=True)

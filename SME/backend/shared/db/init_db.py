@@ -8,6 +8,7 @@ def init_db() -> None:
         conn.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS kyc")
         conn.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS loan")
         conn.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS repayment")
+        conn.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS transaction")
     Base.metadata.create_all(bind=engine)
 
 

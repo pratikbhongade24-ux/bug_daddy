@@ -20,6 +20,7 @@ The platform is modular, schema-driven, and designed for production operations w
 - KYC Service: `http://localhost:8002`
 - Loan Service: `http://localhost:8003`
 - Repayment Service: `http://localhost:8004`
+- Transaction Management Service: `http://localhost:8005`
 - PostgreSQL: `localhost:5432`
 
 ## 4. Database Design
@@ -30,6 +31,7 @@ Schemas:
 - `kyc`: KYC records and verification trail
 - `loan`: loan applications and disbursement transactions
 - `repayment`: EMI schedules and repayment transactions
+- `transaction`: parties, accounts, transfers, settlement, reconciliation reports, and audit logs
 
 Global design principles:
 - Cross-schema foreign keys for referential integrity
@@ -82,3 +84,4 @@ For semantic retrieval, index by:
 - `docs/frontend_guide.md`
 - `docs/runbook.md`
 - `docs/bugdaddy_production_guide.md`
+- `docs/transaction_management_service.md`

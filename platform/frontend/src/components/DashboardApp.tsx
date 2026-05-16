@@ -32,6 +32,7 @@ const SonarReportModal = dynamic(() => import('./sonar/SonarReportModal').then((
 import type { SonarReport } from './sonar/SonarReportModal';
 const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
 const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
+const TransactionDemoView = dynamic(() => import('./transaction/TransactionDemoView').then((mod) => mod.TransactionDemoView), { ssr: false, loading: () => sectionSkeleton });
 const GrafanaView = dynamic(() => import('./grafana/GrafanaView').then((mod) => mod.GrafanaView), { ssr: false, loading: () => sectionSkeleton });
 const KibanaView = dynamic(() => import('./kibana/KibanaView').then((mod) => mod.KibanaView), { ssr: false, loading: () => sectionSkeleton });
 const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
@@ -73,7 +74,6 @@ export function DashboardApp() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [view, setViewState] = useState<ViewName>('dashboard');
   const [tab, setTabState] = useState<IssueTab>('backlog');
-  const [roleView, setRoleView] = useState('Developer');
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
   const [criticalityFilter, setCriticalityFilter] = useState('');
@@ -382,9 +382,6 @@ export function DashboardApp() {
     <main className="bd-shell" id="app-main" tabIndex={-1}>
       <Topbar
         stats={stats}
-        roleView={roleView}
-        setRoleView={setRoleView}
-        authUser={authUser}
         onLogout={logoutRequest}
         onOpenCommandPalette={() => setCommandOpen(true)}
         isAgentActive={agentActive}
@@ -457,6 +454,9 @@ export function DashboardApp() {
           ) : null}
           {view === 'security' ? (
             <SecurityScannerView addToast={toast} />
+          ) : null}
+          {view === 'transactions' ? (
+            <TransactionDemoView addToast={toast} />
           ) : null}
           {view === 'grafana' ? (
             <GrafanaView />

@@ -1,23 +1,14 @@
 import { useEffect, useState } from 'react';
 import { LogOut, Cpu } from 'lucide-react';
-import { User } from '@/lib/types';
 import { Metric } from '../shared/Metric';
-
-const ROLES = ['Developer', 'SRE', 'Manager'];
 
 export function Topbar({
   stats,
-  roleView,
-  setRoleView,
-  authUser,
   onLogout,
   onOpenCommandPalette,
   isAgentActive,
 }: {
   stats: Record<string, number>;
-  roleView: string;
-  setRoleView: (role: string) => void;
-  authUser: User | null;
   onLogout: () => void;
   onOpenCommandPalette?: () => void;
   isAgentActive?: boolean;
@@ -61,27 +52,6 @@ export function Topbar({
           <Cpu size={11} />
           <kbd>⌘K</kbd>
         </button>
-
-        {authUser ? (
-          <div className="tb-user">
-            {authUser.username} / {authUser.role}
-          </div>
-        ) : null}
-
-        {/* Animated role-switcher pill */}
-        <div className="role-switcher" role="group" aria-label="Role view selector">
-          {ROLES.map((role) => (
-            <button
-              key={role}
-              type="button"
-              onClick={() => setRoleView(role)}
-              aria-pressed={roleView === role}
-              className={roleView === role ? 'role-pill active' : 'role-pill'}
-            >
-              {role}
-            </button>
-          ))}
-        </div>
 
         <time className="tb-clock">{clock}</time>
         <button className="btn" onClick={onLogout} title="Logout">

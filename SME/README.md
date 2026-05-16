@@ -9,6 +9,7 @@ Production-style microservice testing platform for complete bank loan lifecycle 
   - KYC Service (`8002`)
   - Loan Disbursement (`8003`)
   - Repayment Service (`8004`)
+  - Transaction Management (`8005`)
 - PostgreSQL database: `app`
 
 ## Quick Start
@@ -24,6 +25,7 @@ Swagger docs:
 - `http://localhost:8002/docs`
 - `http://localhost:8003/docs`
 - `http://localhost:8004/docs`
+- `http://localhost:8005/docs`
 
 ## Database Design
 Schemas:
@@ -44,3 +46,4 @@ Model definitions:
 - `docs/repayment_service.md`
 - `docs/frontend_guide.md`
 - `docs/runbook.md`
+- `docs/transaction_management_service.md`

@@ -61,3 +61,16 @@ services:
       - "8004:8004"
     depends_on:
       - postgres
+
+  transaction:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "pip install -r backend/requirements.txt && python -m backend.shared.db.init_db && uvicorn backend.transaction_management.app.main:app --host 0.0.0.0 --port 8005 --reload"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/app
+    ports:
+      - "8005:8005"
+    depends_on:
+      - postgres
