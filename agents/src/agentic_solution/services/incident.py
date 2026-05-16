@@ -176,6 +176,14 @@ class IncidentDaddyRuntime:
         return _build_incident_report(draft, draft_raw, fallback_severity)
 
     def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport, logger: ExecutionLogger) -> None:
+        if not agents.slack_notifier.tools:
+            started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
+            logger.node_failed(
+                "slk", "Slack Notifier", "Slack notification failed", started,
+                RuntimeError("Slack MCP tools not loaded — SLACK_MCP_COMMAND is not configured in the environment"),
+            )
+            return
+
         slack_message = _format_slack_report(report)
         print(f"[DEBUG] Slack message being sent:\n{slack_message}")
         started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
