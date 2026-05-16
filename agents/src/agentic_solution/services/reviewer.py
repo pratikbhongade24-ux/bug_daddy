@@ -37,6 +37,8 @@ class ReviewerDaddyRuntime:
         logger = ExecutionLogger.from_payload(payload, "reviewer_daddy")
         request = ReviewRequest.model_validate(payload)
 
+        logger.update_issue_status_to_review()
+
         if self.config.dry_run:
             started = logger.node_started("rev", "Reviewer Daddy", "Dry-run final AI review")
             response = ReviewResponse(

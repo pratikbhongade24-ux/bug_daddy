@@ -60,11 +60,25 @@ JIRA USAGE RULES:
 - Use the existing Jira key provided in the context for any updates or references.
 - If the resolution is non-code, update the existing ticket with evidence, owner, and next action.
 
-CRITICAL RULE about resolution tagging:
-- If the ENTIRE resolution requires ZERO code changes (e.g. runbook, config change, documentation-only),
-  you MUST output the tag [RESOLUTION_TYPE: NON_CODE] on its own line at the very end of your response.
-- If ANY part of the resolution involves a code fix, you MUST NOT include the [RESOLUTION_TYPE: NON_CODE] tag anywhere.
-- Documentation updates or process improvements alongside a code fix do NOT make it non-code.
+CRITICAL RULE about resolution tagging (default is CODE — be biased toward code fixes):
+- Default: DO NOT emit the [RESOLUTION_TYPE: NON_CODE] tag. Omit it unless the
+  resolution is unambiguously operational with zero code changes.
+- Only output [RESOLUTION_TYPE: NON_CODE] when the ENTIRE resolution is purely
+  operational (runbook only, Jira ticket update only, dashboard change only,
+  human follow-up only) AND your plan contains NO references to:
+    * file paths, line numbers, function names, or stack frames
+    * branch names (e.g. fix/BUG-101), commits, diffs, or pull requests
+    * code-mutation verbs ("edit", "modify", "replace", "patch", "refactor",
+      "add a check", "wrap", "cast", "guard", "validate") applied to source code
+    * a "Code Fix" / "Implementation" / "Resolution Steps" section that
+      describes what the code change does
+- If ANY part of the resolution involves a code fix, you MUST NOT include the
+  [RESOLUTION_TYPE: NON_CODE] tag anywhere. Mixing a NON_CODE tag with a code
+  description is a contradiction and will be overridden downstream.
+- Documentation updates or process improvements alongside a code fix do NOT
+  make it non-code.
+- When in doubt, omit the tag (which means CODE). A wrongful NON_CODE silently
+  skips the Coder + Reviewer pipeline.
 """.strip()
 
 
@@ -124,10 +138,23 @@ decide whether the Coder Agent runs.
 - [STRATEGY_VERDICT: NON_CODE]  — genuinely Jira-only / operational, zero code edits
 - [STRATEGY_VERDICT: UNCLEAR]   — intent cannot be determined from the text
 
-Rules for the verdict:
-- Any code edit / branch / PR / diff in the strategy → CODE, regardless of
-  what tag the planner used.
-- Pure Jira / runbook / config-only / human-follow-up → NON_CODE.
+Rules for the verdict (strongly biased toward CODE):
+- Default verdict is CODE. Only emit NON_CODE when the strategy unambiguously
+  describes zero code changes and every step is operational / Jira-only.
+- ANY of the following in the strategy text forces CODE, even if the planner
+  tagged it NON_CODE or claims it's "non-code":
+    * a diff, code snippet, file path, line number, function name, or stack frame
+    * a branch name (e.g. fix/BUG-101), commit, or PR reference / URL
+    * verbs like "edit", "modify", "change", "replace", "convert", "cast",
+      "wrap", "patch", "refactor", "add a check", "guard", "validate" applied
+      to source files
+    * a "Code Fix" / "Resolution" / "Implementation" section describing what
+      the fix does in code
+- A trailing `[RESOLUTION_TYPE: NON_CODE]` tag is NOT sufficient evidence for
+  NON_CODE on its own. If the body of the strategy describes a code fix, the
+  tag is a planner bug — emit CODE and call out the contradiction.
+- Pure Jira / runbook / config-only / human-follow-up with no code references
+  anywhere → NON_CODE.
 - When in doubt, CODE. A wrongful NON_CODE silently skips Coder + Reviewer,
   which is far worse than wastefully running them.
 - Omit this tag when critiquing any agent OTHER than the Strategy Planner.
