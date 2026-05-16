@@ -32,45 +32,138 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
-    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "db": {
+            "host": os.environ.get("DB_HOST"),
+            "port": os.environ.get("DB_PORT"),
+            "name": os.environ.get("DB_NAME"),
+            "user": os.environ.get("DB_USER"),
+        },
+        "payload": payload,
+    }
     if extra:
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
 def load_mandate(payload):
-    mandate = {"mandateId": payload.get("mandateId", "MANDATE-001"), "bankCode": payload.get("bankCode", "MOCKBANK"), "amount": payload.get("amount", 0)}
+    mandate = {
+        "mandateId": payload.get("mandateId", "MANDATE-001"),
+        "bankCode": payload.get("bankCode", "MOCKBANK"),
+        "amount": payload.get("amount", 0),
+    }
     log("load_mandate", mandate)
     return mandate
 
 
 def register_mandate(payload, context, request_id):
     mandate = load_mandate(payload)
-    return response(context, request_id, "registerMandate", payload, {"mandate": {"mandateId": mandate["mandateId"], "status": "REGISTERED", "bankCode": mandate["bankCode"]}, "message": "Mandate registration completed"})
+    return response(
+        context,
+        request_id,
+        "registerMandate",
+        payload,
+        {
+            "mandate": {
+                "mandateId": mandate["mandateId"],
+                "status": "REGISTERED",
+                "bankCode": mandate["bankCode"],
+            },
+            "message": "Mandate registration completed",
+        },
+    )
 
 
 def validate_mandate(payload, context, request_id):
     mandate = load_mandate(payload)
     if payload.get("simulateBug") == "mandate_lookup":
         [][1]
-    return response(context, request_id, "validateMandate", payload, {"validation": {"mandateId": mandate["mandateId"], "status": "VALID", "retryEligible": False}, "message": "Mandate validation completed"})
+    return response(
+        context,
+        request_id,
+        "validateMandate",
+        payload,
+        {
+            "validation": {
+                "mandateId": mandate["mandateId"],
+                "status": "VALID",
+                "retryEligible": False,
+            },
+            "message": "Mandate validation completed",
+        },
+    )
 
 
 def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
+
+    # ------------------------------------------------------------------
+    # Basic type validation for amount – ensures we only work with numbers.
+    # ------------------------------------------------------------------
+    if not isinstance(mandate.get("amount"), (int, float)):
+        raise TypeError(
+            f"Mandate amount must be numeric, got {type(mandate.get('amount'))}"
+        )
+
+    # ------------------------------------------------------------------
+    # NOTE: The `simulateBug` flag is used only in internal test harnesses.
+    # In production we must never perform an illegal type operation.
+    # ------------------------------------------------------------------
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
-    return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
+        # Previously this line caused a TypeError (int + str).
+        # Raise a controlled exception to indicate misuse.
+        raise ValueError(
+            "simulateBug 'execute_type' is not permitted in production"
+        )
+
+    return response(
+        context,
+        request_id,
+        "executeDebit",
+        payload,
+        {
+            "debit": {
+                "transactionId": payload.get("transactionId", "DEBIT-1001"),
+                "status": "SCHEDULED",
+                "amount": mandate["amount"],
+            },
+            "message": "Debit execution scheduled",
+        },
+    )
 
 
 def get_mandate_status(payload, context, request_id):
     mandate = load_mandate(payload)
-    return response(context, request_id, "getMandateStatus", payload, {"status": {"mandateId": mandate["mandateId"], "state": "ACTIVE", "lastExecution": "SUCCESS"}, "message": "Mandate status fetched"})
+    return response(
+        context,
+        request_id,
+        "getMandateStatus",
+        payload,
+        {
+            "status": {
+                "mandateId": mandate["mandateId"],
+                "state": "ACTIVE",
+                "lastExecution": "SUCCESS",
+            },
+            "message": "Mandate status fetched",
+        },
+    )
 
 
 def health_check(payload, context, request_id):
-    return response(context, request_id, "healthCheck", payload, {"message": "Auto debit service is healthy"})
+    return response(
+        context,
+        request_id,
+        "healthCheck",
+        payload,
+        {"message": "Auto debit service is healthy"},
+    )
 
 
 def route_request(request_id, payload, context):
