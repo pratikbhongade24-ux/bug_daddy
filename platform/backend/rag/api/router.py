@@ -126,7 +126,6 @@ def chat_stream(payload: ChatRequest, db: Session = Depends(get_db)):
         merged = [m for m in merged if all(m["metadata"].get(k) == v for k, v in payload.filters.items())]
 
     reranked = rerank(merged, payload.question)
-    reranked = [r for r in reranked if float(r.get("score", 0.0)) >= RETRIEVAL_MIN_SCORE]
     reranked = diversify_by_source(reranked, top_k=RETRIEVAL_TOP_K_MERGED, max_per_file=RETRIEVAL_MAX_PER_FILE)
     compressed = compress_context(reranked, max_chars=RETRIEVAL_CONTEXT_CHARS)
 
