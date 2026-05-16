@@ -67,8 +67,13 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
+    # Simulated bug handling – make deterministic and safe
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        try:
+            int("not-a-number")
+        except ValueError as e:
+            # Raise a clear, domain‑specific error
+            raise ValueError("Simulated amount cast failure") from e
     return transactions
 
 
@@ -126,6 +131,14 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
+        # Structured error response instead of re‑raising
+        error_body = {
+            "service": SERVICE_NAME,
+            "requestId": request_id,
+            "error": str(exc),
+            "timestamp": iso_now(),
+            "trace": traceback.format_exc()
+        }
         print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        return {"statusCode": 400, "body": json.dumps(error_body)}
