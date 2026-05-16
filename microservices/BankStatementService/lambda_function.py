@@ -31,7 +31,7 @@ def parse_request(event):
     return payload.get("requestId") or "healthCheck", payload
 
 
-def response(context, request_id, operation, payload, extra=None):
+def response(context, request_id, operation, payload, extra=None, status_code=200):
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
@@ -48,14 +48,30 @@ def response(context, request_id, operation, payload, extra=None):
     }
     if extra:
         base.update(extra)
-    return {"statusCode": 200, "body": json.dumps(base)}
+    return {"statusCode": status_code, "body": json.dumps(base)}
+
+
+def validate_payload(payload):
+    """Reject simulateBug flag in production environments.
+
+    Returns a tuple (is_valid, response). If not valid, response is a 400 error.
+    """
+    env = os.getenv("ENV", "dev").lower()
+    if env == "prod" and "simulateBug" in payload:
+        err_body = {
+            "error": "simulateBug flag is not allowed in production",
+            "allowed": False,
+        }
+        return False, response(None, payload.get("requestId", "unknown"), "validationError", payload, {"error": err_body}, status_code=400)
+    return True, None
 
 
 def parse_statement(payload):
     pages = int(payload.get("pages", 3))
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
     log("parse_statement", statement)
-    if payload.get("simulateBug") == "negative_pages":
+    # Guard simulated bug with explicit enable flag
+    if os.getenv("ENABLE_SIMULATED_BUGS", "false").lower() == "true" and payload.get("simulateBug") == "negative_pages":
         return list(range(pages))[10]
     return statement
 
@@ -67,7 +83,8 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
-    if payload.get("simulateBug") == "amount_cast":
+    # Guard simulated bug with explicit enable flag
+    if os.getenv("ENABLE_SIMULATED_BUGS", "false").lower() == "true" and payload.get("simulateBug") == "amount_cast":
         int("not-a-number")
     return transactions
 
@@ -89,7 +106,8 @@ def summarize_cashflow(payload, context, request_id):
     credit = sum(item["amount"] for item in transactions if item["type"] == "credit")
     debit = sum(item["amount"] for item in transactions if item["type"] == "debit")
     log("summarize_cashflow", {"credit": credit, "debit": debit})
-    if payload.get("simulateBug") == "missing_bucket":
+    # Guard simulated bug with explicit enable flag
+    if os.getenv("ENABLE_SIMULATED_BUGS", "false").lower() == "true" and payload.get("simulateBug") == "missing_bucket":
         {}["summary"]
     return response(context, request_id, "summarizeCashflow", payload, {"summary": {"avgMonthlyCredit": credit, "avgMonthlyDebit": debit, "stability": "GOOD"}, "message": "Cashflow summary generated"})
 
@@ -121,6 +139,10 @@ def route_request(request_id, payload, context):
 def lambda_handler(event, context):
     request_id, payload = parse_request(event)
     log("request_received", {"requestId": request_id, "payload": payload})
+    # Validate payload early
+    is_valid, error_resp = validate_payload(payload)
+    if not is_valid:
+        return error_resp
     try:
         result = route_request(request_id, payload, context)
         log("request_completed", {"requestId": request_id})
