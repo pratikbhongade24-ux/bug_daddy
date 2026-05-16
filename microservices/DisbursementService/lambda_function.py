@@ -59,9 +59,34 @@ def validate_account(payload, context, request_id):
 def release_funds(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
+    # Guard against simulated bug that previously caused a ZeroDivisionError
     if payload.get("simulateBug") == "release_zero":
-        disbursement["amount"] / 0
-    return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
+        # Return a controlled error response instead of crashing
+        return response(
+            context,
+            request_id,
+            "releaseFunds",
+            payload,
+            {
+                "error": "Simulated release zero failure",
+                "status": "FAILED",
+                "details": "Division by zero simulation triggered",
+            },
+        )
+    return response(
+        context,
+        request_id,
+        "releaseFunds",
+        payload,
+        {
+            "release": {
+                "utr": payload.get("utr", "UTR-001"),
+                "status": "PROCESSING",
+                "destination": disbursement["destinationBank"],
+            },
+            "message": "Funds release initiated",
+        },
+    )
 
 
 def get_disbursement_status(payload, context, request_id):
