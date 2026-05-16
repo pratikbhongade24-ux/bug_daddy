@@ -1294,6 +1294,19 @@ def ensure_execution_schema(conn):
     seed_workflow_definitions(conn)
 
 
+def fail_interrupted_security_sessions(conn) -> None:
+    now = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE security_scan_sessions
+               SET status = 'failed',
+                   error_message = 'Scan interrupted by backend restart before completion.',
+                   completed_at = %s
+               WHERE status = 'processing'""",
+            (now,),
+        )
+
+
 def seed_workflow_definitions(conn):
     workflows = {
         "incident_daddy": "Incident Daddy Flow",
@@ -1517,6 +1530,7 @@ def ensure_schema_and_seed_data():
         ensure_core_schema(conn)
         seed_core_data(conn)
         ensure_execution_schema(conn)
+        fail_interrupted_security_sessions(conn)
         with conn.cursor() as cur:
             cur.execute("SHOW COLUMNS FROM users LIKE 'username'")
             if not cur.fetchone():
