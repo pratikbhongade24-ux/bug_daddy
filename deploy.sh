@@ -94,7 +94,7 @@ sudo systemctl restart "${BACKEND_SERVICE}"
 # IDS (data integrity / SME transaction services)
 echo "Restarting IDS services..."
 cd "${REMOTE_ROOT}/SME"
-DATABASE_URL="${IDS_DATABASE_URL}" docker-compose up -d --build
+DATABASE_URL="${IDS_DATABASE_URL}" docker compose up -d --build
 
 echo "Done! https://bugdaddy.in"
 EOF
