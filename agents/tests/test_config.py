@@ -32,7 +32,7 @@ def test_config_uses_boto3_region_when_env_missing(monkeypatch):
     config = AppConfig.from_env()
 
     assert config.aws_region == "eu-west-1"
-    assert config.bedrock_model_id == "openai.gpt-oss-120b-1:0"
+    assert config.bedrock_model_id == "qwen.qwen3-coder-480b-a35b-v1:0"
 
 
 def test_native_jira_tools_are_disabled_without_credentials(monkeypatch):

@@ -74,6 +74,10 @@ def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgent
     model = _build_model(config)
     repo_read_write = tools["bitbucket"] + tools.get("github_read_write", [])
     all_repo_tools = tools["bitbucket"] + tools.get("github", [])
+    # Context analyzer must not mutate repo or open PRs — its job is read-only diagnosis.
+    # Bitbucket tools are kept (they are read-heavy in this scaffold), but github write/PR tools
+    # are stripped so the analyzer can never short-circuit the Coder/Reviewer pipeline.
+    repo_read_only = tools["bitbucket"] + tools.get("github_read_only", [])
     return BugAgentBundle(
         strategy_planner=Agent(
             model=model,
@@ -83,7 +87,7 @@ def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgent
         context_analyzer=Agent(
             model=model,
             system_prompt=CONTEXT_ANALYZER_PROMPT,
-            tools=tools["jira"] + all_repo_tools,
+            tools=tools["jira"] + repo_read_only,
         ),
         coder=Agent(model=model, system_prompt=CODER_PROMPT, tools=repo_read_write),
         critic=Agent(model=model, system_prompt=CRITIC_PROMPT, tools=[]),

@@ -9,7 +9,7 @@ RAG_WIDGET_API_KEY = os.getenv("RAG_WIDGET_API_KEY", "change-widget-key")
 RAG_ADMIN_API_KEY = os.getenv("RAG_ADMIN_API_KEY", "change-admin-key")
 
 BEDROCK_EMBEDDING_MODEL = os.getenv("BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
-BEDROCK_LLM_MODEL = os.getenv("BEDROCK_LLM_MODEL", "qwen.qwen3-coder-30b-a3b-v1:0")
+BEDROCK_LLM_MODEL = os.getenv("BEDROCK_LLM_MODEL", "qwen.qwen3-coder-480b-a35b-v1:0")
 USE_MOCK_BEDROCK = os.getenv("USE_MOCK_BEDROCK", "false").lower() == "true"
 
 RETRIEVAL_TOP_K_VECTOR = int(os.getenv("RETRIEVAL_TOP_K_VECTOR", "15"))

@@ -19,22 +19,90 @@ def needs_bug_handoff(*parts: str) -> bool:
     return False
 
 
-def is_non_code_resolution(*parts: str) -> bool:
-    """Return True when the resolution is non‑code.
+_CODE_CHANGE_PATTERNS = (
+    # diff fences / hunk headers
+    r"```diff\b",
+    r"^\s*---\s+a/",
+    r"^\s*\+\+\+\s+b/",
+    r"^@@\s",
+    # explicit code mutation verbs
+    r"\breplace\s+`",
+    r"\breplace\s+\S+\s+with\s+",
+    r"\bcreate\s+(a\s+)?branch\b",
+    r"\bcreate\s+(a\s+)?(new\s+)?pull request\b",
+    r"\bopen(?:ed)?\s+(a\s+)?pr\b",
+    r"\bfix/[\w\-/]+",                # branch names like fix/foo-bar
+    r"\bmicroservices/\S+\.py\b",     # repo-specific file paths
+    r"\bpull/\d+\b",                  # PR refs like pull/46
+    r"\bgithub\.com/\S+/pull/\d+",    # PR URLs
+)
 
-    Detection is based on two signals:
-    1. An explicit ``[RESOLUTION_TYPE: NON_CODE]`` tag on its own line (as originally required).
-    2. The presence of the phrase ``jira-only`` (case‑insensitive) in any of the supplied text parts,
-       which is used by the test suite to indicate a non‑code, Jira‑only remediation path.
+
+def _looks_like_code_change(text: str) -> bool:
+    """Heuristic: does ``text`` describe an actual code change?
+
+    Used as a tie-breaker when the planner's NON_CODE tag contradicts a body that
+    plainly describes editing files / opening a PR.
+    """
+    import re
+    for pat in _CODE_CHANGE_PATTERNS:
+        if re.search(pat, text, re.IGNORECASE | re.MULTILINE):
+            return True
+    return False
+
+
+def _critic_verdict(*parts: str) -> str | None:
+    """Extract the Critic Agent's [STRATEGY_VERDICT: ...] tag if present.
+
+    Returns one of "CODE" / "NON_CODE" / "UNCLEAR", or None when no verdict tag
+    was emitted (e.g. older critic outputs that pre-date the prompt change).
     """
     import re
     signal = " ".join(parts)
-    # Check for explicit tag on its own line.
-    if re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE):
+    m = re.search(
+        r"\[STRATEGY_VERDICT:\s*(CODE|NON_CODE|UNCLEAR)\s*\]",
+        signal,
+        re.IGNORECASE,
+    )
+    return m.group(1).upper() if m else None
+
+
+def is_non_code_resolution(*parts: str) -> bool:
+    """Decide whether to skip the Coder/Reviewer pipeline and route to Jira-only.
+
+    Decision order:
+    1. **Critic verdict (authoritative)** — if the Critic Agent emitted
+       ``[STRATEGY_VERDICT: ...]``, trust it. CODE/UNCLEAR → run the pipeline;
+       NON_CODE → skip. This wins over any planner tag because the critic
+       reviewed the strategy holistically.
+    2. **Planner tag with contradiction guard** — fall back to detecting
+       ``[RESOLUTION_TYPE: NON_CODE]`` or jira-only/non-code keywords, BUT
+       ignore the tag if the same text also describes a code change
+       (diff blocks, branch names, PR refs, etc.). A contradictory tag is
+       a bug, not a signal.
+    """
+    verdict = _critic_verdict(*parts)
+    if verdict == "NON_CODE":
         return True
-    # Fallback: look for the keyword indicating a Jira‑only (non‑code) resolution.
+    if verdict in ("CODE", "UNCLEAR"):
+        return False
+
+    # No critic verdict available — fall back to the planner tag / keyword scan.
+    import re
+    signal = " ".join(parts)
+    tag_present = bool(
+        re.search(r"^\s*[-*]?\s*\[RESOLUTION_TYPE:\s*NON_CODE\]\s*$", signal, re.MULTILINE)
+    )
     lowered = signal.lower()
-    return "jira-only" in lowered or "non-code" in lowered
+    keyword_present = "jira-only" in lowered or "non-code" in lowered
+
+    if not (tag_present or keyword_present):
+        return False
+
+    # Tie-break: if the same text also describes a real code change, the tag is wrong.
+    if _looks_like_code_change(signal):
+        return False
+    return True
 
 
 def infer_review_disposition(text: str) -> str:
