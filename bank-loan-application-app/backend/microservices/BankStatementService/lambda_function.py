@@ -68,7 +68,11 @@ def build_transactions(statement, payload):
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
     if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+        try:
+            int("not-a-number")
+        except ValueError as e:
+            log("simulate_amount_cast_error", {"message": "Simulated ValueError caught", "error": str(e)})
+            # Continue with normal execution instead of crashing
     return transactions
 
 
