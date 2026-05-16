@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import boto3
 
 
-DEFAULT_BEDROCK_MODEL_ID = "openai.gpt-oss-120b-1:0"
+DEFAULT_BEDROCK_MODEL_ID = "qwen.qwen3-coder-480b-a35b-v1:0"
 
 
 def _json_list(name: str, default: list[str]) -> list[str]:
