@@ -59,8 +59,10 @@ def validate_account(payload, context, request_id):
 def release_funds(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
-    if payload.get("simulateBug") == "release_zero":
-        disbursement["amount"] / 0
+    # Removed intentional division by zero simulation.
+    # If a simulateBug flag is present, log a warning for observability.
+    if payload.get("simulateBug"):
+        print(f"WARNING: simulateBug flag received in release_funds: {payload.get('simulateBug')}")
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
 
 
