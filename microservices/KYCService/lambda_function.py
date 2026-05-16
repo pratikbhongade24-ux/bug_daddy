@@ -81,6 +81,11 @@ def verify_pan(payload, context, request_id):
     identity = normalize_identity(payload)
     if payload.get("simulateBug") == "pan_none":
         identity["pan"].strip()
+    # Bug: kyc_bad_pan — originates in CustomerOnboardingService which omits pan when
+    # the lead is created without PAN validation. KYC receives pan=None and crashes here.
+    if payload.get("simulateBug") == "kyc_bad_pan":
+        pan_from_onboarding = payload.get("pan")   # None — onboarding never set it
+        pan_from_onboarding.strip()                # AttributeError: 'NoneType' has no attribute 'strip'
     return response(context, request_id, "verifyPan", payload, {"verification": {"pan": identity["pan"], "status": "VERIFIED", "provider": "mock-pan-registry"}, "message": "PAN verification completed"})
 
 

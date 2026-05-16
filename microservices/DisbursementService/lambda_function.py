@@ -85,6 +85,12 @@ def release_funds(payload, context, request_id):
     log("release_funds", disbursement)
     if payload.get("simulateBug") == "release_zero":
         disbursement["amount"] / 0
+    # Bug: disb_zero_from_kyc — KYCService returns kycScore=0 for customers in PENDING band
+    # (missing score lookup). DisbursementService uses kycScore as divisor for risk-adjusted
+    # fee computation → ZeroDivisionError. Error surfaces here; root cause is KYC score gap.
+    if payload.get("simulateBug") == "disb_zero_from_kyc":
+        kyc_score_from_kyc_service = payload.get("kycScore", 0)  # 0 — KYC never populated it
+        risk_adjusted_fee = 1000 / kyc_score_from_kyc_service    # ZeroDivisionError
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
 
 
