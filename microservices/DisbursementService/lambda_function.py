@@ -44,6 +44,22 @@ def prepare_disbursement(payload):
     return disbursement
 
 
+def create_settlement(disbursement, payload):
+    """Create a settlement record for a successful disbursement.
+    In a real implementation this would persist to a database. Here we
+    simulate the record and log it for observability.
+    """
+    settlement = {
+        "settlementId": f"SETT-{disbursement['disbursementId']}",
+        "disbursementId": disbursement["disbursementId"],
+        "amount": disbursement["amount"],
+        "status": "SETTLED",
+        "timestamp": iso_now(),
+    }
+    log("create_settlement", settlement)
+    return settlement
+
+
 def create_disbursement(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     return response(context, request_id, "createDisbursement", payload, {"disbursement": {"disbursementId": disbursement["disbursementId"], "status": "CREATED", "amount": disbursement["amount"]}, "message": "Disbursement created"})
@@ -61,7 +77,9 @@ def release_funds(payload, context, request_id):
     log("release_funds", disbursement)
     if payload.get("simulateBug") == "release_zero":
         disbursement["amount"] / 0
-    return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
+    # Simulate fund release and then create settlement record
+    settlement = create_settlement(disbursement, payload)
+    return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "settlement": settlement, "message": "Funds release initiated and settlement recorded"})
 
 
 def get_disbursement_status(payload, context, request_id):
