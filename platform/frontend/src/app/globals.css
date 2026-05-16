@@ -1140,6 +1140,62 @@ body { font-size: 15px; }
   overflow: visible;
   padding: 2.25rem 1.5rem 1.5rem;
 }
+
+/* ── Grafana View ─────────────────────────────────────────────── */
+.grafana-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+.grafana-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  flex-shrink: 0;
+}
+.grafana-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.grafana-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--t);
+  letter-spacing: -0.01em;
+}
+.grafana-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c1);
+  background: var(--c1d);
+  border-radius: 20px;
+  padding: 0.15rem 0.5rem;
+}
+.grafana-open-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--c3);
+  text-decoration: none;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  background: var(--c3d);
+  transition: background 0.2s;
+}
+.grafana-open-btn:hover { background: rgba(59,130,246,0.18); }
+.grafana-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--bg);
+}
+.main:has(.grafana-view) { overflow: hidden; }
 .sec-hero,
 .sec-stat-card,
 .sec-sidebar,
