@@ -323,17 +323,6 @@ export interface TransactionDemoMetrics {
   db_slow_queries: number;
 }
 
-export interface TransactionCronStatus {
-  enabled: boolean;
-  interval_sec: number;
-  hours_back: number;
-  last_run_at: string | null;
-  last_status: string;
-  last_report_id: number | null;
-  last_mismatch_count: number | null;
-  last_error: string | null;
-}
-
 export interface TransactionBugStatus {
   beneficiary_routing_bug_active: boolean;
   code_patch_applied?: boolean;

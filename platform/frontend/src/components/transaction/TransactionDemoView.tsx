@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiJson, errorMessage } from '@/lib/api';
-import type { TransactionBugStatus, TransactionCronStatus, TransactionDemoAnalysis, TransactionDemoMetrics, TransactionDemoReport, TransactionVerifyFix } from '@/lib/types';
+import type { TransactionBugStatus, TransactionDemoAnalysis, TransactionDemoMetrics, TransactionDemoReport, TransactionVerifyFix } from '@/lib/types';
 
 export function TransactionDemoView({ addToast }: { addToast: (msg: string, kind?: 'ok' | 'err' | 'inf') => void }) {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
@@ -18,12 +18,6 @@ export function TransactionDemoView({ addToast }: { addToast: (msg: string, kind
   const metricsQuery = useQuery({
     queryKey: ['transaction-demo', 'metrics'],
     queryFn: () => apiJson<TransactionDemoMetrics>('/demo/transaction/metrics'),
-    refetchInterval: 20_000,
-  });
-
-  const cronQuery = useQuery({
-    queryKey: ['transaction-demo', 'cron'],
-    queryFn: () => apiJson<TransactionCronStatus>('/demo/transaction/cron/status'),
     refetchInterval: 20_000,
   });
 
@@ -55,7 +49,6 @@ export function TransactionDemoView({ addToast }: { addToast: (msg: string, kind
       setSelectedReportId(data.report.id);
       await reportsQuery.refetch();
       await metricsQuery.refetch();
-      await cronQuery.refetch();
     },
     onError: (e) => addToast(errorMessage(e, 'Reconciliation failed'), 'err'),
   });
@@ -93,15 +86,6 @@ export function TransactionDemoView({ addToast }: { addToast: (msg: string, kind
           <p>Recon runs: <b>{metricsQuery.data?.reconciliation_runs ?? 0}</b></p>
           <p>Mismatches: <b>{metricsQuery.data?.mismatches_detected ?? 0}</b></p>
           <p>DB slow queries: <b>{metricsQuery.data?.db_slow_queries ?? 0}</b></p>
-        </article>
-
-        <article className="tx-card">
-          <h3>Cron Monitor</h3>
-          <p>Enabled: <b>{cronQuery.data?.enabled ? 'Yes' : 'No'}</b></p>
-          <p>Interval: <b>{cronQuery.data?.interval_sec ?? 0}s</b></p>
-          <p>Last status: <b>{cronQuery.data?.last_status ?? 'n/a'}</b></p>
-          <p>Last run: <b>{cronQuery.data?.last_run_at || 'n/a'}</b></p>
-          <p>Last mismatches: <b>{cronQuery.data?.last_mismatch_count ?? 0}</b></p>
         </article>
 
         <article className="tx-card">

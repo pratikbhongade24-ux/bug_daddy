@@ -56,8 +56,6 @@ AI_QUEUE_POLL_SECONDS = int(os.getenv("AI_QUEUE_POLL_SECONDS", "10"))
 AI_QUEUE_DEFAULT_LENGTH = int(os.getenv("AI_QUEUE_DEFAULT_LENGTH", "3"))
 AI_QUEUE_STARTED = False
 TRANSACTION_SERVICE_URL = os.getenv("TRANSACTION_SERVICE_URL", "http://localhost:8005").rstrip("/")
-TRANSACTION_RECON_CRON_ENABLED = os.getenv("TRANSACTION_RECON_CRON_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
-TRANSACTION_RECON_CRON_INTERVAL_SEC = int(os.getenv("TRANSACTION_RECON_CRON_INTERVAL_SEC", "180"))
 TRANSACTION_RECON_HOURS_BACK = int(os.getenv("TRANSACTION_RECON_HOURS_BACK", "24"))
 TRANSACTION_BOOTSTRAP_ON_START = os.getenv("TRANSACTION_BOOTSTRAP_ON_START", "true").lower() in {"1", "true", "yes", "on"}
 TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE = os.getenv("TRANSACTION_ANOMALY_FALLBACK_TO_AGENTCORE", "false").lower() in {"1", "true", "yes", "on"}
@@ -71,20 +69,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-TRANSACTION_RECON_STATE: dict[str, Any] = {
-    "enabled": TRANSACTION_RECON_CRON_ENABLED,
-    "interval_sec": TRANSACTION_RECON_CRON_INTERVAL_SEC,
-    "hours_back": TRANSACTION_RECON_HOURS_BACK,
-    "last_run_at": None,
-    "last_status": "never",
-    "last_report_id": None,
-    "last_mismatch_count": None,
-    "last_error": None,
-}
-_TRANSACTION_RECON_STOP = threading.Event()
-
-
 
 class LoginRequest(BaseModel):
     identifier: str = Field(min_length=1, max_length=255)
@@ -1628,14 +1612,6 @@ def startup_event():
     except Exception:
         import logging
         logging.getLogger(__name__).exception("RAG DB init failed — support chat will be unavailable")
-    if TRANSACTION_RECON_CRON_ENABLED:
-        thread = threading.Thread(target=_transaction_recon_scheduler, daemon=True, name="transaction-recon-cron")
-        thread.start()
-
-
-@app.on_event("shutdown")
-def shutdown_event():
-    _TRANSACTION_RECON_STOP.set()
 
 
 @app.get("/")
@@ -1688,33 +1664,7 @@ def _run_transaction_reconciliation_once(triggered_by: str = "manual") -> dict[s
     detail_resp.raise_for_status()
     report_detail = detail_resp.json()
     _sync_transaction_anomalies_to_issue_log(report, report_detail)
-    TRANSACTION_RECON_STATE.update(
-        {
-            "last_run_at": dt_to_str(utc_now()),
-            "last_status": "success",
-            "last_report_id": report.get("id"),
-            "last_mismatch_count": report.get("mismatch_count"),
-            "last_error": None,
-            "last_triggered_by": triggered_by,
-        }
-    )
     return {"report": report, "analysis": analysis}
-
-
-def _transaction_recon_scheduler():
-    while not _TRANSACTION_RECON_STOP.is_set():
-        try:
-            _run_transaction_reconciliation_once(triggered_by="cron")
-        except Exception as exc:
-            TRANSACTION_RECON_STATE.update(
-                {
-                    "last_run_at": dt_to_str(utc_now()),
-                    "last_status": "failed",
-                    "last_error": str(exc),
-                    "last_triggered_by": "cron",
-                }
-            )
-        _TRANSACTION_RECON_STOP.wait(max(30, TRANSACTION_RECON_CRON_INTERVAL_SEC))
 
 
 @app.post("/demo/transaction/reconciliation/run")
@@ -1873,11 +1823,6 @@ def transaction_demo_metrics(actor: dict[str, Any] = Depends(require_permission(
         return response.json()
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Transaction metrics fetch failed: {exc}") from exc
-
-
-@app.get("/demo/transaction/cron/status")
-def transaction_demo_cron_status(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
-    return TRANSACTION_RECON_STATE
 
 
 @app.post("/demo/transaction/verify-fix")
