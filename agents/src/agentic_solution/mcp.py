@@ -64,7 +64,8 @@ def _load_tools_for_server(server: MCPServerConfig, diagnostics: dict[str, Any])
 
     try:
         client = _client_for(server)
-        tools = client.list_tools_sync()
+        with client:
+            tools = client.list_tools_sync()
         filtered = _filter_tools(server, tools)
         diagnostics[server.name] = {
             "status": "loaded",
