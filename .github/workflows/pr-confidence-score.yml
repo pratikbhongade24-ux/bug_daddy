@@ -1,0 +1,196 @@
+name: PR Confidence Score
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  confidence:
+    name: Calculate And Publish Confidence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute confidence score
+        id: calc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed("No pull_request payload found.");
+              return;
+            }
+
+            const sha = pr.head.sha;
+
+            // Weights: tests(0.35), quality checks(0.20), risk(0.20), diff quality(0.15), history(0.10)
+            // History is static neutral until a historical signal pipeline is added.
+            const WEIGHTS = {
+              tests: 0.35,
+              checks: 0.20,
+              risk: 0.20,
+              diff: 0.15,
+              history: 0.10
+            };
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+
+            const statusesResp = await github.rest.repos.getCombinedStatusForRef({
+              owner,
+              repo,
+              ref: sha
+            });
+
+            const checksResp = await github.rest.checks.listForRef({
+              owner,
+              repo,
+              ref: sha,
+              per_page: 100
+            });
+
+            const allSignals = [];
+            for (const s of statusesResp.data.statuses || []) {
+              allSignals.push({
+                name: s.context || "status",
+                state: s.state || "unknown"
+              });
+            }
+            for (const c of checksResp.data.check_runs || []) {
+              const state = (c.conclusion || c.status || "unknown").toLowerCase();
+              allSignals.push({
+                name: c.name || "check",
+                state
+              });
+            }
+
+            const testsRegex = /(test|pytest|jest|mocha|unit|integration|e2e)/i;
+            const checksRegex = /(lint|flake8|ruff|mypy|type|security|sast|sonar|codeql|bandit)/i;
+            const ignoreRegex = /(dependabot|codecov|coverage)/i;
+
+            const tests = allSignals.filter(s => testsRegex.test(s.name));
+            const qualityChecks = allSignals.filter(s => checksRegex.test(s.name));
+
+            function scoreFromSignals(signalList) {
+              const considered = signalList.filter(s => !ignoreRegex.test(s.name));
+              if (considered.length === 0) return 0.6; // neutral fallback
+              const passStates = new Set(["success", "completed", "neutral", "skipped"]);
+              let points = 0;
+              for (const s of considered) {
+                if (passStates.has(s.state)) points += 1;
+                else if (s.state === "failure" || s.state === "cancelled" || s.state === "timed_out") points += 0;
+                else points += 0.5;
+              }
+              return points / considered.length;
+            }
+
+            const testsScoreRaw = scoreFromSignals(tests);
+            const checksScoreRaw = scoreFromSignals(qualityChecks);
+
+            const fileCount = files.length;
+            const additions = files.reduce((n, f) => n + (f.additions || 0), 0);
+            const deletions = files.reduce((n, f) => n + (f.deletions || 0), 0);
+            const totalChanges = additions + deletions;
+
+            const riskRegex = /(migrations?|schema|database|auth|permission|payment|transaction|prod|deploy|infra|docker|k8s|terraform|secrets?)/i;
+            const riskyFiles = files.filter(f => riskRegex.test(f.filename || ""));
+            const riskyRatio = fileCount ? (riskyFiles.length / fileCount) : 0;
+
+            let riskScoreRaw = 1.0;
+            if (fileCount > 40 || totalChanges > 2500) riskScoreRaw -= 0.45;
+            else if (fileCount > 20 || totalChanges > 1200) riskScoreRaw -= 0.30;
+            else if (fileCount > 10 || totalChanges > 500) riskScoreRaw -= 0.18;
+            else if (fileCount > 5 || totalChanges > 250) riskScoreRaw -= 0.10;
+            riskScoreRaw -= Math.min(0.35, riskyRatio * 0.35);
+            riskScoreRaw = Math.max(0, Math.min(1, riskScoreRaw));
+
+            let diffScoreRaw = 1.0;
+            if (totalChanges > 1500) diffScoreRaw -= 0.45;
+            else if (totalChanges > 800) diffScoreRaw -= 0.30;
+            else if (totalChanges > 300) diffScoreRaw -= 0.15;
+            if (fileCount > 25) diffScoreRaw -= 0.20;
+            else if (fileCount > 12) diffScoreRaw -= 0.10;
+            diffScoreRaw = Math.max(0, Math.min(1, diffScoreRaw));
+
+            const historyScoreRaw = 0.70; // neutral-good default until historical telemetry is integrated
+
+            const weighted =
+              (WEIGHTS.tests * testsScoreRaw) +
+              (WEIGHTS.checks * checksScoreRaw) +
+              (WEIGHTS.risk * riskScoreRaw) +
+              (WEIGHTS.diff * diffScoreRaw) +
+              (WEIGHTS.history * historyScoreRaw);
+
+            const finalScore = Math.max(0, Math.min(1, weighted));
+            const pct = Math.round(finalScore * 100);
+            const level = finalScore >= 0.8 ? "High" : (finalScore >= 0.6 ? "Medium" : "Low");
+
+            const body = [
+              "<!-- agent-confidence-score -->",
+              "## Agent Confidence Score",
+              "",
+              `- Score: **${finalScore.toFixed(2)}** (${pct}%)`,
+              `- Level: **${level}**`,
+              "- Breakdown:",
+              `  - Tests (35%): **${testsScoreRaw.toFixed(2)}**`,
+              `  - Lint/Type/Security (20%): **${checksScoreRaw.toFixed(2)}**`,
+              `  - Change Risk (20%): **${riskScoreRaw.toFixed(2)}**`,
+              `  - Diff Quality (15%): **${diffScoreRaw.toFixed(2)}**`,
+              `  - Historical Reliability (10%): **${historyScoreRaw.toFixed(2)}**`,
+              "",
+              "- Inputs:",
+              `  - Files changed: **${fileCount}**`,
+              `  - Lines changed (add+del): **${totalChanges}**`,
+              `  - Risk-tagged files: **${riskyFiles.length}**`,
+              "",
+              "_This is a reviewer aid, not a correctness guarantee._"
+            ].join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100
+            });
+            const marker = "<!-- agent-confidence-score -->";
+            const existing = comments.find(c => (c.body || "").includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body
+              });
+            }
+
+            core.summary
+              .addHeading("Agent Confidence Score")
+              .addRaw(`Score: ${finalScore.toFixed(2)} (${pct}%)`)
+              .addEOL()
+              .addRaw(`Level: ${level}`)
+              .addEOL()
+              .addRaw(`Files: ${fileCount}, Lines changed: ${totalChanges}, Risk-tagged files: ${riskyFiles.length}`)
+              .write();
+
+            core.setOutput("score", finalScore.toFixed(2));
+            core.setOutput("level", level);
+
