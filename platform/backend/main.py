@@ -1759,6 +1759,18 @@ def sonar_report_url(report_date: str, user: dict[str, Any] = Depends(require_pe
     }
 
 
+@app.get("/sonar/reports/{report_date}/data")
+def sonar_report_data(report_date: str, user: dict[str, Any] = Depends(require_permission("issues.read"))):
+    key = sonar_report_key(report_date)
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    try:
+        obj = s3.get_object(Bucket=SONAR_REPORT_BUCKET, Key=key)
+        report = json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Sonar report not available: {exc}") from exc
+    return report
+
+
 @app.get("/issues")
 def list_issues(
     q: str | None = None,
@@ -2288,7 +2300,10 @@ def _map_execution_resolution(
             fields.append("resolution_pr = %s")
             values.append(resolution_pr)
             event_result["resolution_pr"] = resolution_pr
-        fields.append("status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END")
+        if resolution_pr:
+            fields.append("status = CASE WHEN status IN ('open', 'in_progress') THEN 'in_review' ELSE status END")
+        else:
+            fields.append("status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END")
 
         with conn.cursor() as cur:
             cur.execute(
@@ -2364,9 +2379,9 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                         cur.execute(
                             """
                             UPDATE service_exception_log
-                            SET resolution_jira = %s,
+                            SET resolution_jira = COALESCE(NULLIF(resolution_jira, ''), %s),
                                 status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
-                            WHERE id = %s AND (resolution_jira IS NULL OR resolution_jira = '')
+                            WHERE id = %s
                             """,
                             (_normalize_jira_resolution(jira_key), issue_id),
                         )
@@ -2383,9 +2398,9 @@ def run_agent_background(session_id: str, runtime_payload: dict[str, Any], targe
                         cur.execute(
                             """
                             UPDATE service_exception_log
-                            SET resolution_pr = %s,
-                                status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
-                            WHERE id = %s AND (resolution_pr IS NULL OR resolution_pr = '')
+                            SET resolution_pr = COALESCE(NULLIF(resolution_pr, ''), %s),
+                                status = CASE WHEN status IN ('open', 'in_progress') THEN 'in_review' ELSE status END
+                            WHERE id = %s
                             """,
                             (pr_url, issue_id),
                         )
