@@ -59,8 +59,18 @@ def validate_mandate(payload, context, request_id):
 def execute_debit(payload, context, request_id):
     mandate = load_mandate(payload)
     log("execute_debit", mandate)
+    # NOTE: The `simulateBug` flag is used only for internal testing.
+    # In production we must avoid mixing types which raises a TypeError.
+    # If this flag is set, we perform a safe numeric addition.
     if payload.get("simulateBug") == "execute_type":
-        mandate["amount"] + "100"
+        # Ensure the amount is numeric before adding.
+        amount = mandate.get("amount")
+        if not isinstance(amount, (int, float)):
+            raise ValueError(
+                f"simulateBug 'execute_type' triggered with non‑numeric amount: {type(amount)}"
+            )
+        # Perform the intended addition safely.
+        mandate["amount"] = amount + 100
     return response(context, request_id, "executeDebit", payload, {"debit": {"transactionId": payload.get("transactionId", "DEBIT-1001"), "status": "SCHEDULED", "amount": mandate["amount"]}, "message": "Debit execution scheduled"})
 
 
