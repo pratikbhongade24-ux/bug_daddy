@@ -254,5 +254,5 @@ export interface SecurityFindingsResponse {
   total: number;
 }
 
-export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin' | 'security' | 'grafana';
+export type ViewName = 'dashboard' | 'issues' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana';
 export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';

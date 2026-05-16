@@ -14,7 +14,7 @@ AGENT_EXECUTION_CALLBACK_URL="${AGENT_EXECUTION_CALLBACK_URL:-https://bugdaddy.i
 SECURITY_SCANNER_ACCESS_KEY_ID="${SECURITY_SCANNER_ACCESS_KEY_ID:-AKIARQ5BVXUOP7HLRG3O}"
 SECURITY_SCANNER_SECRET_ACCESS_KEY="${SECURITY_SCANNER_SECRET_ACCESS_KEY:-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}"
 JIRA_WEBHOOK_SECRET="${JIRA_WEBHOOK_SECRET:-d8tbOEYzWYHpB3rHS878}"
-RAG_DATABASE_URL="${RAG_DATABASE_URL:-postgresql+psycopg2://sonar:${SONAR_DB_PASSWORD:-change-me}@bugdaddy-sonarqube-postgres.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com:5432/sonarqube}"
+RAG_DATABASE_URL="${RAG_DATABASE_URL:-postgresql+psycopg2://sonar:DCjHsU0Rscm9gs08wAo1a390sqIN@bugdaddy-sonarqube-postgres.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com:5432/sonarqube?sslmode=require}"
 RAG_WIDGET_API_KEY="${RAG_WIDGET_API_KEY:-change-widget-key}"
 RAG_ADMIN_API_KEY="${RAG_ADMIN_API_KEY:-change-admin-key}"
 BEDROCK_LLM_MODEL="${BEDROCK_LLM_MODEL:-qwen.qwen3-coder-30b-a3b-v1:0}"

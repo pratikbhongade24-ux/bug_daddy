@@ -56,8 +56,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from rag.api.router import router as rag_router  # noqa: E402
-app.include_router(rag_router, prefix="/support")
 
 
 class LoginRequest(BaseModel):
