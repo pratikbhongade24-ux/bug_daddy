@@ -7,6 +7,15 @@ import { apiJson, errorMessage } from '@/lib/api';
 import { PanelHeader } from '../shared/PanelHeader';
 import { AsyncActionButton } from '../shared/AsyncActionButton';
 
+function queueStatusClass(status: string | null | undefined) {
+  const s = (status || '').toLowerCase();
+  if (s === 'processing' || s === 'in_progress' || s === 'running') return 'qstat-processing';
+  if (s === 'queued' || s === 'pending') return 'qstat-queued';
+  if (s === 'completed' || s === 'done' || s === 'resolved') return 'qstat-completed';
+  if (s === 'failed' || s === 'error') return 'qstat-failed';
+  return 'qstat-default';
+}
+
 export function AiQueueView({
   aiQueue,
   loading,
@@ -116,6 +125,15 @@ export function AiQueueView({
           <div className="admin-card-head">Queue Activity</div>
           <div className="admin-list-wrap">
             <table className="admin-table">
+              <colgroup>
+                <col className="aq-col-issue" />
+                <col className="aq-col-service" />
+                <col className="aq-col-status" />
+                <col className="aq-col-istatus" />
+                <col className="aq-col-worker" />
+                <col className="aq-col-attempts" />
+                <col className="aq-col-updated" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Issue</th>
@@ -130,12 +148,12 @@ export function AiQueueView({
               <tbody>
                 {(aiQueue?.items || []).map((item) => (
                   <tr key={item.id}>
-                    <td>{item.issue_id}</td>
-                    <td>{item.service_name || '-'}</td>
-                    <td><span className="admin-badge">{item.status}</span></td>
-                    <td>{item.issue_status || '-'}</td>
-                    <td>{item.worker_id || '-'}</td>
-                    <td>{item.attempts}</td>
+                    <td className="td-id">#{item.issue_id}</td>
+                    <td className="td-own">{item.service_name || '-'}</td>
+                    <td><span className={`admin-badge qstat ${queueStatusClass(item.status)}`}>{item.status}</span></td>
+                    <td><span className={`admin-badge qstat ${queueStatusClass(item.issue_status)}`}>{item.issue_status || '-'}</span></td>
+                    <td className="td-desc" title={item.worker_id || ''}>{item.worker_id || '-'}</td>
+                    <td className="td-own">{item.attempts}</td>
                     <td>{item.updated_at ? new Date(item.updated_at).toLocaleString('en-IN') : '-'}</td>
                   </tr>
                 ))}

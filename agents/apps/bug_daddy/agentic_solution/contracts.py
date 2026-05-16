@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 Severity = Literal["sev1", "sev2", "sev3", "unknown"]
+Criticality = Literal["critical", "high", "medium", "low", "unknown"]
+Priority = Literal["p0", "p1", "p2", "p3", "p4", "unknown"]
 ReviewDisposition = Literal["pull_request", "jira_ticket", "rework_required"]
 BugResolution = Literal["review_required", "pull_request", "jira_ticket", "rework_required"]
 
@@ -36,11 +39,29 @@ class SMEQueryResponse(BaseModel):
 
 class IncidentRequest(IssueContext):
     trigger: str | None = None
+    criticality: Criticality = "unknown"
+    priority: Priority = "unknown"
+    opened_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    resolved_at: datetime | None = None
+
+
+class IncidentSLAKPI(BaseModel):
+    ack_target_minutes: int
+    resolve_target_minutes: int
+    time_to_ack_minutes: int | None = None
+    time_to_resolve_minutes: int | None = None
+    ack_remaining_minutes: int | None = None
+    resolve_remaining_minutes: int | None = None
+    ack_breached: bool = False
+    resolve_breached: bool = False
 
 
 class IncidentReport(BaseModel):
     title: str
     severity: Severity = "unknown"
+    criticality: Criticality = "unknown"
+    priority: Priority = "unknown"
     blast_radius: str | None = None
     root_cause: str | None = None
     actions_taken: list[str] = Field(default_factory=list)
@@ -53,6 +74,9 @@ class IncidentResponse(BaseModel):
     component: Literal["incident_daddy"] = "incident_daddy"
     summary: str
     severity: Severity = "unknown"
+    criticality: Criticality = "unknown"
+    priority: Priority = "unknown"
+    sla_kpis: IncidentSLAKPI | None = None
     owner_hint: str | None = None
     next_action: str
     handoff_to_bug: bool = False
@@ -65,6 +89,8 @@ class IncidentResponse(BaseModel):
 class BugRequest(IssueContext):
     incident_summary: str | None = None
     incident_severity: Severity | None = None
+    criticality: Criticality = "unknown"
+    priority: Priority = "unknown"
     incident_artifacts: list[dict[str, Any]] = Field(default_factory=list)
 
 

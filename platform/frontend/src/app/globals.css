@@ -415,20 +415,22 @@ button:disabled { cursor: not-allowed; }
 .tc { background: rgba(0,0,0,0.05); padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-family: var(--mono); }
 .tab.active .tc { background: var(--c3d); color: var(--c3); }
 
-.table-wrap { flex: 1; overflow-y: auto; overflow-x: hidden; background: var(--s2); }
+.table-wrap { flex: 1; overflow-y: auto; overflow-x: auto; background: var(--s2); padding: 0 0.75rem 0.75rem; }
 .issues-table, .admin-table { width: 100%; border-collapse: collapse; }
-.issues-table { table-layout: fixed; }
+.issues-table { table-layout: fixed; min-width: 0; }
 .issues-table .col-id { width: 6%; }
 .issues-table .col-service { width: 10%; }
-.issues-table .col-error { width: 25%; }
-.issues-table .col-frequency { width: 8%; }
-.issues-table .col-criticality { width: 10%; }
+.issues-table .col-error { width: 21%; }
+.issues-table .col-frequency { width: 7%; }
+.issues-table .col-priority { width: 7%; }
+.issues-table .col-sla { width: 10%; }
+.issues-table .col-criticality { width: 9%; }
 .issues-table .col-owner { width: 8%; }
-.issues-table .col-jira { width: 9%; }
+.issues-table .col-jira { width: 8%; }
 .issues-table .col-pr { width: 9%; }
-.issues-table .col-time { width: 6%; }
-.issues-table .col-action { width: 9%; }
-.issues-table th, .issues-table td, .admin-table th, .admin-table td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--bd); text-align: left; }
+.issues-table .col-time { width: 7%; }
+.issues-table .col-action { width: 7%; }
+.issues-table th, .issues-table td, .admin-table th, .admin-table td { padding: 0.72rem 0.62rem; border-bottom: 1px solid var(--bd); text-align: left; }
 .issues-table th, .admin-table th {
   position: sticky; top: 0; background: var(--s3); font-size: 0.75rem; font-weight: 700; color: var(--t2);
   text-transform: uppercase; letter-spacing: 0.05em; z-index: 2; cursor: pointer; user-select: none;
@@ -491,11 +493,17 @@ button:disabled { cursor: not-allowed; }
 .freq { font-family: var(--mono); font-weight: 700; font-size: 0.85rem; }
 .freq.hi { color: var(--c2); } .freq.med { color: var(--c4); } .freq.low { color: var(--t2); }
 
-.badge, .admin-badge { font-size: 0.75rem; font-weight: 600; border-radius: 6px; padding: 4px 8px; text-transform: capitalize; display: inline-block; }
+.badge, .admin-badge { font-size: 0.74rem; font-weight: 600; border-radius: 6px; padding: 4px 7px; text-transform: capitalize; display: inline-block; }
 .badge.critical { background: var(--c2d); color: #b91c1c; border: 1px solid #fecaca; }
 .badge.high { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
 .badge.medium, .badge.med { background: var(--c4d); color: #b45309; border: 1px solid #fde68a; }
 .badge.low { background: var(--c1d); color: #047857; border: 1px solid #a7f3d0; }
+.badge.prio.prio-p0,
+.badge.prio.prio-p1 { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.badge.prio.prio-p2 { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
+.badge.prio.prio-p3 { background: #ecfccb; color: #365314; border: 1px solid #bef264; }
+.badge.prio.prio-p4 { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+.badge.prio.prio-unknown { background: #e5e7eb; color: #374151; border: 1px solid #d1d5db; }
 
 .act-btn { border: 1px solid var(--bd); border-radius: 6px; font-size: 0.76rem; font-weight: 600; padding: 6px 7px; transition: all 0.2s; background: #fff; white-space: normal; }
 .act-btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
@@ -509,22 +517,72 @@ button:disabled { cursor: not-allowed; }
 
 /* ── Admin & Sonar Views ── */
 .admin-grid { flex: 1; overflow: auto; padding: 1.5rem; display: grid; grid-template-columns: 380px 1fr; gap: 1.25rem; }
-.admin-card { padding: 1.5rem; }
+.admin-card {
+  padding: 1.2rem;
+  border: 1px solid color-mix(in oklab, var(--bd) 70%, var(--c3) 30%);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--s2) 92%, white 8%), var(--s2));
+  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.05);
+}
 .admin-card-head { font-weight: 700; font-size: 1.1rem; margin-bottom: 1.25rem; color: var(--t); }
 .admin-card-head-spaced { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--bd); }
 .admin-stack { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
 .admin-form { display: flex; flex-direction: column; gap: 1rem; }
 .admin-form label { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--t2); }
-.admin-form input, .admin-form select { background: var(--s1); border: 1px solid var(--bd); color: var(--t); border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem; transition: border-color 0.2s; }
+.admin-form input, .admin-form select { background: color-mix(in oklab, var(--s1) 93%, white 7%); border: 1px solid var(--bd); color: var(--t); border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.9rem; transition: border-color 0.2s; }
 .admin-form input:focus, .admin-form select:focus { border-color: var(--c3); outline: none; box-shadow: 0 0 0 3px var(--c3d); }
 .admin-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
 .admin-list-card { min-width: 0; padding: 0; display: flex; flex-direction: column; }
-.admin-list-wrap { overflow: auto; flex: 1; }
+.admin-list-wrap { overflow: auto; flex: 1; border-top: 1px solid var(--bd); }
 .queue-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-.queue-kpis div { border: 1px solid var(--bd); border-radius: 8px; padding: 0.75rem; background: var(--s1); display: flex; flex-direction: column; gap: 0.35rem; }
+.queue-kpis div { border: 1px solid var(--bd); border-radius: 10px; padding: 0.8rem; background: color-mix(in oklab, var(--s1) 94%, white 6%); display: flex; flex-direction: column; gap: 0.35rem; }
 .queue-kpis span, .queue-status-row span:last-child { color: var(--t3); font-size: 0.76rem; }
 .queue-kpis strong { color: var(--t); font-size: 1.15rem; font-family: var(--mono); }
 .queue-status-row { display: flex; align-items: center; gap: 0.75rem; }
+
+.admin-table { table-layout: fixed; }
+.admin-table th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in oklab, var(--s3) 88%, white 12%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 2;
+}
+.admin-table td {
+  font-size: 0.83rem;
+  color: var(--t);
+  vertical-align: middle;
+}
+.admin-table tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--s2) 95%, var(--c3h) 5%);
+}
+.admin-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--c3h) 65%, white 35%) !important;
+}
+
+.aq-col-issue { width: 8%; }
+.aq-col-service { width: 16%; }
+.aq-col-status { width: 14%; }
+.aq-col-istatus { width: 14%; }
+.aq-col-worker { width: 22%; }
+.aq-col-attempts { width: 8%; }
+.aq-col-updated { width: 18%; }
+
+.admin-badge.qstat {
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.67rem;
+  font-family: var(--mono);
+  padding: 3px 8px;
+}
+.admin-badge.qstat.qstat-queued { background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }
+.admin-badge.qstat.qstat-processing { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.admin-badge.qstat.qstat-completed { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.admin-badge.qstat.qstat-failed { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.admin-badge.qstat.qstat-default { background: #e5e7eb; color: #374151; border: 1px solid #d1d5db; }
 
 .sonar-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
 .sonar-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
@@ -811,6 +869,7 @@ button:disabled { cursor: not-allowed; }
   .sec-findings-count { margin-left: 0; }
   .table-controls { flex-direction: column; align-items: stretch; }
   .srch-box { min-width: 100%; }
+  .issues-table { min-width: 980px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -852,9 +911,9 @@ body::before {
 body { font-size: 15px; }
 .kpi-val { font-size: 3.2rem !important; font-weight: 900 !important; }
 .nav-item { font-size: 0.95rem; padding: 0.85rem 1.5rem; }
-.badge, .admin-badge { font-size: 0.8rem; padding: 5px 10px; }
+.badge, .admin-badge { font-size: 0.74rem; padding: 4px 7px; }
 .act-btn { padding: 7px 7px; font-size: 0.78rem; }
-.issues-table th, .issues-table td { padding: 0.9rem 0.75rem; }
+.issues-table th, .issues-table td { padding: 0.72rem 0.62rem !important; font-size: 0.86rem; }
 
 /* ── Glassmorphic topbar ── */
 .topbar {

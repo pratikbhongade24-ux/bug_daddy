@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from strands import Agent
@@ -8,7 +9,7 @@ from strands import Agent
 from agentic_solution.agents import IncidentAgentBundle, build_incident_agents, _build_model
 from agentic_solution.prompts import SLACK_NOTIFIER_PROMPT
 from agentic_solution.config import AppConfig
-from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IssueContext
+from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IncidentSLAKPI, IssueContext
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_incident_severity
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools, slack_client_context
@@ -77,6 +78,9 @@ class IncidentDaddyRuntime:
         self._post_report_to_slack(incident_report, logger)
 
         severity = orchestration.get("severity") or infer_incident_severity(f"{request.prompt}\n{analysis_raw}\n{orchestration_raw}")
+        priority = _effective_priority(request.priority, str(severity))
+        criticality = _effective_criticality(request.criticality, str(severity))
+        sla_kpis = _compute_sla_kpis(request, priority)
         handoff = bool(orchestration.get("bug_daddy_handoff", False))
 
         artifacts: list[dict[str, Any]] = [
@@ -127,10 +131,13 @@ class IncidentDaddyRuntime:
         response = IncidentResponse(
             summary=orchestration.get("triage_summary", orchestration_raw),
             severity=severity,
+            criticality=criticality,
+            priority=priority,
+            sla_kpis=sla_kpis,
             next_action=orchestration.get("next_action", next_action),
             handoff_to_bug=handoff,
             bug_request=bug_request_payload,
-            incident_report=incident_report,
+            incident_report=incident_report.model_copy(update={"criticality": criticality, "priority": priority}),
             artifacts=artifacts,
             diagnostics=diagnostics,
         )
@@ -239,6 +246,8 @@ class IncidentDaddyRuntime:
             incident_summary=incident_summary,
             incident_severity=severity,
             incident_artifacts=artifacts,
+            priority=request.priority,
+            criticality=request.criticality,
         )
 
 
@@ -384,9 +393,66 @@ def _format_slack_report(report: IncidentReport) -> str:
     return (
         f":rotating_light: *Incident Report* — {report.title}\n"
         f"*Severity*: {sev_label}  |  *Owner*: {report.owner or 'Unknown'}  |  *Status*: {report.status}\n"
+        f"*Priority*: {report.priority.upper()}  |  *Criticality*: {report.criticality}\n"
         f"\n"
         f"*Blast Radius*: {report.blast_radius or 'Under investigation'}\n"
         f"*Root Cause Hypothesis*: {report.root_cause or 'Under investigation'}\n"
         f"*Actions Taken*:\n{actions}\n"
         f"\n---\n_Reviewed by Reviewer Daddy · Auto-generated_"
+    )
+
+
+def _effective_priority(request_priority: str, severity: str) -> str:
+    normalized = str(request_priority or "unknown").lower()
+    if normalized in {"p0", "p1", "p2", "p3", "p4"}:
+        return normalized
+    by_severity = {"sev1": "p1", "sev2": "p2", "sev3": "p3"}
+    return by_severity.get(str(severity).lower(), "unknown")
+
+
+def _effective_criticality(request_criticality: str, severity: str) -> str:
+    normalized = str(request_criticality or "unknown").lower()
+    if normalized in {"critical", "high", "medium", "low"}:
+        return normalized
+    by_severity = {"sev1": "critical", "sev2": "high", "sev3": "medium"}
+    return by_severity.get(str(severity).lower(), "unknown")
+
+
+def _to_utc(ts: datetime) -> datetime:
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+
+
+def _minutes_between(start: datetime, end: datetime) -> int:
+    return int(max(0, (end - start).total_seconds()) // 60)
+
+
+def _compute_sla_kpis(request: IncidentRequest, priority: str) -> IncidentSLAKPI:
+    sla_policy = {
+        "p0": (5, 60),
+        "p1": (15, 240),
+        "p2": (30, 480),
+        "p3": (60, 1440),
+        "p4": (240, 4320),
+        "unknown": (30, 480),
+    }
+    ack_target, resolve_target = sla_policy.get(priority, sla_policy["unknown"])
+    opened = _to_utc(request.opened_at) if request.opened_at else datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    ack_at = _to_utc(request.acknowledged_at) if request.acknowledged_at else None
+    resolved_at = _to_utc(request.resolved_at) if request.resolved_at else None
+
+    time_to_ack = _minutes_between(opened, ack_at) if ack_at else None
+    time_to_resolve = _minutes_between(opened, resolved_at) if resolved_at else None
+    ack_elapsed = time_to_ack if time_to_ack is not None else _minutes_between(opened, now)
+    resolve_elapsed = time_to_resolve if time_to_resolve is not None else _minutes_between(opened, now)
+
+    return IncidentSLAKPI(
+        ack_target_minutes=ack_target,
+        resolve_target_minutes=resolve_target,
+        time_to_ack_minutes=time_to_ack,
+        time_to_resolve_minutes=time_to_resolve,
+        ack_remaining_minutes=max(0, ack_target - ack_elapsed) if time_to_ack is None else max(0, ack_target - time_to_ack),
+        resolve_remaining_minutes=max(0, resolve_target - resolve_elapsed) if time_to_resolve is None else max(0, resolve_target - time_to_resolve),
+        ack_breached=ack_elapsed > ack_target,
+        resolve_breached=resolve_elapsed > resolve_target,
     )

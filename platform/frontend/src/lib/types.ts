@@ -80,6 +80,18 @@ export interface Issue {
   frequency: number;
   freq: number;
   criticality: 'Critical' | 'High' | 'Medium' | 'Low' | string;
+  severity?: 'sev1' | 'sev2' | 'sev3' | 'unknown' | string;
+  priority?: 'p0' | 'p1' | 'p2' | 'p3' | 'p4' | 'unknown' | string;
+  sla_kpis?: {
+    ack_target_minutes: number;
+    resolve_target_minutes: number;
+    time_to_ack_minutes?: number | null;
+    time_to_resolve_minutes?: number | null;
+    ack_remaining_minutes?: number | null;
+    resolve_remaining_minutes?: number | null;
+    ack_breached?: boolean;
+    resolve_breached?: boolean;
+  } | null;
   agent_target: string;
   workflow_key: string;
   status: string;

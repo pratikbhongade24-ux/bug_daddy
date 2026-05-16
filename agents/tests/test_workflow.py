@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from agentic_solution.heuristics import (
     infer_incident_severity,
     infer_review_disposition,
@@ -6,6 +8,8 @@ from agentic_solution.heuristics import (
 )
 from agentic_solution.config import AppConfig
 from agentic_solution.mcp import MCPToolBundle
+from agentic_solution.contracts import IncidentRequest
+from agentic_solution.services.incident import _compute_sla_kpis, _effective_criticality, _effective_priority
 from agentic_solution.services.classifier import ClassifierRuntime
 from agentic_solution.services.combined import LocalPeerRuntimeClient, _enable_local_peers, _target_from_payload
 
@@ -108,3 +112,19 @@ def test_classifier_creates_jira_before_bug_handoff(monkeypatch):
     assert peers.payload["resolution_jira"] == "BUG-123"
     assert peers.payload["metadata"]["jira_key"] == "BUG-123"
     assert peers.payload["metadata"]["request_id"] == "req-1"
+
+
+def test_incident_sla_kpis_and_priority_criticality_defaults():
+    opened_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+    acknowledged_at = opened_at + timedelta(minutes=10)
+    request = IncidentRequest(prompt="P1 outage", opened_at=opened_at, acknowledged_at=acknowledged_at)
+
+    priority = _effective_priority("unknown", "sev1")
+    criticality = _effective_criticality("unknown", "sev1")
+    kpis = _compute_sla_kpis(request, priority)
+
+    assert priority == "p1"
+    assert criticality == "critical"
+    assert kpis.ack_target_minutes == 15
+    assert kpis.time_to_ack_minutes == 10
+    assert kpis.ack_breached is False
