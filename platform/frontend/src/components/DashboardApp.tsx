@@ -172,25 +172,34 @@ export function DashboardApp() {
   const issues = issuesQuery.data || emptyIssues;
   const feed = feedQuery.data?.items || [];
   const isAdmin = authUser?.role === 'admin' && hasPermission(authUser, 'users.read');
+  const dashboardHardError =
+    (summaryQuery.isError && !summaryQuery.data) ||
+    (chartsQuery.isError && !chartsQuery.data) ||
+    (feedQuery.isError && !feedQuery.data) ||
+    (issuesQuery.isError && !issuesQuery.data);
+  const issuesHardError = issuesQuery.isError && !issuesQuery.data;
+  const sonarHardError = sonarQuery.isError && !sonarQuery.data;
+  const adminHardError = usersQuery.isError && !usersQuery.data;
+
   const hasDataError = (
-    view === 'dashboard' && (summaryQuery.isError || chartsQuery.isError || feedQuery.isError || issuesQuery.isError)
+    view === 'dashboard' && dashboardHardError
   ) || (
-    view === 'issues' && issuesQuery.isError
+    view === 'issues' && issuesHardError
   ) || (
-    view === 'sonar' && sonarQuery.isError
+    view === 'sonar' && sonarHardError
   ) || (
-    view === 'admin' && isAdmin && usersQuery.isError
+    view === 'admin' && isAdmin && adminHardError
   );
-  const dashboardErrorText = view === 'dashboard'
+  const dashboardErrorText = view === 'dashboard' && dashboardHardError
     ? errorMessage(summaryQuery.error || chartsQuery.error || feedQuery.error || issuesQuery.error, 'Dashboard data could not be loaded.')
     : undefined;
-  const issuesErrorText = view === 'issues' && issuesQuery.isError
+  const issuesErrorText = view === 'issues' && issuesHardError
     ? errorMessage(issuesQuery.error, 'Issues could not be loaded.')
     : undefined;
-  const sonarErrorText = view === 'sonar' && sonarQuery.isError
+  const sonarErrorText = view === 'sonar' && sonarHardError
     ? errorMessage(sonarQuery.error, 'Sonar data could not be loaded.')
     : undefined;
-  const adminErrorText = view === 'admin' && isAdmin && usersQuery.isError
+  const adminErrorText = view === 'admin' && isAdmin && adminHardError
     ? errorMessage(usersQuery.error, 'Admin data could not be loaded.')
     : undefined;
   const deferredSearch = useDeferredValue(search);

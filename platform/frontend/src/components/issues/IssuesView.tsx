@@ -49,7 +49,7 @@ export function IssuesView(props: {
   onExport: () => void;
 }) {
   const tabs: IssueTab[] = ['backlog', 'wip', 'review', 'resolved'];
-  const showResolutionColumns = props.tab !== 'backlog';
+  const showJiraColumn = props.tab !== 'backlog';
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
       <PanelHeader
@@ -126,8 +126,7 @@ export function IssuesView(props: {
               <col className="col-frequency" />
               <col className="col-criticality" />
               <col className="col-owner" />
-              {showResolutionColumns ? <col className="col-jira" /> : null}
-              {showResolutionColumns ? <col className="col-pr" /> : null}
+              {showJiraColumn ? <col className="col-jira" /> : null}
               <col className="col-time" />
               <col className="col-action" />
             </colgroup>
@@ -139,8 +138,7 @@ export function IssuesView(props: {
                 <th onClick={() => props.sortBy('freq')}>Frequency ↕</th>
                 <th>Criticality</th>
                 <th>Owner</th>
-                {showResolutionColumns ? <th>Jira</th> : null}
-                {showResolutionColumns ? <th>PR</th> : null}
+                {showJiraColumn ? <th>Jira</th> : null}
                 <th>Timestamp</th>
                 <th>Action</th>
               </tr>
@@ -151,7 +149,7 @@ export function IssuesView(props: {
                   key={issue.id}
                   issue={issue}
                   tab={props.tab}
-                  showResolutionColumns={showResolutionColumns}
+                  showJiraColumn={showJiraColumn}
                   isSyncing={props.syncingIssueIds?.includes(issue.id)}
                   loading={props.prioritizeLoading[issue.id]}
                   prioritize={props.prioritize}
@@ -172,7 +170,7 @@ export function IssuesView(props: {
 export const IssueRow = memo(function IssueRow({
   issue,
   tab,
-  showResolutionColumns,
+  showJiraColumn,
   isSyncing,
   loading,
   prioritize,
@@ -180,7 +178,7 @@ export const IssueRow = memo(function IssueRow({
 }: {
   issue: Issue;
   tab: IssueTab;
-  showResolutionColumns: boolean;
+  showJiraColumn: boolean;
   isSyncing?: boolean;
   loading?: string;
   prioritize: (issue: Issue) => void;
@@ -223,11 +221,8 @@ export const IssueRow = memo(function IssueRow({
         <span className={clsx('badge', issue.criticality.toLowerCase())}>{issue.criticality}</span>
       </td>
       <td className="td-own">{issue.owner}</td>
-      {showResolutionColumns ? (
+      {showJiraColumn ? (
         <ResolutionLink value={issue.resolution_jira} fallback="-" asButton={tab === 'wip'} buttonLabel="Open Jira" />
-      ) : null}
-      {showResolutionColumns ? (
-        <ResolutionLink value={issue.resolution_pr} fallback="-" asButton={tab === 'wip'} buttonLabel="Open PR" />
       ) : null}
       <td className="td-time" title={issue.last_seen || issue.created_at || ''}>{formatTimestamp(issue.last_seen || issue.created_at)}</td>
       <td>
