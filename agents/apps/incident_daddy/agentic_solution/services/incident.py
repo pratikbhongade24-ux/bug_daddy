@@ -206,8 +206,6 @@ Incident analysis:
 
 SME context:
 {sme_summary}
-
-Say clearly if bug_daddy should be engaged.
 """.strip()
 
 
