@@ -88,8 +88,25 @@ def load_customer(payload):
 
 def run_risk_checks(profile, payload):
     log("run_risk_checks", {"customerId": profile["customerId"]})
+    # Simulated bug injection: division by riskDenominator.
+    # Guard against missing or zero denominator to avoid ZeroDivisionError.
     if payload.get("simulateBug") == "risk_division":
-        return 100 / int(payload.get("riskDenominator", 0))
+        # Extract denominator, default to None to detect missing key.
+        denominator_raw = payload.get("riskDenominator")
+        try:
+            denominator = int(denominator_raw) if denominator_raw is not None else 0
+        except (ValueError, TypeError):
+            # Non‑numeric denominator supplied.
+            raise ValueError(
+                f"Invalid riskDenominator value: {denominator_raw!r}. Must be a non‑zero integer."
+            )
+        if denominator == 0:
+            # Provide a clear error instead of Python's ZeroDivisionError.
+            raise ValueError("riskDenominator must be a non‑zero integer for risk_division simulation.")
+        # Log the validated denominator for observability.
+        log("run_risk_checks", {"customerId": profile["customerId"], "riskDenominator": denominator})
+        return 100 / denominator
+    # Normal operation returns static risk scores.
     return {"kycScore": 82, "fraudScore": 11, "bureauScore": 741}
 
 
