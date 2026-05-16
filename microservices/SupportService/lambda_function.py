@@ -143,7 +143,8 @@ def create_ticket(payload, context, request_id):
 
 def assign_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
-    if payload.get("simulateBug") == "queue_failure":
+    # Only simulate errors in non-production environments
+    if os.environ.get("ENVIRONMENT") != "production" and payload.get("simulateBug") == "queue_failure":
         # Return a controlled error response instead of raising an exception
         err = {
             "code": "QUEUE_ASSIGNMENT_FAILED",
@@ -171,7 +172,8 @@ def update_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
     comments = payload.get("comments", [])
     log("update_ticket", {"ticketId": ticket["ticketId"], "commentCount": len(comments)})
-    if payload.get("simulateBug") == "comment_shape":
+    # Only simulate errors in non-production environments
+    if os.environ.get("ENVIRONMENT") != "production" and payload.get("simulateBug") == "comment_shape":
         comments["latest"]  # This will raise a TypeError intentionally for testing
     return response(
         context,
