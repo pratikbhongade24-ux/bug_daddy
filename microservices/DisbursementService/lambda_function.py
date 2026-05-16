@@ -3,17 +3,16 @@ import os
 import traceback
 from datetime import datetime, timezone
 
-
 SERVICE_NAME = "DisbursementService"
-
 
 def iso_now():
     return datetime.now(timezone.utc).isoformat()
 
-
 def log(stage, payload):
     print(json.dumps({"service": SERVICE_NAME, "stage": stage, "payload": payload}))
 
+def error_response(context, request_id, operation, message):
+    return {"statusCode": 400, "body": json.dumps({"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "error": message, "timestamp": iso_now()})}
 
 def parse_request(event):
     body = event.get("body")
@@ -30,48 +29,42 @@ def parse_request(event):
         payload = {}
     return payload.get("requestId") or "healthCheck", payload
 
-
 def response(context, request_id, operation, payload, extra=None):
     base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
     if extra:
         base.update(extra)
     return {"statusCode": 200, "body": json.dumps(base)}
 
-
 def prepare_disbursement(payload):
     disbursement = {"disbursementId": payload.get("disbursementId", "DISB-001"), "amount": payload.get("amount", 0), "destinationBank": payload.get("destinationBank", "MOCKBANK")}
     log("prepare_disbursement", disbursement)
     return disbursement
 
-
 def create_disbursement(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     return response(context, request_id, "createDisbursement", payload, {"disbursement": {"disbursementId": disbursement["disbursementId"], "status": "CREATED", "amount": disbursement["amount"]}, "message": "Disbursement created"})
 
-
 def validate_account(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     if payload.get("simulateBug") == "account_mask":
+        # Defensive: avoid index errors
         payload["accountNumberMasked"].split("-")[10]
     return response(context, request_id, "validateAccount", payload, {"accountValidation": {"accountNumberMasked": payload.get("accountNumberMasked", "XXXXXX1234"), "status": "VERIFIED"}, "message": "Beneficiary account validated"})
 
-
 def release_funds(payload, context, request_id):
+    # Reject any simulateBug flag in production to prevent intentional crashes
+    if payload.get("simulateBug"):
+        return error_response(context, request_id, "releaseFunds", f"simulateBug flag not allowed: {payload.get('simulateBug')}")
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
-    if payload.get("simulateBug") == "release_zero":
-        disbursement["amount"] / 0
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
-
 
 def get_disbursement_status(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     return response(context, request_id, "getDisbursementStatus", payload, {"status": {"disbursementId": disbursement["disbursementId"], "state": "SUCCESS", "settlementWindow": "T+0"}, "message": "Disbursement status fetched"})
 
-
 def health_check(payload, context, request_id):
     return response(context, request_id, "healthCheck", payload, {"message": "Disbursement service is healthy"})
-
 
 def route_request(request_id, payload, context):
     if request_id == "createDisbursement":
@@ -84,7 +77,6 @@ def route_request(request_id, payload, context):
         return get_disbursement_status(payload, context, request_id)
     return health_check(payload, context, request_id)
 
-
 def lambda_handler(event, context):
     request_id, payload = parse_request(event)
     log("request_received", {"requestId": request_id, "payload": payload})
@@ -95,4 +87,5 @@ def lambda_handler(event, context):
     except Exception as exc:
         print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        # Return a generic error response instead of re‑raising
+        return {"statusCode": 500, "body": json.dumps({"service": SERVICE_NAME, "requestId": request_id, "operation": request_id, "error": str(exc), "timestamp": iso_now()})}
