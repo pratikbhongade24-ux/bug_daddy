@@ -36,8 +36,7 @@ COPY agentic_solution ./agentic_solution
 RUN uv pip install . \
     && uv pip install "aws-opentelemetry-distro>=0.10.1"
 
-RUN useradd -m -u 1000 bedrock_agentcore
-USER bedrock_agentcore
+USER pn
 
 EXPOSE 8080
 

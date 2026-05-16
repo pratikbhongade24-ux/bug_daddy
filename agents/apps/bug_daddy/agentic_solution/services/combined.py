@@ -5,7 +5,7 @@ from typing import Any
 
 from agentic_solution.config import AppConfig, PeerAgentConfig
 from agentic_solution.peer import PeerInvocationError
-from agentic_solution.services import bug, incident, reviewer, sme, classifier
+from agentic_solution.services import bug, incident, reviewer, sme, classifier, feature
 
 
 @dataclass(slots=True)
@@ -27,6 +27,7 @@ class CombinedBugDaddyRuntime:
     reviewer_daddy: reviewer.ReviewerDaddyRuntime
     sme_agent: sme.SMEAgentRuntime
     classifier: classifier.ClassifierRuntime
+    feature_daddy: feature.FeatureDaddyRuntime
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         target = _target_from_payload(payload)
@@ -39,6 +40,8 @@ class CombinedBugDaddyRuntime:
             return self.bug_daddy.handle(payload)
         if target == "classifier":
             return self.classifier.handle(payload)
+        if target == "feature_daddy":
+            return self.feature_daddy.handle(payload)
         return self.incident_daddy.handle(payload)
 
 
@@ -51,6 +54,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
     bug_runtime = bug.build_runtime(cfg)
     incident_runtime = incident.build_runtime(cfg)
     classifier_runtime = classifier.build_runtime(cfg)
+    feature_runtime = feature.build_runtime(cfg)
 
     local_peers = LocalPeerRuntimeClient(
         {
@@ -58,6 +62,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
             "reviewer_daddy": reviewer_runtime,
             "bug_daddy": bug_runtime,
             "incident_daddy": incident_runtime,
+            "feature_daddy": feature_runtime,
         }
     )
     bug_runtime.peers = local_peers
@@ -71,6 +76,7 @@ def build_runtime(config: AppConfig | None = None) -> CombinedBugDaddyRuntime:
         reviewer_daddy=reviewer_runtime,
         sme_agent=sme_runtime,
         classifier=classifier_runtime,
+        feature_daddy=feature_runtime,
     )
 
 
@@ -94,10 +100,14 @@ def _target_from_payload(payload: dict[str, Any]) -> str:
             "sme": "sme_agent",
             "sme_agent": "sme_agent",
             "classifier": "classifier",
+            "feature": "feature_daddy",
+            "feature_daddy": "feature_daddy",
         }
         if normalized in aliases:
             return aliases[normalized]
 
+    if "prd" in payload:
+        return "feature_daddy"
     if "question" in payload and "context" in payload:
         return "sme_agent"
     if {"issue", "plan", "fix_proposal"}.issubset(payload):

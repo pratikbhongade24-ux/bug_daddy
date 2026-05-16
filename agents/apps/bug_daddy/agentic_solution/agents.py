@@ -20,6 +20,11 @@ from agentic_solution.prompts import (
     REVIEWER_PROMPT,
     SME_AGENT_PROMPT,
     CLASSIFIER_PROMPT,
+    FEATURE_PRD_ANALYST_PROMPT,
+    FEATURE_ARCHITECT_PROMPT,
+    FEATURE_IMPLEMENTER_PROMPT,
+    FEATURE_CRITIC_PROMPT,
+    FEATURE_REVIEWER_PROMPT,
 )
 
 
@@ -103,6 +108,36 @@ def build_classifier_agent(config: AppConfig, tools: dict[str, list[Any]]) -> Ag
         model=model,
         system_prompt=CLASSIFIER_PROMPT,
         tools=tools["jira"],
+    )
+
+
+@dataclass(slots=True)
+class FeatureAgentBundle:
+    prd_analyst: Agent
+    architect: Agent
+    implementer: Agent
+    critic: Agent
+    reviewer: Agent
+
+
+def build_feature_agents(config: AppConfig, tools: dict[str, list[Any]]) -> FeatureAgentBundle:
+    model = _build_model(config)
+    all_repo_tools = tools["bitbucket"] + tools.get("github", [])
+    repo_read_write = tools["bitbucket"] + tools.get("github_read_write", [])
+    return FeatureAgentBundle(
+        prd_analyst=Agent(model=model, system_prompt=FEATURE_PRD_ANALYST_PROMPT, tools=[]),
+        architect=Agent(
+            model=model,
+            system_prompt=FEATURE_ARCHITECT_PROMPT,
+            tools=tools["jira"] + all_repo_tools,
+        ),
+        implementer=Agent(model=model, system_prompt=FEATURE_IMPLEMENTER_PROMPT, tools=repo_read_write),
+        critic=Agent(model=model, system_prompt=FEATURE_CRITIC_PROMPT, tools=[]),
+        reviewer=Agent(
+            model=model,
+            system_prompt=FEATURE_REVIEWER_PROMPT,
+            tools=tools["jira"] + repo_read_write,
+        ),
     )
 
 
