@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -94,6 +95,7 @@ def _client_for(server: MCPServerConfig) -> MCPClient:
             StdioServerParameters(
                 command=server.command,
                 args=server.args,
+                env=dict(os.environ),
             )
         )
     )
