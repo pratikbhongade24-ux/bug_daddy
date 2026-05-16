@@ -31,6 +31,27 @@ def parse_request(event):
     return payload.get("requestId") or "healthCheck", payload
 
 
+def error_response(context, request_id, operation, message, status_code=400):
+    """Return a structured error payload.
+
+    Args:
+        context: Lambda context.
+        request_id: Correlation id from the request.
+        operation: Name of the operation being performed.
+        message: Human‑readable error description.
+        status_code: HTTP status code (default 400).
+    """
+    base = {
+        "service": SERVICE_NAME,
+        "requestId": request_id,
+        "operation": operation,
+        "requestTraceId": getattr(context, "aws_request_id", None),
+        "timestamp": iso_now(),
+        "error": message,
+    }
+    return {"statusCode": status_code, "body": json.dumps(base)}
+
+
 def response(context, request_id, operation, payload, extra=None):
     base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
     if extra:
@@ -51,16 +72,19 @@ def create_disbursement(payload, context, request_id):
 
 def validate_account(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
+    # Guard against accidental simulateBug usage in production
     if payload.get("simulateBug") == "account_mask":
-        payload["accountNumberMasked"].split("-")[10]
+        # Return a controlled error instead of raising IndexError
+        return error_response(context, request_id, "validateAccount", "simulateBug flag 'account_mask' is not allowed in production", 400)
     return response(context, request_id, "validateAccount", payload, {"accountValidation": {"accountNumberMasked": payload.get("accountNumberMasked", "XXXXXX1234"), "status": "VERIFIED"}, "message": "Beneficiary account validated"})
 
 
 def release_funds(payload, context, request_id):
     disbursement = prepare_disbursement(payload)
     log("release_funds", disbursement)
+    # Defensive check: reject simulateBug flag that would cause division by zero
     if payload.get("simulateBug") == "release_zero":
-        disbursement["amount"] / 0
+        return error_response(context, request_id, "releaseFunds", "simulateBug flag 'release_zero' is not allowed in production", 400)
     return response(context, request_id, "releaseFunds", payload, {"release": {"utr": payload.get("utr", "UTR-001"), "status": "PROCESSING", "destination": disbursement["destinationBank"]}, "message": "Funds release initiated"})
 
 
@@ -93,6 +117,7 @@ def lambda_handler(event, context):
         log("request_completed", {"requestId": request_id})
         return result
     except Exception as exc:
+        # Log the error and return a controlled 500 response instead of bubbling up
         print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
         print(traceback.format_exc())
-        raise
+        return error_response(context, request_id, request_id, f"Internal server error: {exc}", 500)
