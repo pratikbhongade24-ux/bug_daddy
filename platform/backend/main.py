@@ -2907,12 +2907,7 @@ def _jira_issue_type_to_bug_daddy(jira_issue_type: str) -> str:
 
 @app.post("/webhooks/jira", status_code=200)
 def jira_webhook(payload: dict[str, Any]):
-    """
-    Jira webhook endpoint. Configure in Jira as:
-      URL: https://<your-host>/webhooks/jira
-      Events: Issue created, Issue updated
-    Optionally protect with header X-Jira-Webhook-Secret.
-    """
+    print("JIRA WEBHOOK PAYLOAD:", json.dumps(payload, default=str), flush=True)
     webhook_event = payload.get("webhookEvent", "")
     issue = payload.get("issue", {})
     issue_fields = issue.get("fields", {})
