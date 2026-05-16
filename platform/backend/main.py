@@ -5,6 +5,8 @@ import json
 import os
 import re
 import secrets
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -45,6 +47,14 @@ SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "
 SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
 SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
 SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
+AI_QUEUE_URL = os.getenv(
+    "AI_QUEUE_URL",
+    "https://sqs.ap-south-1.amazonaws.com/105028893980/bug-daddy-ai-automation-queue",
+)
+AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "3"))
+AI_QUEUE_POLL_SECONDS = int(os.getenv("AI_QUEUE_POLL_SECONDS", "10"))
+AI_QUEUE_DEFAULT_LENGTH = int(os.getenv("AI_QUEUE_DEFAULT_LENGTH", "3"))
+AI_QUEUE_STARTED = False
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -153,6 +163,11 @@ class SonarInvokeRequest(BaseModel):
 
 class SecurityInvokeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
+
+
+class AiQueueConfigUpdateRequest(BaseModel):
+    is_active: bool | None = None
+    queue_length: int | None = Field(default=None, ge=1, le=50)
 
 
 
@@ -650,6 +665,354 @@ def fetch_issue_by_id(conn, issue_id: int) -> dict[str, Any] | None:
     return map_issue(row) if row else None
 
 
+def get_ai_queue_config(conn) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM ai_queue_config WHERE id = 1")
+        row = cur.fetchone()
+    if not row:
+        return {
+            "is_active": True,
+            "queue_length": AI_QUEUE_DEFAULT_LENGTH,
+            "queue_url": AI_QUEUE_URL,
+            "updated_by": None,
+            "created_at": None,
+            "updated_at": None,
+        }
+    return {
+        "is_active": bool(row.get("is_active")),
+        "queue_length": int(row.get("queue_length") or AI_QUEUE_DEFAULT_LENGTH),
+        "queue_url": row.get("queue_url") or AI_QUEUE_URL,
+        "updated_by": row.get("updated_by"),
+        "created_at": dt_to_str(row.get("created_at")),
+        "updated_at": dt_to_str(row.get("updated_at")),
+    }
+
+
+def ai_queue_counts(conn) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT status, COUNT(*) AS total
+            FROM ai_queue_items
+            WHERE status IN ('queued', 'processing', 'completed', 'failed')
+            GROUP BY status
+            """
+        )
+        rows = cur.fetchall()
+    counts = {"queued": 0, "processing": 0, "completed": 0, "failed": 0}
+    for row in rows:
+        status_name = str(row.get("status"))
+        if status_name in counts:
+            counts[status_name] = int(row.get("total") or 0)
+    counts["active"] = counts["queued"] + counts["processing"]
+    return counts
+
+
+def sqs_client():
+    return boto3.client("sqs", region_name=AWS_REGION)
+
+
+def enqueue_ai_issue(conn, issue: dict[str, Any], queue_url: str, source: str = "auto") -> bool:
+    issue_id = int(issue["id"])
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM ai_queue_items
+            WHERE issue_id = %s AND status IN ('queued', 'processing')
+            LIMIT 1
+            """,
+            (issue_id,),
+        )
+        if cur.fetchone():
+            return False
+        cur.execute(
+            """
+            INSERT INTO ai_queue_items (issue_id, status)
+            VALUES (%s, 'queued')
+            """,
+            (issue_id,),
+        )
+        item_id = cur.lastrowid
+    try:
+        response = sqs_client().send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({"queue_item_id": item_id, "issue_id": issue_id, "source": source}),
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE ai_queue_items SET sqs_message_id = %s WHERE id = %s",
+                (response.get("MessageId"), item_id),
+            )
+        return True
+    except Exception as exc:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE ai_queue_items SET status = 'failed', last_error = %s, completed_at = %s WHERE id = %s",
+                (str(exc), utc_now().strftime("%Y-%m-%d %H:%M:%S"), item_id),
+            )
+        raise
+
+
+def replenish_ai_queue(conn) -> int:
+    config = get_ai_queue_config(conn)
+    if not config["is_active"]:
+        return 0
+    capacity = max(0, int(config["queue_length"]) - ai_queue_counts(conn)["active"])
+    if capacity <= 0:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sel.id, fingerprint, service_name, issue_type, source, description, stack_trace,
+                   frequency, first_seen, last_seen, status, assigned_to, resolution_pr,
+                   resolution_jira, created_at, resolved_at, entire_execution_logs, request_id,
+                   NULL AS latest_execution_session_id
+            FROM service_exception_log sel
+            WHERE status = 'open'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM ai_queue_items aqi
+                WHERE aqi.issue_id = sel.id AND aqi.status IN ('queued', 'processing')
+              )
+            ORDER BY frequency DESC, last_seen DESC, id DESC
+            LIMIT %s
+            """,
+            (capacity,),
+        )
+        issues = [map_issue(row) for row in cur.fetchall()]
+    enqueued = 0
+    for issue in issues:
+        if enqueue_ai_issue(conn, issue, str(config["queue_url"]), source="auto"):
+            enqueued += 1
+    return enqueued
+
+
+def _runtime_payload_for_issue(
+    conn,
+    issue_id: int,
+    *,
+    started_by: str,
+    queue_item_id: int | None = None,
+) -> tuple[str, dict[str, Any], str]:
+    issue = fetch_issue_by_id(conn, issue_id)
+    if not issue:
+        raise ValueError(f"Issue {issue_id} not found")
+    with conn.cursor() as cur:
+        cur.execute("UPDATE service_exception_log SET status = 'in_progress' WHERE id = %s", (issue_id,))
+    issue_context = {
+        "issue_id": issue["id"],
+        "jira_id": issue["jiraId"],
+        "issue_type": issue["type"],
+        "criticality": issue["criticality"],
+        "status": "in_progress",
+        "resolution_jira": issue.get("resolution_jira"),
+        "resolution_pr": issue.get("resolution_pr"),
+        "description": issue["description"],
+        "stack_trace": issue["stack_trace"],
+        "frequency": issue["frequency"],
+        "service_name": issue["service"],
+    }
+    suggested_target = route_issue_agent(issue_context)
+    target = "classifier"
+    runtime_target = "classifier"
+    workflow_key = workflow_key_for_target(suggested_target)
+    logs = []
+    if issue.get("stack_trace"):
+        logs.append("Stack Trace:\n" + issue["stack_trace"])
+    if issue.get("entire_execution_logs"):
+        logs.append("Execution Logs:\n" + issue["entire_execution_logs"])
+    metadata = {
+        "requested_by": started_by,
+        "requester_role": "system",
+        "issue_context": issue_context,
+        "agent_target": target,
+        "runtime_target": runtime_target,
+        "workflow_key": workflow_key,
+        "routing_source": "ai_queue",
+        "queue_item_id": queue_item_id,
+        "suggested_agent_target": suggested_target,
+    }
+    runtime_payload = {
+        "target": runtime_target,
+        "prompt": issue["description"] or issue["err"] or "Investigate issue and provide next actions.",
+        "source": "ai_queue",
+        "service_name": issue["service"],
+        "logs": logs,
+        "metadata": metadata,
+        "incident_summary": issue["description"] or issue["err"],
+    }
+    session_id = create_execution_session(
+        conn,
+        issue_id=issue_id,
+        workflow_key=workflow_key,
+        workflow_version="v1",
+        agent_target=target,
+        started_by=started_by,
+        input_payload=runtime_payload,
+        metadata=metadata,
+        status_value="queued",
+    )
+    append_execution_event(
+        conn,
+        session_id,
+        {
+            "event_type": "session.created",
+            "status": "queued",
+            "level": "info",
+            "title": "Execution session created by AI queue",
+            "description": f"Workflow {workflow_key} was created for issue {issue_id}.",
+            "agent_name": runtime_target,
+        },
+    )
+    runtime_payload["session_id"] = session_id
+    runtime_payload["metadata"] = {
+        **metadata,
+        "session_id": session_id,
+        "execution_callback_url": AGENT_EXECUTION_CALLBACK_URL,
+        "execution_log_secret": AGENT_EXECUTION_LOG_SECRET,
+    }
+    append_execution_event(
+        conn,
+        session_id,
+        {
+            "event_type": "node.started",
+            "node_id": "esc",
+            "node_name": "AgentCore Runtime",
+            "agent_name": runtime_target,
+            "status": "running",
+            "level": "info",
+            "title": "AgentCore invocation started",
+            "input_summary": runtime_payload.get("prompt"),
+        },
+    )
+    update_execution_session(conn, session_id, status_value="running")
+    return session_id, runtime_payload, target
+
+
+def process_ai_queue_message(message: dict[str, Any], worker_id: str, queue_url: str):
+    body = json.loads(message.get("Body") or "{}")
+    queue_item_id = int(body.get("queue_item_id") or 0)
+    issue_id = int(body.get("issue_id") or 0)
+    receipt_handle = message["ReceiptHandle"]
+    if not queue_item_id or not issue_id:
+        sqs_client().delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+        return
+    session_id: str | None = None
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE ai_queue_items
+                SET status = 'processing', worker_id = %s, attempts = attempts + 1, started_at = COALESCE(started_at, %s)
+                WHERE id = %s AND issue_id = %s AND status = 'queued'
+                """,
+                (worker_id, utc_now().strftime("%Y-%m-%d %H:%M:%S"), queue_item_id, issue_id),
+            )
+            claimed = cur.rowcount
+        if not claimed:
+            sqs_client().delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+            return
+        try:
+            session_id, runtime_payload, target = _runtime_payload_for_issue(
+                conn,
+                issue_id,
+                started_by=worker_id,
+                queue_item_id=queue_item_id,
+            )
+            with conn.cursor() as cur:
+                cur.execute("UPDATE ai_queue_items SET session_id = %s WHERE id = %s", (session_id, queue_item_id))
+        except Exception as exc:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE ai_queue_items
+                    SET status = 'failed', last_error = %s, completed_at = %s
+                    WHERE id = %s
+                    """,
+                    (str(exc), utc_now().strftime("%Y-%m-%d %H:%M:%S"), queue_item_id),
+                )
+            sqs_client().delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+            return
+    finally:
+        conn.close()
+
+    run_agent_background(session_id, runtime_payload, target)
+
+    conn = get_db()
+    try:
+        issue = fetch_issue_by_id(conn, issue_id)
+        issue_status = issue["status"] if issue else "missing"
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, error_message FROM agent_execution_sessions WHERE session_id = %s",
+                (session_id,),
+            )
+            execution = cur.fetchone() or {}
+        if execution.get("status") == "failed":
+            final_status = "failed"
+            last_error = execution.get("error_message") or "Agent execution failed."
+        elif issue_status in {"in_review", "resolved", "no_action"}:
+            final_status = "completed"
+            last_error = None
+        else:
+            final_status = "completed"
+            last_error = f"Execution finished with issue status {issue_status}; message removed to avoid duplicate invocation."
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE ai_queue_items
+                SET status = %s, last_error = %s, completed_at = %s
+                WHERE id = %s
+                """,
+                (final_status, last_error, utc_now().strftime("%Y-%m-%d %H:%M:%S"), queue_item_id),
+            )
+        sqs_client().delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+    finally:
+        conn.close()
+
+
+def ai_queue_worker(worker_index: int):
+    worker_id = f"ai-queue-worker-{worker_index}"
+    while True:
+        try:
+            conn = get_db()
+            try:
+                config = get_ai_queue_config(conn)
+                active = config["is_active"]
+                queue_url = str(config["queue_url"])
+                if active:
+                    replenish_ai_queue(conn)
+            finally:
+                conn.close()
+            if not active:
+                time.sleep(AI_QUEUE_POLL_SECONDS)
+                continue
+            response = sqs_client().receive_message(
+                QueueUrl=queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=1800,
+            )
+            for message in response.get("Messages", []):
+                process_ai_queue_message(message, worker_id, queue_url)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("AI queue worker failed")
+            time.sleep(AI_QUEUE_POLL_SECONDS)
+
+
+def start_ai_queue_workers():
+    global AI_QUEUE_STARTED
+    if AI_QUEUE_STARTED or not AI_QUEUE_URL or AI_QUEUE_WORKERS <= 0:
+        return
+    AI_QUEUE_STARTED = True
+    for index in range(1, AI_QUEUE_WORKERS + 1):
+        thread = threading.Thread(target=ai_queue_worker, args=(index,), name=f"ai-queue-worker-{index}", daemon=True)
+        thread.start()
+
+
 def invoke_agentcore(payload: dict[str, Any]) -> dict[str, Any]:
     client = boto3.client(
         "bedrock-agentcore",
@@ -802,6 +1165,53 @@ def ensure_execution_schema(conn):
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_queue_config (
+              id TINYINT NOT NULL PRIMARY KEY,
+              is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              queue_length INT NOT NULL DEFAULT 3,
+              queue_url VARCHAR(512) NULL,
+              updated_by VARCHAR(255) NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO ai_queue_config (id, is_active, queue_length, queue_url)
+            VALUES (1, TRUE, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              queue_url = COALESCE(NULLIF(queue_url, ''), VALUES(queue_url))
+            """,
+            (AI_QUEUE_DEFAULT_LENGTH, AI_QUEUE_URL),
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_queue_items (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,
+              issue_id BIGINT NOT NULL,
+              sqs_message_id VARCHAR(255) NULL,
+              status VARCHAR(30) NOT NULL DEFAULT 'queued',
+              worker_id VARCHAR(100) NULL,
+              session_id CHAR(36) NULL,
+              attempts INT NOT NULL DEFAULT 0,
+              last_error TEXT NULL,
+              enqueued_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              started_at DATETIME NULL,
+              completed_at DATETIME NULL,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_ai_queue_issue_status (issue_id, status),
+              INDEX idx_ai_queue_status (status),
+              INDEX idx_ai_queue_updated (updated_at)
+            )
+            """
+        )
+        cur.execute("SHOW INDEX FROM ai_queue_items WHERE Key_name = 'uq_ai_queue_issue_active'")
+        if cur.fetchone():
+            cur.execute("ALTER TABLE ai_queue_items DROP INDEX uq_ai_queue_issue_active")
+            cur.execute("ALTER TABLE ai_queue_items ADD INDEX idx_ai_queue_issue_status (issue_id, status)")
     seed_workflow_definitions(conn)
 
 
@@ -1071,6 +1481,7 @@ def ensure_schema_and_seed_data():
 @app.on_event("startup")
 def startup_event():
     ensure_schema_and_seed_data()
+    start_ai_queue_workers()
     try:
         from rag.db.init_db import init_db
         init_db()
@@ -1545,6 +1956,94 @@ def admin_list_audit_logs(actor: dict[str, Any] = Depends(require_permission("au
                 except json.JSONDecodeError:
                     pass
         return {"items": rows}
+    finally:
+        conn.close()
+
+
+def map_ai_queue_item(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "issue_id": int(row["issue_id"]),
+        "sqs_message_id": row.get("sqs_message_id"),
+        "status": row["status"],
+        "worker_id": row.get("worker_id"),
+        "session_id": row.get("session_id"),
+        "attempts": int(row.get("attempts") or 0),
+        "last_error": row.get("last_error"),
+        "service_name": row.get("service_name"),
+        "description": row.get("description"),
+        "frequency": int(row.get("frequency") or 0),
+        "issue_status": row.get("issue_status"),
+        "enqueued_at": dt_to_str(row.get("enqueued_at")),
+        "started_at": dt_to_str(row.get("started_at")),
+        "completed_at": dt_to_str(row.get("completed_at")),
+        "updated_at": dt_to_str(row.get("updated_at")),
+    }
+
+
+@app.get("/admin/ai-queue")
+def admin_get_ai_queue(actor: dict[str, Any] = Depends(require_permission("users.read"))):
+    conn = get_db()
+    try:
+        config = get_ai_queue_config(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT aqi.*, sel.service_name, sel.description, sel.frequency, sel.status AS issue_status
+                FROM ai_queue_items aqi
+                LEFT JOIN service_exception_log sel ON sel.id = aqi.issue_id
+                ORDER BY aqi.updated_at DESC, aqi.id DESC
+                LIMIT 50
+                """
+            )
+            items = [map_ai_queue_item(row) for row in cur.fetchall()]
+        return {
+            "config": config,
+            "counts": ai_queue_counts(conn),
+            "items": items,
+            "workers": AI_QUEUE_WORKERS,
+        }
+    finally:
+        conn.close()
+
+
+@app.patch("/admin/ai-queue")
+def admin_update_ai_queue(payload: AiQueueConfigUpdateRequest, actor: dict[str, Any] = Depends(require_permission("users.update"))):
+    conn = get_db()
+    try:
+        fields: list[str] = []
+        values: list[Any] = []
+        if payload.is_active is not None:
+            fields.append("is_active = %s")
+            values.append(payload.is_active)
+        if payload.queue_length is not None:
+            fields.append("queue_length = %s")
+            values.append(payload.queue_length)
+        if not fields:
+            return admin_get_ai_queue(actor)
+        fields.append("updated_by = %s")
+        values.append(actor["username"])
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE ai_queue_config SET {', '.join(fields)} WHERE id = 1",
+                values,
+            )
+        if payload.is_active is True or payload.queue_length is not None:
+            replenish_ai_queue(conn)
+        write_audit_log(conn, actor["id"], "admin.ai_queue.update", "ai_queue_config", "1", payload.model_dump(exclude_none=True))
+        config = get_ai_queue_config(conn)
+        return {"config": config, "counts": ai_queue_counts(conn), "workers": AI_QUEUE_WORKERS}
+    finally:
+        conn.close()
+
+
+@app.post("/admin/ai-queue/replenish")
+def admin_replenish_ai_queue(actor: dict[str, Any] = Depends(require_permission("users.update"))):
+    conn = get_db()
+    try:
+        enqueued = replenish_ai_queue(conn)
+        write_audit_log(conn, actor["id"], "admin.ai_queue.replenish", "ai_queue_items", None, {"enqueued": enqueued})
+        return {"enqueued": enqueued, "counts": ai_queue_counts(conn)}
     finally:
         conn.close()
 

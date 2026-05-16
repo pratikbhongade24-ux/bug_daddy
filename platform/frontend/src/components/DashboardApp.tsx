@@ -18,6 +18,7 @@ import type {
   IssueTab,
   ToastKind,
   ToastItem,
+  AiQueueStatus,
 } from '@/lib/types';
 
 import { Topbar } from './layout/Topbar';
@@ -168,6 +169,12 @@ export function DashboardApp() {
     queryKey: ['admin', 'users'],
     queryFn: () => apiJson<ListResponse<User>>('/admin/users'),
     enabled: view === 'admin' && hasPermission(authUser, 'users.read'),
+  });
+  const aiQueueQuery = useQuery({
+    queryKey: ['admin', 'ai-queue'],
+    queryFn: () => apiJson<AiQueueStatus>('/admin/ai-queue'),
+    enabled: view === 'admin' && hasPermission(authUser, 'users.read'),
+    refetchInterval: view === 'admin' ? 15_000 : false,
   });
 
   const summary = summaryQuery.data || emptySummary;
@@ -465,7 +472,18 @@ export function DashboardApp() {
             <KibanaView />
           ) : null}
           {view === 'admin' && isAdmin ? (
-            <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} loadError={adminErrorText} toast={toast} refresh={() => usersQuery.refetch()} />
+            <AdminView
+              users={usersQuery.data?.items || []}
+              aiQueue={aiQueueQuery.data}
+              loading={usersQuery.isLoading}
+              queueLoading={aiQueueQuery.isLoading}
+              loadError={adminErrorText}
+              toast={toast}
+              refresh={() => {
+                usersQuery.refetch();
+                aiQueueQuery.refetch();
+              }}
+            />
           ) : null}
         </section>
       </div>

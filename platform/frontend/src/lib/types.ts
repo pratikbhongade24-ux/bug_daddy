@@ -208,6 +208,49 @@ export interface ToastItem {
   kind: ToastKind;
 }
 
+export interface AiQueueConfig {
+  is_active: boolean;
+  queue_length: number;
+  queue_url: string;
+  updated_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AiQueueCounts {
+  queued: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  active: number;
+}
+
+export interface AiQueueItem {
+  id: number;
+  issue_id: number;
+  sqs_message_id: string | null;
+  status: string;
+  worker_id: string | null;
+  session_id: string | null;
+  attempts: number;
+  last_error: string | null;
+  service_name: string | null;
+  description: string | null;
+  frequency: number;
+  issue_status: string | null;
+  enqueued_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AiQueueStatus {
+  config: AiQueueConfig;
+  counts: AiQueueCounts;
+  items: AiQueueItem[];
+  workers: number;
+}
+
 export type SecurityScanStatus = 'processing' | 'completed' | 'failed';
 export type SecurityPhase = 'inventory' | 'package_extraction' | 'cve_lookup' | 'report';
 
