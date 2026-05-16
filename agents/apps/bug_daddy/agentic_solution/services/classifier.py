@@ -66,7 +66,7 @@ class ClassifierRuntime:
 
     def _extract_tag(self, text: str, tag: str) -> str | None:
         import re
-        match = re.search(f"\[{tag}: (.*?)\]", text)
+        match = re.search(rf"\[{tag}: (.*?)\]", text)
         return match.group(1) if match else None
 
     def _usable_jira_key(self, value: str | None) -> bool:

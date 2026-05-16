@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,8 @@ from agentic_solution.contracts import ReviewRequest, ReviewResponse
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_review_disposition
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
+
+_PR_URL_RE = re.compile(r"https?://[^\s)>\"]+/pull(?:-requests?)?/\d+")
 
 
 @dataclass(slots=True)
@@ -53,7 +56,12 @@ class ReviewerDaddyRuntime:
         disposition = infer_review_disposition(review_text)
         artifacts = []
 
+        pr_url: str | None = None
         if disposition == "pull_request":
+            match = _PR_URL_RE.search(review_text)
+            if match:
+                pr_url = match.group(0)
+                logger.map_pull_request_resolution(pr_url)
             logger.emit(
                 "node.completed",
                 node_id="jprf",
@@ -90,6 +98,7 @@ class ReviewerDaddyRuntime:
         response = ReviewResponse(
             disposition=disposition,
             summary=review_text,
+            pr_url=pr_url,
             artifacts=artifacts,
             diagnostics=self.tools.diagnostics,
         )

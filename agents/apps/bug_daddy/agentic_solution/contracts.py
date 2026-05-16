@@ -38,6 +38,17 @@ class IncidentRequest(IssueContext):
     trigger: str | None = None
 
 
+class IncidentReport(BaseModel):
+    title: str
+    severity: Severity = "unknown"
+    blast_radius: str | None = None
+    root_cause: str | None = None
+    actions_taken: list[str] = Field(default_factory=list)
+    owner: str | None = None
+    status: str = "Investigating"
+    raw_markdown: str
+
+
 class IncidentResponse(BaseModel):
     component: Literal["incident_daddy"] = "incident_daddy"
     summary: str
@@ -46,6 +57,7 @@ class IncidentResponse(BaseModel):
     next_action: str
     handoff_to_bug: bool = False
     bug_request: dict[str, Any] | None = None
+    incident_report: IncidentReport | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 
@@ -70,6 +82,7 @@ class ReviewResponse(BaseModel):
     component: Literal["reviewer_daddy"] = "reviewer_daddy"
     disposition: ReviewDisposition
     summary: str
+    pr_url: str | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 

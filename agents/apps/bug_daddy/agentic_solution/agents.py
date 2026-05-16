@@ -14,6 +14,9 @@ from agentic_solution.prompts import (
     CRITIC_PROMPT,
     INCIDENT_ANALYSER_PROMPT,
     INCIDENT_ORCHESTRATOR_PROMPT,
+    INCIDENT_REPORT_WRITER_PROMPT,
+    INCIDENT_REPORT_REVIEWER_PROMPT,
+    SLACK_NOTIFIER_PROMPT,
     REVIEWER_PROMPT,
     SME_AGENT_PROMPT,
     CLASSIFIER_PROMPT,
@@ -24,6 +27,9 @@ from agentic_solution.prompts import (
 class IncidentAgentBundle:
     analyzer: Agent
     orchestrator: Agent
+    report_writer: Agent
+    report_reviewer: Agent
+    slack_notifier: Agent
 
 
 @dataclass(slots=True)
@@ -53,6 +59,9 @@ def build_incident_agents(config: AppConfig, tools: dict[str, list[Any]]) -> Inc
             system_prompt=INCIDENT_ORCHESTRATOR_PROMPT,
             tools=tools["slack"] + tools["jira"],
         ),
+        report_writer=Agent(model=model, system_prompt=INCIDENT_REPORT_WRITER_PROMPT, tools=[]),
+        report_reviewer=Agent(model=model, system_prompt=INCIDENT_REPORT_REVIEWER_PROMPT, tools=[]),
+        slack_notifier=Agent(model=model, system_prompt=SLACK_NOTIFIER_PROMPT, tools=tools["slack"]),
     )
 
 
@@ -78,7 +87,7 @@ def build_bug_agents(config: AppConfig, tools: dict[str, list[Any]]) -> BugAgent
 
 def build_reviewer_agents(config: AppConfig, tools: dict[str, list[Any]]) -> ReviewerAgentBundle:
     model = _build_model(config)
-    all_repo_tools = tools["bitbucket"] + tools.get("github", [])
+    all_repo_tools = tools["bitbucket"] + tools.get("github_read_write", [])
     return ReviewerAgentBundle(
         reviewer=Agent(
             model=model,

@@ -15,18 +15,8 @@ def infer_incident_severity(text: str) -> Severity:
 
 
 def needs_bug_handoff(*parts: str) -> bool:
-    signal = " ".join(parts).lower()
-    markers = [
-        "code fix",
-        "bug",
-        "exception",
-        "stack trace",
-        "regression",
-        "root cause",
-        "repository",
-        "service crash",
-    ]
-    return any(marker in signal for marker in markers)
+    # Circuit breaker: bug handoff disabled — heuristic fires too broadly
+    return False
 
 
 def is_non_code_resolution(*parts: str) -> bool:
