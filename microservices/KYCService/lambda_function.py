@@ -38,7 +38,12 @@ def response(context, request_id, operation, payload, extra=None):
         "operation": operation,
         "requestTraceId": getattr(context, "aws_request_id", None),
         "timestamp": iso_now(),
-        "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")},
+        "db": {
+            "host": os.environ.get("DB_HOST"),
+            "port": os.environ.get("DB_PORT"),
+            "name": os.environ.get("DB_NAME"),
+            "user": os.environ.get("DB_USER"),
+        },
         "payload": payload,
     }
     if extra:
@@ -47,7 +52,11 @@ def response(context, request_id, operation, payload, extra=None):
 
 
 def normalize_identity(payload):
-    identity = {"customerId": payload.get("customerId", "UNKNOWN"), "pan": payload.get("pan"), "aadhaarMasked": payload.get("aadhaarMasked", "XXXX-XXXX-1234")}
+    identity = {
+        "customerId": payload.get("customerId", "UNKNOWN"),
+        "pan": payload.get("pan"),
+        "aadhaarMasked": payload.get("aadhaarMasked", "XXXX-XXXX-1234"),
+    }
     log("normalize_identity", identity)
     return identity
 
@@ -56,25 +65,77 @@ def verify_pan(payload, context, request_id):
     identity = normalize_identity(payload)
     if payload.get("simulateBug") == "pan_none":
         identity["pan"].strip()
-    return response(context, request_id, "verifyPan", payload, {"verification": {"pan": identity["pan"], "status": "VERIFIED", "provider": "mock-pan-registry"}, "message": "PAN verification completed"})
+    return response(
+        context,
+        request_id,
+        "verifyPan",
+        payload,
+        {
+            "verification": {"pan": identity["pan"], "status": "VERIFIED", "provider": "mock-pan-registry"},
+            "message": "PAN verification completed",
+        },
+    )
 
 
 def verify_aadhaar(payload, context, request_id):
     identity = normalize_identity(payload)
-    return response(context, request_id, "verifyAadhaar", payload, {"verification": {"aadhaarMasked": identity["aadhaarMasked"], "status": "VERIFIED"}, "message": "Aadhaar verification completed"})
+    return response(
+        context,
+        request_id,
+        "verifyAadhaar",
+        payload,
+        {
+            "verification": {"aadhaarMasked": identity["aadhaarMasked"], "status": "VERIFIED"},
+            "message": "Aadhaar verification completed",
+        },
+    )
 
 
 def run_face_match(payload, context, request_id):
     identity = normalize_identity(payload)
     log("run_face_match", {"customerId": identity["customerId"]})
+    # Guard against intentional bug injection. The simulateBug flag is intended only for non‑production testing.
     if payload.get("simulateBug") == "face_threshold":
-        return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 1 / 0, "result": "MATCHED"}, "message": "Face match run completed"})
-    return response(context, request_id, "runFaceMatch", payload, {"faceMatch": {"score": 0.93, "result": "MATCHED"}, "message": "Face match run completed"})
+        # Disallow in production environments
+        if os.getenv("ENV", "").lower() == "prod":
+            raise ValueError("simulateBug flag 'face_threshold' must not be used in production")
+        # Return a safe mock score for testing purposes
+        mock_score = 0.0
+        return response(
+            context,
+            request_id,
+            "runFaceMatch",
+            payload,
+            {
+                "faceMatch": {"score": mock_score, "result": "MATCHED"},
+                "message": "Face match run completed (simulated)",
+            },
+        )
+    # Normal execution path
+    return response(
+        context,
+        request_id,
+        "runFaceMatch",
+        payload,
+        {
+            "faceMatch": {"score": 0.93, "result": "MATCHED"},
+            "message": "Face match run completed",
+        },
+    )
 
 
 def get_kyc_status(payload, context, request_id):
     identity = normalize_identity(payload)
-    return response(context, request_id, "getKycStatus", payload, {"status": {"customerId": identity["customerId"], "kycStatus": "APPROVED", "reviewMode": "AUTO"}, "message": "KYC status fetched"})
+    return response(
+        context,
+        request_id,
+        "getKycStatus",
+        payload,
+        {
+            "status": {"customerId": identity["customerId"], "kycStatus": "APPROVED", "reviewMode": "AUTO"},
+            "message": "KYC status fetched",
+        },
+    )
 
 
 def health_check(payload, context, request_id):
