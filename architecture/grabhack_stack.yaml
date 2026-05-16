@@ -294,6 +294,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   BankStatementService:
     Type: AWS::Lambda::Function
@@ -320,6 +321,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   KycService:
     Type: AWS::Lambda::Function
@@ -346,6 +348,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   AutoDebitService:
     Type: AWS::Lambda::Function
@@ -372,6 +375,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   DisbursementService:
     Type: AWS::Lambda::Function
@@ -398,6 +402,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   SupportService:
     Type: AWS::Lambda::Function
@@ -424,6 +429,7 @@ Resources:
           DB_PORT: !GetAtt DatabaseInstance.Endpoint.Port
           DB_NAME: !Ref DbName
           DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
 
   RdsAdminFunction:
     Type: AWS::Lambda::Function

@@ -1,10 +1,23 @@
 import json
 import os
+import sys
 import traceback
 from datetime import datetime, timezone
 
 
 SERVICE_NAME = "SupportService"
+SHARED_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SHARED_ROOT not in sys.path:
+    sys.path.insert(0, SHARED_ROOT)
+
+try:
+    from shared.persistence import persist_operation, read_ticket_timeline
+except Exception as exc:
+    _PERSISTENCE_IMPORT_ERROR = str(exc)
+    persist_operation = None
+
+    def read_ticket_timeline(ticket_id):
+        return {"persistence": {"status": "failed", "error": _PERSISTENCE_IMPORT_ERROR}, "events": []}
 
 
 def iso_now():
@@ -32,11 +45,12 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
+    trace_id = getattr(context, "aws_request_id", None)
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
         "operation": operation,
-        "requestTraceId": getattr(context, "aws_request_id", None),
+        "requestTraceId": trace_id,
         "timestamp": iso_now(),
         "db": {
             "host": os.environ.get("DB_HOST"),
@@ -48,6 +62,15 @@ def response(context, request_id, operation, payload, extra=None):
     }
     if extra:
         base.update(extra)
+    if persist_operation:
+        base["persistence"] = persist_operation(
+            service_name=SERVICE_NAME,
+            operation=operation,
+            request_id=request_id,
+            trace_id=trace_id,
+            payload=payload,
+            response_payload=extra or {},
+        )
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
@@ -55,11 +78,12 @@ def error_response(context, request_id, operation, payload, error_dict, extra=No
     """Return a structured error payload with HTTP 500.
     error_dict should contain at least ``code`` and ``message`` keys.
     """
+    trace_id = getattr(context, "aws_request_id", None)
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
         "operation": operation,
-        "requestTraceId": getattr(context, "aws_request_id", None),
+        "requestTraceId": trace_id,
         "timestamp": iso_now(),
         "db": {
             "host": os.environ.get("DB_HOST"),
@@ -72,6 +96,17 @@ def error_response(context, request_id, operation, payload, error_dict, extra=No
     }
     if extra:
         base.update(extra)
+    if persist_operation:
+        base["persistence"] = persist_operation(
+            service_name=SERVICE_NAME,
+            operation=operation,
+            request_id=request_id,
+            trace_id=trace_id,
+            payload=payload,
+            response_payload=extra or {},
+            status="FAILED",
+            error_message=error_dict.get("message"),
+        )
     return {"statusCode": 500, "body": json.dumps(base)}
 
 
@@ -169,6 +204,20 @@ def get_ticket_status(payload, context, request_id):
     )
 
 
+def get_ticket_timeline(payload, context, request_id):
+    ticket = load_ticket(payload)
+    return response(
+        context,
+        request_id,
+        "getTicketTimeline",
+        payload,
+        {
+            "timeline": read_ticket_timeline(ticket["ticketId"]),
+            "message": "Support ticket timeline fetched",
+        },
+    )
+
+
 def health_check(payload, context, request_id):
     return response(
         context,
@@ -188,6 +237,8 @@ def route_request(request_id, payload, context):
         return update_ticket(payload, context, request_id)
     if request_id == "getTicketStatus":
         return get_ticket_status(payload, context, request_id)
+    if request_id == "getTicketTimeline":
+        return get_ticket_timeline(payload, context, request_id)
     return health_check(payload, context, request_id)
 
 

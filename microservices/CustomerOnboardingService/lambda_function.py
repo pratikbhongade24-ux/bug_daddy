@@ -1,10 +1,23 @@
 import json
 import os
+import sys
 import traceback
 from datetime import datetime, timezone
 
 
 SERVICE_NAME = "CustomerOnboardingService"
+SHARED_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SHARED_ROOT not in sys.path:
+    sys.path.insert(0, SHARED_ROOT)
+
+try:
+    from shared.persistence import persist_operation, read_customer_360
+except Exception as exc:
+    _PERSISTENCE_IMPORT_ERROR = str(exc)
+    persist_operation = None
+
+    def read_customer_360(customer_id):
+        return {"persistence": {"status": "failed", "error": _PERSISTENCE_IMPORT_ERROR}}
 
 
 def iso_now():
@@ -32,11 +45,12 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
+    trace_id = getattr(context, "aws_request_id", None)
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
         "operation": operation,
-        "requestTraceId": getattr(context, "aws_request_id", None),
+        "requestTraceId": trace_id,
         "timestamp": iso_now(),
         "db": {
             "host": os.environ.get("DB_HOST"),
@@ -48,6 +62,15 @@ def response(context, request_id, operation, payload, extra=None):
     }
     if extra:
         base.update(extra)
+    if persist_operation:
+        base["persistence"] = persist_operation(
+            service_name=SERVICE_NAME,
+            operation=operation,
+            request_id=request_id,
+            trace_id=trace_id,
+            payload=payload,
+            response_payload=extra or {},
+        )
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
@@ -150,6 +173,20 @@ def get_onboarding_status(payload, context, request_id):
     )
 
 
+def get_customer_360(payload, context, request_id):
+    profile = load_customer(payload)
+    return response(
+        context,
+        request_id,
+        "getCustomer360",
+        payload,
+        {
+            "customer360": read_customer_360(profile["customerId"]),
+            "message": "Customer 360 fetched from persisted microservice tables",
+        },
+    )
+
+
 def health_check(payload, context, request_id):
     log("health_check", {"requestId": request_id})
     return response(
@@ -166,6 +203,8 @@ def route_request(request_id, payload, context):
         return submit_onboarding(payload, context, request_id)
     if request_id == "getOnboardingStatus":
         return get_onboarding_status(payload, context, request_id)
+    if request_id == "getCustomer360":
+        return get_customer_360(payload, context, request_id)
     return health_check(payload, context, request_id)
 
 

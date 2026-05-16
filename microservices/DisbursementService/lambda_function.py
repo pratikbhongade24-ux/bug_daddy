@@ -1,10 +1,23 @@
 import json
 import os
+import sys
 import traceback
 from datetime import datetime, timezone
 
 
 SERVICE_NAME = "DisbursementService"
+SHARED_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SHARED_ROOT not in sys.path:
+    sys.path.insert(0, SHARED_ROOT)
+
+try:
+    from shared.persistence import persist_operation, read_disbursement_ledger
+except Exception as exc:
+    _PERSISTENCE_IMPORT_ERROR = str(exc)
+    persist_operation = None
+
+    def read_disbursement_ledger(disbursement_id):
+        return {"persistence": {"status": "failed", "error": _PERSISTENCE_IMPORT_ERROR}}
 
 
 def iso_now():
@@ -32,9 +45,19 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
-    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": getattr(context, "aws_request_id", None), "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
+    trace_id = getattr(context, "aws_request_id", None)
+    base = {"service": SERVICE_NAME, "requestId": request_id, "operation": operation, "requestTraceId": trace_id, "timestamp": iso_now(), "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")}, "payload": payload}
     if extra:
         base.update(extra)
+    if persist_operation:
+        base["persistence"] = persist_operation(
+            service_name=SERVICE_NAME,
+            operation=operation,
+            request_id=request_id,
+            trace_id=trace_id,
+            payload=payload,
+            response_payload=extra or {},
+        )
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
@@ -69,6 +92,20 @@ def get_disbursement_status(payload, context, request_id):
     return response(context, request_id, "getDisbursementStatus", payload, {"status": {"disbursementId": disbursement["disbursementId"], "state": "SUCCESS", "settlementWindow": "T+0"}, "message": "Disbursement status fetched"})
 
 
+def get_disbursement_ledger(payload, context, request_id):
+    disbursement = prepare_disbursement(payload)
+    return response(
+        context,
+        request_id,
+        "getDisbursementLedger",
+        payload,
+        {
+            "ledger": read_disbursement_ledger(disbursement["disbursementId"]),
+            "message": "Disbursement ledger fetched",
+        },
+    )
+
+
 def health_check(payload, context, request_id):
     return response(context, request_id, "healthCheck", payload, {"message": "Disbursement service is healthy"})
 
@@ -82,6 +119,8 @@ def route_request(request_id, payload, context):
         return release_funds(payload, context, request_id)
     if request_id == "getDisbursementStatus":
         return get_disbursement_status(payload, context, request_id)
+    if request_id == "getDisbursementLedger":
+        return get_disbursement_ledger(payload, context, request_id)
     return health_check(payload, context, request_id)
 
 

@@ -1,53 +1,37 @@
 #!/usr/bin/env python3
 
 import argparse
+from pathlib import Path
+import re
 import sys
 
 import pymysql
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PLATFORM_BACKEND = REPO_ROOT / "platform" / "backend"
+sys.path.insert(0, str(PLATFORM_BACKEND))
 
-TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS {schema}.service_exception_log (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  fingerprint VARCHAR(255) NOT NULL,
-  service_name VARCHAR(255) NOT NULL,
-  issue_type VARCHAR(255) NOT NULL,
-  source VARCHAR(64) NOT NULL COMMENT 'cloudwatch / sonarqube / cve / techdebt',
-  description TEXT,
-  stack_trace LONGTEXT,
-  frequency BIGINT NOT NULL DEFAULT 1,
-  first_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  status VARCHAR(64) NOT NULL DEFAULT 'open' COMMENT 'open / in_progress / resolved / no_action',
-  assigned_to VARCHAR(255),
-  resolution_pr VARCHAR(255),
-  resolution_jira VARCHAR(255),
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  resolved_at DATETIME,
-  PRIMARY KEY (id),
-  KEY idx_fingerprint (fingerprint),
-  KEY idx_service_name (service_name),
-  KEY idx_status (status),
-  KEY idx_source (source),
-  KEY idx_last_seen (last_seen)
-)
-""".strip()
+from schema_app import ensure_core_schema, schema_status, seed_core_data
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Create an RDS schema and the service_exception_log table."
+        description="Create the Bug Daddy platform schema, microservice tables, and seed/reference rows."
     )
     parser.add_argument("--host", required=True, help="RDS endpoint hostname")
     parser.add_argument("--port", type=int, default=3306, help="MySQL port")
     parser.add_argument("--user", required=True, help="MySQL username")
     parser.add_argument("--password", required=True, help="MySQL password")
     parser.add_argument("--schema", default="bug_daddy", help="Schema name")
+    parser.add_argument("--no-seed", action="store_true", help="Create tables without inserting demo/reference rows")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9_]+", args.schema):
+        print("Schema name may only contain letters, numbers, and underscores", file=sys.stderr)
+        return 1
 
     try:
         connection = pymysql.connect(
@@ -55,6 +39,7 @@ def main():
             port=args.port,
             user=args.user,
             password=args.password,
+            cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
             connect_timeout=10,
         )
@@ -64,23 +49,25 @@ def main():
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {args.schema}")
-            cursor.execute(TABLE_SQL.format(schema=args.schema))
-            cursor.execute(
-                f"SHOW TABLES IN {args.schema} LIKE 'service_exception_log'"
-            )
-            created = cursor.fetchone() is not None
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{args.schema}`")
+            cursor.execute(f"USE `{args.schema}`")
+        ensure_core_schema(connection)
+        if not args.no_seed:
+            seed_core_data(connection)
+        status = schema_status(connection)
+        created = status["tables"].get("service_exception_log", -1) >= 0
     finally:
         connection.close()
 
     if created:
-        print(
-            f"Created or verified table {args.schema}.service_exception_log on {args.host}"
-        )
+        table_count = len(status["tables"])
+        seeded_count = sum(max(0, value) for value in status["tables"].values())
+        print(f"Created or verified {table_count} tables in {args.schema} on {args.host}")
+        print(f"Reference/demo rows visible across tracked tables: {seeded_count}")
         return 0
 
     print(
-        f"Table {args.schema}.service_exception_log was not found after creation attempt",
+        f"Schema {args.schema} was not verified after creation attempt",
         file=sys.stderr,
     )
     return 1

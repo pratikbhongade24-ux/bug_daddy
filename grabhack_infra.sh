@@ -195,7 +195,7 @@ for SVC in "${SERVICES[@]}"; do
       --timeout 30 \
       --memory-size 256 \
       --vpc-config "SubnetIds=${SUBNET_1},${SUBNET_2},SecurityGroupIds=${LAMBDA_SG}" \
-      --environment "Variables={SERVICE_NAME=${SVC},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER}}" \
+      --environment "Variables={SERVICE_NAME=${SVC},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD}}" \
       --region "$REGION" > /dev/null
   else
     aws lambda create-function \
@@ -207,7 +207,7 @@ for SVC in "${SERVICES[@]}"; do
       --timeout 30 \
       --memory-size 256 \
       --vpc-config "SubnetIds=${SUBNET_1},${SUBNET_2},SecurityGroupIds=${LAMBDA_SG}" \
-      --environment "Variables={SERVICE_NAME=${SVC},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER}}" \
+      --environment "Variables={SERVICE_NAME=${SVC},DB_HOST=${DB_HOST},DB_PORT=${DB_PORT},DB_NAME=${DB_NAME},DB_USER=${DB_USER},DB_PASSWORD=${DB_PASSWORD}}" \
       --tags "Project=${PROJECT}" \
       --region "$REGION" > /dev/null
   fi

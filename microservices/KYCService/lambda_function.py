@@ -1,10 +1,23 @@
 import json
 import os
+import sys
 import traceback
 from datetime import datetime, timezone
 
 
 SERVICE_NAME = "KYCService"
+SHARED_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SHARED_ROOT not in sys.path:
+    sys.path.insert(0, SHARED_ROOT)
+
+try:
+    from shared.persistence import persist_operation, read_verification_history
+except Exception as exc:
+    _PERSISTENCE_IMPORT_ERROR = str(exc)
+    persist_operation = None
+
+    def read_verification_history(customer_id):
+        return {"persistence": {"status": "failed", "error": _PERSISTENCE_IMPORT_ERROR}, "items": []}
 
 
 def iso_now():
@@ -32,17 +45,27 @@ def parse_request(event):
 
 
 def response(context, request_id, operation, payload, extra=None):
+    trace_id = getattr(context, "aws_request_id", None)
     base = {
         "service": SERVICE_NAME,
         "requestId": request_id,
         "operation": operation,
-        "requestTraceId": getattr(context, "aws_request_id", None),
+        "requestTraceId": trace_id,
         "timestamp": iso_now(),
         "db": {"host": os.environ.get("DB_HOST"), "port": os.environ.get("DB_PORT"), "name": os.environ.get("DB_NAME"), "user": os.environ.get("DB_USER")},
         "payload": payload,
     }
     if extra:
         base.update(extra)
+    if persist_operation:
+        base["persistence"] = persist_operation(
+            service_name=SERVICE_NAME,
+            operation=operation,
+            request_id=request_id,
+            trace_id=trace_id,
+            payload=payload,
+            response_payload=extra or {},
+        )
     return {"statusCode": 200, "body": json.dumps(base)}
 
 
@@ -77,6 +100,20 @@ def get_kyc_status(payload, context, request_id):
     return response(context, request_id, "getKycStatus", payload, {"status": {"customerId": identity["customerId"], "kycStatus": "APPROVED", "reviewMode": "AUTO"}, "message": "KYC status fetched"})
 
 
+def get_verification_history(payload, context, request_id):
+    identity = normalize_identity(payload)
+    return response(
+        context,
+        request_id,
+        "getVerificationHistory",
+        payload,
+        {
+            "history": read_verification_history(identity["customerId"]),
+            "message": "KYC verification history fetched",
+        },
+    )
+
+
 def health_check(payload, context, request_id):
     return response(context, request_id, "healthCheck", payload, {"message": "KYC service is healthy"})
 
@@ -90,6 +127,8 @@ def route_request(request_id, payload, context):
         return run_face_match(payload, context, request_id)
     if request_id == "getKycStatus":
         return get_kyc_status(payload, context, request_id)
+    if request_id == "getVerificationHistory":
+        return get_verification_history(payload, context, request_id)
     return health_check(payload, context, request_id)
 
 
