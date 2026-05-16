@@ -67,6 +67,7 @@ class AppConfig:
     bitbucket: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="bitbucket"))
     github: MCPServerConfig = field(default_factory=lambda: MCPServerConfig(name="github"))
     bug_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="bug_daddy"))
+    incident_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="incident_daddy"))
     reviewer_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="reviewer_daddy"))
     sme_agent: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="sme_agent"))
 
@@ -91,6 +92,7 @@ class AppConfig:
             bitbucket=_mcp_config_from_env("BITBUCKET_MCP", "bitbucket"),
             github=_mcp_config_from_env("GITHUB_MCP", "github"),
             bug_daddy=_peer_config_from_env("BUG_DADDY", "bug_daddy"),
+            incident_daddy=_peer_config_from_env("INCIDENT_DADDY", "incident_daddy"),
             reviewer_daddy=_peer_config_from_env("REVIEWER_DADDY", "reviewer_daddy"),
             sme_agent=_peer_config_from_env("SME_AGENT", "sme_agent"),
         )

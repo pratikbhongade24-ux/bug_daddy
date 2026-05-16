@@ -113,6 +113,26 @@ stop_runner_instance() {
   fi
 }
 
+notify_session_complete() {
+  local exit_code=$1
+  [[ -z "${SONAR_SESSION_ID:-}" ]] && return
+  [[ -z "${BUGDADDY_API_BASE_URL:-}" ]] && return
+
+  local status="completed"
+  local error_msg=""
+  if [[ ${exit_code} -ne 0 ]]; then
+    status="failed"
+    error_msg="Script exited with code ${exit_code}"
+  fi
+
+  local url="${BUGDADDY_API_BASE_URL}/sonar/sessions/${SONAR_SESSION_ID}/complete?status=${status}"
+  [[ -n "${error_msg}" ]] && url="${url}&error_message=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${error_msg}")"
+
+  curl -fsS -X POST "${url}" \
+    ${AGENT_EXECUTION_LOG_SECRET:+-H "x-agent-execution-secret: ${AGENT_EXECUTION_LOG_SECRET}"} \
+    >> "${LOG_FILE}" 2>&1 || log "WARNING: Failed to notify session completion"
+}
+
 cleanup() {
   local exit_code=$?
   if [[ ${exit_code} -ne 0 ]]; then
@@ -122,6 +142,7 @@ cleanup() {
   else
     log "=== Scan completed successfully ==="
   fi
+  notify_session_complete "${exit_code}"
   wait  # let background cw_put calls finish before stopping instance
   docker compose down >> "${LOG_FILE}" 2>&1 || true
   stop_runner_instance

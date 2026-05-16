@@ -31,11 +31,25 @@ def lambda_handler(event, context):
     else:
         raise TimeoutError(f"SSM did not become online for {instance_id}")
 
+    sonar_session_id = event.get("sonar_session_id", "")
+    api_base_url = os.environ.get("BUGDADDY_API_BASE_URL", "")
+    execution_secret = os.environ.get("AGENT_EXECUTION_LOG_SECRET", "")
+
+    env_prefix = ""
+    if sonar_session_id:
+        env_prefix += f"SONAR_SESSION_ID={sonar_session_id} "
+    if api_base_url:
+        env_prefix += f"BUGDADDY_API_BASE_URL={api_base_url} "
+    if execution_secret:
+        env_prefix += f"AGENT_EXECUTION_LOG_SECRET={execution_secret} "
+
+    command = f"nohup env {env_prefix}{scan_command} > /var/log/sonar-scan.log 2>&1 &" if env_prefix else f"nohup {scan_command} > /var/log/sonar-scan.log 2>&1 &"
+
     response = ssm.send_command(
         InstanceIds=[instance_id],
         DocumentName="AWS-RunShellScript",
         Comment="Run BugDaddy SonarQube scan",
-        Parameters={"commands": [f"nohup {scan_command} > /var/log/sonar-scan.log 2>&1 &"]},
+        Parameters={"commands": [command]},
         TimeoutSeconds=60,
         CloudWatchOutputConfig={"CloudWatchOutputEnabled": True},
     )
