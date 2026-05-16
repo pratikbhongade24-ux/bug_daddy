@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinFlow Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <main class="app-shell">
+    <aside class="side-nav card">
+      <div>
+        <p class="eyebrow">Loan Ops Platform</p>
+        <h1>FinFlow Command Center</h1>
+      </div>
+      <nav>
+        <button class="nav-item active">Portfolio Overview</button>
+        <button class="nav-item">Customer Journey</button>
+        <button class="nav-item">Risk & Compliance</button>
+        <button class="nav-item">Collections Desk</button>
+      </nav>
+      <section class="status-box">
+        <h3>Environment</h3>
+        <p>Mode: <strong>QA Sandbox</strong></p>
+        <p>Version: <strong>v1.0.0</strong></p>
+      </section>
+    </aside>
+
+    <section class="main-panel">
+      <header class="hero card">
+        <div>
+          <p class="eyebrow">Operational Dashboard</p>
+          <h2>Bank Loan Lifecycle Monitoring and Testing</h2>
+          <p class="hero-sub">Validate onboarding, KYC, loan processing, disbursement, and repayments from one unified control plane.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="refreshBtn" class="btn-primary">Refresh Live Data</button>
+          <button id="runJourneyBtn" class="btn-secondary">Run Full Test Journey</button>
+        </div>
+      </header>
+
+      <section id="healthGrid" class="health-grid"></section>
+      <section id="kpiGrid" class="kpi-grid"></section>
+
+      <section class="workspace-grid">
+        <article class="card">
+          <div class="section-title">
+            <h3>Workflow Progress</h3>
+            <span id="progressText">0% completed</span>
+          </div>
+          <div class="progress-bar"><span id="progressBar"></span></div>
+          <div id="pipeline" class="pipeline"></div>
+        </article>
+
+        <article class="card">
+          <div class="section-title">
+            <h3>Quick Actions</h3>
+            <span class="pill">Interactive</span>
+          </div>
+          <div class="action-grid">
+            <button data-action="createCustomer">Create Customer</button>
+            <button data-action="uploadKyc">Upload KYC</button>
+            <button data-action="reviewKyc">Verify KYC</button>
+            <button data-action="createLoan">Create Loan</button>
+            <button data-action="approveDisburse">Approve & Disburse</button>
+            <button data-action="generateEmi">Generate EMI</button>
+          </div>
+          <div id="actionLoader" class="inline-loader hidden"></div>
+        </article>
+
+        <article class="card span-2">
+          <div class="section-title">
+            <h3>Live Activity Feed</h3>
+            <span class="pill subtle">JSON events</span>
+          </div>
+          <div id="activityFeed" class="activity-feed"></div>
+        </article>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

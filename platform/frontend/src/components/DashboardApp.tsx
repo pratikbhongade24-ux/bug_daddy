@@ -36,6 +36,7 @@ const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').
 const CommandPalette = dynamic(() => import('./shared/CommandPalette').then((mod) => mod.CommandPalette), { ssr: false, loading: () => null });
 const DemoTourBanner = dynamic(() => import('./shared/DemoTourBanner').then((mod) => mod.DemoTourBanner), { ssr: false, loading: () => null });
 const AiThinkingBadge = dynamic(() => import('./shared/AiThinkingBadge').then((mod) => mod.AiThinkingBadge), { ssr: false, loading: () => null });
+const SupportChatWidget = dynamic(() => import('./support/SupportChatWidget').then((mod) => mod.SupportChatWidget), { ssr: false, loading: () => null });
 
 const emptySummary: DashboardSummary = { total: 0, backlog: 0, wip: 0, review: 0, resolved: 0, no_action: 0, critical: 0 };
 const emptyCharts: DashboardCharts = { services: [], sources: [], issue_types: [] };
@@ -484,6 +485,7 @@ export function DashboardApp() {
           onClose={() => setSonarReportModal(null)}
         />
       ) : null}
+      <SupportChatWidget />
       <ToastContainer toasts={toasts} />
     </main>
   );

@@ -12,8 +12,10 @@ from typing import Any, Literal
 import boto3
 from botocore.config import Config as BotocoreConfig
 import pymysql
+import requests
 from fastapi import Depends, FastAPI, Header, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -43,6 +45,9 @@ SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "
 SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
 SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
 SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
+SUPPORT_RAG_API_BASE = os.getenv("SUPPORT_RAG_API_BASE", "http://localhost:8010/api/v1").rstrip("/")
+SUPPORT_RAG_API_KEY = os.getenv("SUPPORT_RAG_API_KEY", "change-widget-key")
+SUPPORT_RAG_TIMEOUT_SECONDS = int(os.getenv("SUPPORT_RAG_TIMEOUT_SECONDS", "120"))
 
 
 app = FastAPI(title="Bug Daddy API")
@@ -150,6 +155,19 @@ class SonarInvokeRequest(BaseModel):
 
 class SecurityInvokeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
+
+
+class SupportChatRequest(BaseModel):
+    conversation_id: int | None = None
+    session_id: str
+    question: str = Field(min_length=1, max_length=6000)
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class SupportFeedbackRequest(BaseModel):
+    message_id: int
+    rating: int
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 class AgentExecutionEventCreate(BaseModel):
@@ -1083,6 +1101,143 @@ def health_check():
         return {"status": "healthy", "database": "connected"}
     finally:
         conn.close()
+
+
+def _support_headers() -> dict[str, str]:
+    return {
+        "x-api-key": SUPPORT_RAG_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+
+def _support_external_user(actor: dict[str, Any]) -> str:
+    return actor.get("id") or actor.get("username") or actor.get("email") or "unknown-user"
+
+
+@app.get("/support/health")
+def support_health(actor: dict[str, Any] = Depends(require_permission("issues.read"))):
+    try:
+        response = requests.get(
+            f"{SUPPORT_RAG_API_BASE}/metrics",
+            headers={"x-api-key": SUPPORT_RAG_API_KEY},
+            timeout=15,
+        )
+        if response.status_code >= 400:
+            raise HTTPException(status_code=502, detail="Support service is unavailable")
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Support service connection failed: {exc}") from exc
+    return {"status": "ok"}
+
+
+@app.get("/support/conversations")
+def support_conversations(
+    session_id: str | None = None,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    params = {"external_user_id": _support_external_user(actor)}
+    if session_id:
+        params["session_id"] = session_id
+    try:
+        response = requests.get(
+            f"{SUPPORT_RAG_API_BASE}/conversations",
+            headers={"x-api-key": SUPPORT_RAG_API_KEY},
+            params=params,
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            detail = response.json().get("detail", "Support service request failed")
+            raise HTTPException(status_code=response.status_code, detail=detail)
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Support service connection failed: {exc}") from exc
+
+
+@app.get("/support/messages/{conversation_id}")
+def support_messages(
+    conversation_id: int,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.get(
+            f"{SUPPORT_RAG_API_BASE}/messages/{conversation_id}",
+            headers={"x-api-key": SUPPORT_RAG_API_KEY},
+            params={"external_user_id": _support_external_user(actor)},
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            detail = response.json().get("detail", "Support service request failed")
+            raise HTTPException(status_code=response.status_code, detail=detail)
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Support service connection failed: {exc}") from exc
+
+
+@app.post("/support/chat/stream")
+def support_chat_stream(
+    payload: SupportChatRequest,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    rag_payload = {
+        "conversation_id": payload.conversation_id,
+        "external_user_id": _support_external_user(actor),
+        "session_id": payload.session_id,
+        "question": payload.question,
+        "filters": payload.filters or None,
+    }
+
+    try:
+        upstream = requests.post(
+            f"{SUPPORT_RAG_API_BASE}/chat/stream",
+            headers=_support_headers(),
+            json=rag_payload,
+            stream=True,
+            timeout=SUPPORT_RAG_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Support service connection failed: {exc}") from exc
+
+    if upstream.status_code >= 400:
+        detail = "Support service request failed"
+        try:
+            detail = upstream.json().get("detail", detail)
+        except ValueError:
+            pass
+        raise HTTPException(status_code=upstream.status_code, detail=detail)
+
+    def stream():
+        try:
+            for chunk in upstream.iter_content(chunk_size=1024):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/support/feedback")
+def support_feedback(
+    payload: SupportFeedbackRequest,
+    actor: dict[str, Any] = Depends(require_permission("issues.read")),
+):
+    try:
+        response = requests.post(
+            f"{SUPPORT_RAG_API_BASE}/feedback",
+            headers=_support_headers(),
+            json={
+                "message_id": payload.message_id,
+                "rating": payload.rating,
+                "comment": payload.comment,
+                "external_user_id": _support_external_user(actor),
+            },
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            detail = response.json().get("detail", "Support feedback failed")
+            raise HTTPException(status_code=response.status_code, detail=detail)
+        return response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Support service connection failed: {exc}") from exc
 
 
 @app.post("/auth/login", response_model=AuthResponse)

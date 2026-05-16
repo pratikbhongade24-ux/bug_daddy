@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Widget Embed Example</title></head>
+<body>
+  <h2>Host Application</h2>
+  <script src="./chat-widget.js"></script>
+  <script>
+    window.SMEChatWidget.createWidget({
+      apiBase: 'http://localhost:8010/api/v1',
+      apiKey: 'change-widget-key',
+      externalUserId: 'host-user-123',
+      sessionId: 'host-session-001'
+    });
+  </script>
+</body>
+</html>

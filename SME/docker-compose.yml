@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./backend/shared/db/01_init.sql:/docker-entrypoint-initdb.d/01_init.sql
+
+  onboarding:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "pip install -r backend/requirements.txt && python -m backend.shared.db.init_db && uvicorn backend.customer_onboarding.app.main:app --host 0.0.0.0 --port 8001 --reload"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+
+  kyc:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "pip install -r backend/requirements.txt && uvicorn backend.kyc_service.app.main:app --host 0.0.0.0 --port 8002 --reload"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/app
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres
+
+  loan:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "pip install -r backend/requirements.txt && uvicorn backend.loan_disbursement.app.main:app --host 0.0.0.0 --port 8003 --reload"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/app
+    ports:
+      - "8003:8003"
+    depends_on:
+      - postgres
+
+  repayment:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "pip install -r backend/requirements.txt && uvicorn backend.repayment_service.app.main:app --host 0.0.0.0 --port 8004 --reload"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/app
+    ports:
+      - "8004:8004"
+    depends_on:
+      - postgres
