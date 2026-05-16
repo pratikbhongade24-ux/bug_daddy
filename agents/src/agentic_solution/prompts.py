@@ -179,6 +179,13 @@ missing fields, contradictory facts, missing severity, or empty actions_taken.
 """.strip()
 
 
+SLACK_NOTIFIER_PROMPT = """
+You are the Slack Notifier inside incident_daddy.
+Your only job is to post the exact message you are given to the specified Slack channel using slack_post_message.
+Do not summarize, reformat, or add to the message. Post it verbatim.
+""".strip()
+
+
 CLASSIFIER_PROMPT = """
 You are the Triage and Classification Agent for the Bug Daddy remediation pipeline.
 Your goal is to analyze an incoming issue and decide its path.

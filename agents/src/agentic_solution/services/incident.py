@@ -71,7 +71,7 @@ class IncidentDaddyRuntime:
         logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration_raw)
 
         incident_report = self._write_and_review_report(agents, request, analysis_raw, orchestration_raw, sme_summary, logger)
-        self._post_report_to_slack(agents, incident_report)
+        self._post_report_to_slack(agents, incident_report, logger)
 
         severity = orchestration.get("severity") or infer_incident_severity(f"{request.prompt}\n{analysis_raw}\n{orchestration_raw}")
         handoff = bool(orchestration.get("bug_daddy_handoff", False))
@@ -175,14 +175,16 @@ class IncidentDaddyRuntime:
         fallback_severity = infer_incident_severity(f"{request.prompt}\n{analysis}")
         return _build_incident_report(draft, draft_raw, fallback_severity)
 
-    def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport) -> None:
+    def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport, logger: ExecutionLogger) -> None:
         slack_message = _format_slack_report(report)
+        started = logger.node_started("slk", "Slack Notifier", "Post incident report to Slack")
         try:
-            agents.orchestrator(
+            agents.slack_notifier(
                 f"Post this exact message to Slack channel C0B2QUEU4NN using slack_post_message:\n\n{slack_message}"
             )
-        except Exception:
-            pass
+            logger.node_completed("slk", "Slack Notifier", "Slack notification sent", started, "ok")
+        except Exception as exc:
+            logger.node_failed("slk", "Slack Notifier", "Slack notification failed", started, exc)
 
     def _query_sme(self, request: IncidentRequest) -> tuple[str, dict[str, Any]]:
         if not self.config.sme_agent.enabled:
