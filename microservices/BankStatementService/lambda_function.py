@@ -80,8 +80,7 @@ def parse_statement(payload):
     pages = int(payload.get("pages", 3))
     statement = {"statementId": payload.get("statementId", "STM-001"), "pages": pages}
     log("parse_statement", statement)
-    if payload.get("simulateBug") == "negative_pages":
-        return list(range(pages))[10]
+    # Removed bug simulation code: return list(range(pages))[10] when simulateBug=negative_pages
     return statement
 
 
@@ -92,8 +91,7 @@ def build_transactions(statement, payload):
         {"txnId": "TXN-1003", "amount": 2750, "type": "credit"},
     ]
     log("build_transactions", {"statementId": statement["statementId"], "count": len(transactions)})
-    if payload.get("simulateBug") == "amount_cast":
-        int("not-a-number")
+    # Removed bug simulation code: int("not-a-number") when simulateBug=amount_cast
     return transactions
 
 
@@ -114,8 +112,7 @@ def summarize_cashflow(payload, context, request_id):
     credit = sum(item["amount"] for item in transactions if item["type"] == "credit")
     debit = sum(item["amount"] for item in transactions if item["type"] == "debit")
     log("summarize_cashflow", {"credit": credit, "debit": debit})
-    if payload.get("simulateBug") == "missing_bucket":
-        {}["summary"]
+    # Removed bug simulation code: {}["summary"] when simulateBug=missing_bucket
     return response(context, request_id, "summarizeCashflow", payload, {"summary": {"avgMonthlyCredit": credit, "avgMonthlyDebit": debit, "stability": "GOOD"}, "message": "Cashflow summary generated"})
 
 
