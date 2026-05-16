@@ -7,7 +7,7 @@ from agentic_solution.agents import IncidentAgentBundle, build_incident_agents
 from agentic_solution.config import AppConfig
 from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IssueContext
 from agentic_solution.execution import ExecutionLogger
-from agentic_solution.heuristics import infer_incident_severity, needs_bug_handoff
+from agentic_solution.heuristics import infer_incident_severity
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
 
@@ -48,24 +48,33 @@ class IncidentDaddyRuntime:
                 summary=summary,
                 severity=infer_incident_severity(f"{request.prompt} {' '.join(request.logs)}"),
                 next_action="Review dry-run diagnostics and connect peer runtimes plus MCP servers.",
-                handoff_to_bug=needs_bug_handoff(request.prompt, *request.logs),
+                handoff_to_bug=False,
                 diagnostics={**self.tools.diagnostics, "sme_agent": sme_diagnostics},
             )
             logger.node_completed("inc", "Incident Daddy", "Dry-run incident orchestration complete", started, summary)
             return response.model_dump()
 
         started = logger.node_started("iana", "Incident Analyzer", "Analyze incident trigger", request.prompt)
-        analysis = str(agents.analyzer(_analysis_prompt(request, sme_summary)))
-        logger.node_completed("iana", "Incident Analyzer", "Incident analysis complete", started, analysis)
-        started = logger.node_started("inc", "Incident Daddy", "Coordinate incident orchestration", analysis)
-        orchestration = str(agents.orchestrator(_orchestrator_prompt(request, analysis, sme_summary)))
-        logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration)
+        analysis_raw, analysis = _call_agent_with_json_retry(
+            agents.analyzer,
+            _analysis_prompt(request, sme_summary),
+            ["facts", "inferences", "blast_radius", "likely_owner"],
+        )
+        logger.node_completed("iana", "Incident Analyzer", "Incident analysis complete", started, analysis_raw)
 
-        incident_report = self._write_and_review_report(agents, request, analysis, orchestration, sme_summary, logger)
+        started = logger.node_started("inc", "Incident Daddy", "Coordinate incident orchestration", analysis_raw)
+        orchestration_raw, orchestration = _call_agent_with_json_retry(
+            agents.orchestrator,
+            _orchestrator_prompt(request, analysis_raw, sme_summary),
+            ["triage_summary", "severity", "next_action", "bug_daddy_handoff"],
+        )
+        logger.node_completed("inc", "Incident Daddy", "Incident orchestration complete", started, orchestration_raw)
+
+        incident_report = self._write_and_review_report(agents, request, analysis_raw, orchestration_raw, sme_summary, logger)
         self._post_report_to_slack(agents, incident_report)
 
-        severity = infer_incident_severity(f"{request.prompt}\n{analysis}\n{orchestration}")
-        handoff = needs_bug_handoff(request.prompt, analysis, orchestration, *request.logs)
+        severity = orchestration.get("severity") or infer_incident_severity(f"{request.prompt}\n{analysis_raw}\n{orchestration_raw}")
+        handoff = bool(orchestration.get("bug_daddy_handoff", False))
 
         artifacts: list[dict[str, Any]] = [
             {"type": "incident_analysis", "system": "incident_daddy", "content": analysis},
@@ -77,7 +86,7 @@ class IncidentDaddyRuntime:
         bug_request_payload = None
         next_action = "Continue incident coordination in Slack and Jira."
         if handoff:
-            bug_request_payload = self._build_bug_request(request, orchestration, severity, artifacts).model_dump()
+            bug_request_payload = self._build_bug_request(request, orchestration.get("triage_summary", orchestration_raw), severity, artifacts).model_dump()
             artifacts.append(
                 {
                     "type": "bug_handoff_request",
@@ -88,7 +97,7 @@ class IncidentDaddyRuntime:
             next_action = "Hand off to bug_daddy for remediation."
 
             if self.config.bug_daddy.enabled:
-                started = logger.node_started("bug", "Bug Daddy", "Hand off to bug_daddy", orchestration)
+                started = logger.node_started("bug", "Bug Daddy", "Hand off to bug_daddy", orchestration_raw)
                 try:
                     bug_response = self.peers.invoke(self.config.bug_daddy, bug_request_payload)
                     logger.node_completed(
@@ -113,9 +122,9 @@ class IncidentDaddyRuntime:
                 diagnostics["bug_daddy"] = {"status": "disabled"}
 
         response = IncidentResponse(
-            summary=orchestration,
+            summary=orchestration.get("triage_summary", orchestration_raw),
             severity=severity,
-            next_action=next_action,
+            next_action=orchestration.get("next_action", next_action),
             handoff_to_bug=handoff,
             bug_request=bug_request_payload,
             incident_report=incident_report,
@@ -133,23 +142,38 @@ class IncidentDaddyRuntime:
         sme_summary: str,
         logger: ExecutionLogger,
     ) -> IncidentReport:
+        _report_keys = ["title", "severity", "owner", "status", "summary", "blast_radius", "root_cause", "actions_taken"]
+        _review_keys = ["decision"]
+
         started = logger.node_started("irw", "Report Writer", "Write incident report", orchestration)
-        draft = str(agents.report_writer(_report_writer_prompt(request, analysis, orchestration, sme_summary)))
-        logger.node_completed("irw", "Report Writer", "Incident report draft complete", started, draft)
+        draft_raw, draft = _call_agent_with_json_retry(
+            agents.report_writer,
+            _report_writer_prompt(request, analysis, orchestration, sme_summary),
+            _report_keys,
+        )
+        logger.node_completed("irw", "Report Writer", "Incident report draft complete", started, draft_raw)
 
-        started = logger.node_started("irr", "Report Reviewer", "Review incident report", draft)
-        review = str(agents.report_reviewer(f"Review this incident report:\n\n{draft}"))
-        logger.node_completed("irr", "Report Reviewer", "Incident report reviewed", started, review)
+        started = logger.node_started("irr", "Report Reviewer", "Review incident report", draft_raw)
+        review_raw, review = _call_agent_with_json_retry(
+            agents.report_reviewer,
+            f"Review this incident report JSON:\n\n{draft_raw}",
+            _review_keys,
+        )
+        logger.node_completed("irr", "Report Reviewer", "Incident report reviewed", started, review_raw)
 
-        if "[REPORT: REWORK]" in review:
-            reason = review.split("[REPORT: REWORK]", 1)[-1].strip().splitlines()[0]
+        if review.get("decision") == "REWORK":
+            reason = review.get("reason", "unspecified")
             started = logger.node_started("irw", "Report Writer", "Rework incident report", reason)
-            draft = str(agents.report_writer(
+            draft_raw, draft = _call_agent_with_json_retry(
+                agents.report_writer,
                 _report_writer_prompt(request, analysis, orchestration, sme_summary)
-                + f"\n\nPrevious draft was returned for rework. Reason: {reason}\nPlease fix and rewrite."
-            ))
-            logger.node_completed("irw", "Report Writer", "Rework complete", started, draft)
-        return _parse_incident_report(draft, infer_incident_severity(f"{request.prompt}\n{analysis}"))
+                + f"\n\nPrevious draft was returned for rework. Reason: {reason}\nPlease fix and rewrite.",
+                _report_keys,
+            )
+            logger.node_completed("irw", "Report Writer", "Rework complete", started, draft_raw)
+
+        fallback_severity = infer_incident_severity(f"{request.prompt}\n{analysis}")
+        return _build_incident_report(draft, draft_raw, fallback_severity)
 
     def _post_report_to_slack(self, agents: IncidentAgentBundle, report: IncidentReport) -> None:
         slack_message = _format_slack_report(report)
@@ -279,44 +303,59 @@ SME Context:
 """.strip()
 
 
-def _parse_incident_report(raw_markdown: str, severity: str) -> IncidentReport:
+def _try_parse_json(text: str) -> dict[str, Any] | None:
+    import json
     import re
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE)
+    try:
+        result = json.loads(cleaned)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
 
-    title_match = re.search(r"##\s*Incident Report:\s*(.+)", raw_markdown)
-    title = title_match.group(1).strip() if title_match else "Incident"
 
-    severity_match = re.search(r"\|\s*Severity\s*\|\s*(.+?)\s*\|", raw_markdown, re.IGNORECASE)
-    report_severity = severity_match.group(1).strip().lower() if severity_match else severity
+def _call_agent_with_json_retry(
+    agent: Any,
+    prompt: str,
+    required_keys: list[str],
+) -> tuple[str, dict[str, Any]]:
+    """Call an agent, parse its JSON output, and retry once with feedback if parsing fails or keys are missing."""
+    raw = str(agent(prompt))
+    parsed = _try_parse_json(raw)
 
-    owner_match = re.search(r"\|\s*Owner\s*\|\s*(.+?)\s*\|", raw_markdown, re.IGNORECASE)
-    owner = owner_match.group(1).strip() if owner_match else None
+    missing = [k for k in required_keys if parsed is None or k not in parsed] if parsed is not None else required_keys
+    if parsed is not None and not missing:
+        return raw, parsed
 
-    status_match = re.search(r"\|\s*Status\s*\|\s*(.+?)\s*\|", raw_markdown, re.IGNORECASE)
-    status = status_match.group(1).strip() if status_match else "Investigating"
-
-    blast_match = re.search(r"\*\*Blast Radius\*\*\s*\n(.+?)(?=\n\*\*|\Z)", raw_markdown, re.DOTALL)
-    blast_radius = blast_match.group(1).strip() if blast_match else None
-
-    root_match = re.search(r"\*\*Root Cause Hypothesis\*\*\s*\n(.+?)(?=\n\*\*|\Z)", raw_markdown, re.DOTALL)
-    root_cause = root_match.group(1).strip() if root_match else None
-
-    actions_block = re.search(r"\*\*Actions Taken\*\*\s*\n((?:- .+\n?)+)", raw_markdown)
-    actions_taken = (
-        [line.lstrip("- ").strip() for line in actions_block.group(1).strip().splitlines()]
-        if actions_block
-        else []
+    error_detail = (
+        f"Missing required keys: {missing}" if parsed is not None
+        else f"Output was not valid JSON. Got:\n{raw}"
     )
+    retry_prompt = (
+        f"{prompt}\n\n"
+        f"Your previous response had a JSON error. {error_detail}\n"
+        f"Required keys: {required_keys}\n"
+        f"Respond with ONLY a valid JSON object containing all required keys. No preamble, no markdown fences."
+    )
+    raw = str(agent(retry_prompt))
+    parsed = _try_parse_json(raw) or {}
+    return raw, parsed
 
-    normalized_severity = report_severity if report_severity in ("sev1", "sev2", "sev3") else severity
+
+def _build_incident_report(data: dict[str, Any], raw: str, fallback_severity: str) -> IncidentReport:
+    sev = str(data.get("severity", fallback_severity)).lower()
+    normalized_severity = sev if sev in ("sev1", "sev2", "sev3") else fallback_severity
     return IncidentReport(
-        title=title,
+        title=str(data.get("title", "Incident")),
         severity=normalized_severity,  # type: ignore[arg-type]
-        blast_radius=blast_radius,
-        root_cause=root_cause,
-        actions_taken=actions_taken,
-        owner=owner,
-        status=status,
-        raw_markdown=raw_markdown,
+        owner=data.get("owner") or None,
+        status=str(data.get("status", "Investigating")),
+        blast_radius=data.get("blast_radius") or None,
+        root_cause=data.get("root_cause") or None,
+        actions_taken=list(data.get("actions_taken", [])),
+        raw_markdown=raw,
     )
 
 
