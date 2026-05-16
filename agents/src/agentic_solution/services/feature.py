@@ -10,7 +10,6 @@ from agentic_solution.config import AppConfig
 from agentic_solution.contracts import FeatureRequest, FeatureResponse
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools
-from agentic_solution.peer import PeerRuntimeClient
 
 
 @dataclass(slots=True)

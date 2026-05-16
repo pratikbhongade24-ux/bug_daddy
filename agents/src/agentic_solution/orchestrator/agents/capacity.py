@@ -13,8 +13,7 @@ back a wrong autoscale decision after the dust settles.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from ..contracts import (
     AgentCapability,
@@ -28,7 +27,7 @@ from .base import BaseRemediationAgent, ExecutionContext, make_outcome, register
 
 
 def _started_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @register_agent

@@ -24,16 +24,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import (
     IncidentClass,
     NormalizedEvent,
     RawTrigger,
     SeverityTier,
-    TriggerSource,
 )
-
 
 # Mapping from coarse upstream hints -> incident class. We intentionally
 # lower-case the keys at lookup time so upstream casing does not matter.
@@ -139,7 +137,7 @@ class EventNormalizer:
             incident_class=incident_class,
             severity=severity,
             received_at=trigger.received_at,
-            normalized_at=datetime.now(timezone.utc),
+            normalized_at=datetime.now(UTC),
             service=service,
             environment=environment,
             region=region,

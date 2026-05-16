@@ -24,7 +24,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -50,13 +50,13 @@ class StructuredLogger:
     context: dict[str, Any] = field(default_factory=dict)
     _stdlib: logging.Logger = field(default_factory=lambda: _stdlib_logger())
 
-    def bind(self, **fields: Any) -> "StructuredLogger":
+    def bind(self, **fields: Any) -> StructuredLogger:
         merged = {**self.context, **fields}
         return StructuredLogger(name=self.name, context=merged, _stdlib=self._stdlib)
 
     def _emit(self, level: int, event: str, fields: dict[str, Any]) -> None:
         record = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": logging.getLevelName(level),
             "logger": self.name,
             "event": event,

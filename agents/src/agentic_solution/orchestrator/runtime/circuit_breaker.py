@@ -64,7 +64,7 @@ class CircuitBreaker:
             return AgentStatus.DEGRADED
         return AgentStatus.HEALTHY
 
-    async def __aenter__(self) -> "CircuitBreaker":
+    async def __aenter__(self) -> CircuitBreaker:
         await self._before_call()
         return self
 

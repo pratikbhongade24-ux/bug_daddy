@@ -19,8 +19,8 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -43,7 +43,7 @@ class AuditJournal:
         record = AuditRecord(
             record_id=str(uuid.uuid4()),
             kind=kind,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             payload=payload,
         )
         async with self._lock:

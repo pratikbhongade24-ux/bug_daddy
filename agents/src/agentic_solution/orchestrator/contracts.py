@@ -25,11 +25,10 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Enumerations — closed sets that the router can pattern-match against.
@@ -154,7 +153,7 @@ class RawTrigger(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     source: TriggerSource
-    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     payload: dict[str, Any]
     correlation_hint: str | None = Field(
         default=None,
@@ -205,7 +204,7 @@ class NormalizedEvent(BaseModel):
     incident_class: IncidentClass
     severity: SeverityTier
     received_at: datetime
-    normalized_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    normalized_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     service: str | None = None
     environment: Literal["prod", "staging", "dev", "unknown"] = "unknown"
     region: str | None = None
@@ -293,7 +292,7 @@ class RemediationPlan(BaseModel):
     correlation_id: str
     incident_class: IncidentClass
     severity: SeverityTier
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     steps: list[RemediationStep]
     primary_agent: str
     fallback_agents: tuple[str, ...] = ()

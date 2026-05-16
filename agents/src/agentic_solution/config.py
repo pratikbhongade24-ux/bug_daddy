@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 
 import boto3
 
-
 DEFAULT_BEDROCK_MODEL_ID = "qwen.qwen3-coder-480b-a35b-v1:0"
 
 
@@ -73,7 +72,7 @@ class AppConfig:
     feature_daddy: PeerAgentConfig = field(default_factory=lambda: PeerAgentConfig(name="feature_daddy"))
 
     @classmethod
-    def from_env(cls) -> "AppConfig":
+    def from_env(cls) -> AppConfig:
         resolved_region = (
             os.getenv("AWS_REGION")
             or os.getenv("AWS_DEFAULT_REGION")

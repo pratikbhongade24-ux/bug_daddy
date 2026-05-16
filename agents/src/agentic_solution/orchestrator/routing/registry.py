@@ -33,10 +33,10 @@ class RegistryEntry:
     a per-agent concurrency semaphore, and the breaker that gates its
     dispatchability."""
 
-    agent: "BaseRemediationAgent"
+    agent: BaseRemediationAgent
     capability: AgentCapability
     semaphore: asyncio.Semaphore
-    breaker: "CircuitBreaker"
+    breaker: CircuitBreaker
     status_override: AgentStatus | None = None
 
     @property
@@ -77,9 +77,9 @@ class AgentRegistry:
 
     def register(
         self,
-        agent: "BaseRemediationAgent",
+        agent: BaseRemediationAgent,
         *,
-        breaker: "CircuitBreaker",
+        breaker: CircuitBreaker,
     ) -> RegistryEntry:
         """Register an agent. Re-registering under the same name replaces
         the prior entry; the old entry's semaphore is *not* reused so any

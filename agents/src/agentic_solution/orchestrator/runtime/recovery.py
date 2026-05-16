@@ -16,8 +16,9 @@ envelope as forward execution.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from ..agents.base import ExecutionContext
 from ..contracts import (
     AgentOutcome,
     NormalizedEvent,
@@ -27,7 +28,6 @@ from ..contracts import (
 )
 from ..observability.logging import StructuredLogger
 from ..routing.registry import AgentRegistry
-from ..agents.base import ExecutionContext
 
 
 class RecoveryCoordinator:
@@ -77,7 +77,7 @@ class RecoveryCoordinator:
             ctx = ExecutionContext(
                 correlation_id=event.correlation_id,
                 plan_id=plan.plan_id,
-                deadline_at=datetime.now(timezone.utc),
+                deadline_at=datetime.now(UTC),
                 logger=self._logger.bind(
                     agent=step.agent,
                     step_id=step.step_id,
@@ -89,7 +89,7 @@ class RecoveryCoordinator:
                     outcome.compensating_handle, event, ctx
                 )
             except Exception as exc:  # noqa: BLE001
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 result = AgentOutcome(
                     agent=step.agent,
                     step_id=step.step_id,

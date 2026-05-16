@@ -8,21 +8,20 @@ broken target. They are the most common dispatch path in practice.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import (
     AgentCapability,
     AgentOutcome,
     IncidentClass,
     NormalizedEvent,
-    RemediationStep,
     SeverityTier,
 )
-from .base import BaseRemediationAgent, ExecutionContext, make_outcome, register_agent, utcnow
+from .base import BaseRemediationAgent, make_outcome, register_agent, utcnow
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @register_agent

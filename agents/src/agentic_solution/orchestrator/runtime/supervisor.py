@@ -15,14 +15,13 @@ executes a single bounded intent at a time.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import (
     AgentOutcome,
     NormalizedEvent,
     RemediationPlan,
     RemediationStep,
-    StepStatus,
 )
 from ..observability.audit import AuditJournal
 from ..observability.logging import StructuredLogger
@@ -40,7 +39,7 @@ class IncidentTrace:
     plan: RemediationPlan | None
     outcomes: list[AgentOutcome] = field(default_factory=list)
     compensations: list[AgentOutcome] = field(default_factory=list)
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
     terminal_status: str = "pending"
     rationale: str = ""
@@ -103,7 +102,7 @@ class RemediationSupervisor:
         if not decision.is_routable:
             trace.terminal_status = "unroutable"
             trace.rationale = decision.rationale
-            trace.finished_at = datetime.now(timezone.utc)
+            trace.finished_at = datetime.now(UTC)
             await self._journal.append(
                 kind="incident.unroutable",
                 payload=trace.as_audit_record(),
@@ -117,7 +116,7 @@ class RemediationSupervisor:
             trace.plan = self._build_plan(event, decision)
             trace.terminal_status = "awaiting_human_approval"
             trace.rationale = decision.rationale
-            trace.finished_at = datetime.now(timezone.utc)
+            trace.finished_at = datetime.now(UTC)
             await self._journal.append(
                 kind="incident.awaiting_approval",
                 payload=trace.as_audit_record(),
@@ -143,7 +142,7 @@ class RemediationSupervisor:
         if not primary_failed:
             trace.terminal_status = "remediated"
             trace.rationale = decision.rationale
-            trace.finished_at = datetime.now(timezone.utc)
+            trace.finished_at = datetime.now(UTC)
             await self._journal.append(
                 kind="incident.remediated",
                 payload=trace.as_audit_record(),
@@ -170,7 +169,7 @@ class RemediationSupervisor:
                     f"primary {plan.primary_agent} failed; "
                     f"fallback {fallback} succeeded"
                 )
-                trace.finished_at = datetime.now(timezone.utc)
+                trace.finished_at = datetime.now(UTC)
                 await self._journal.append(
                     kind="incident.remediated_via_fallback",
                     payload=trace.as_audit_record(),
@@ -190,7 +189,7 @@ class RemediationSupervisor:
             f"all agents exhausted for {event.incident_class.value}; "
             f"rollback executed"
         )
-        trace.finished_at = datetime.now(timezone.utc)
+        trace.finished_at = datetime.now(UTC)
         await self._journal.append(
             kind="incident.failed_rolled_back",
             payload=trace.as_audit_record(),

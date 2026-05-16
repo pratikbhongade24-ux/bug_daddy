@@ -246,7 +246,7 @@ def _adf(text: str | dict[str, Any]) -> dict[str, Any]:
 
 
 def _basic_auth() -> str:
-    token = f"{_email()}:{_api_token()}".encode("utf-8")
+    token = f"{_email()}:{_api_token()}".encode()
     return base64.b64encode(token).decode("ascii")
 
 

@@ -52,7 +52,7 @@ def github_create_branch(repo_owner: str, repo_name: str, branch_name: str, base
     # Get base branch SHA
     base = _request("GET", f"/repos/{repo_owner}/{repo_name}/git/ref/heads/{base_branch}")
     sha = base["object"]["sha"]
-    
+
     # Create new ref
     _request("POST", f"/repos/{repo_owner}/{repo_name}/git/refs", {
         "ref": f"refs/heads/{branch_name}",
@@ -63,11 +63,11 @@ def github_create_branch(repo_owner: str, repo_name: str, branch_name: str, base
 
 @tool
 def github_update_file(
-    repo_owner: str, 
-    repo_name: str, 
-    path: str, 
-    content: str, 
-    message: str, 
+    repo_owner: str,
+    repo_name: str,
+    path: str,
+    content: str,
+    message: str,
     branch: str,
     sha: str | None = None
 ) -> str:
@@ -94,11 +94,11 @@ def github_update_file(
 
 @tool
 def github_create_pull_request(
-    repo_owner: str, 
-    repo_name: str, 
-    title: str, 
-    body: str, 
-    head: str, 
+    repo_owner: str,
+    repo_name: str,
+    title: str,
+    body: str,
+    head: str,
     base: str = "master"
 ) -> dict[str, Any]:
     """Create a pull request on GitHub, or return the existing open PR for the same branch."""

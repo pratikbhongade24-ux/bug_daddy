@@ -9,7 +9,7 @@ does real work — each payload exercises a different inference path
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import RawTrigger, TriggerSource
 
@@ -17,7 +17,7 @@ from ..contracts import RawTrigger, TriggerSource
 def build_sample_triggers() -> list[RawTrigger]:
     """Return one trigger per incident class, ordered chaotically by
     severity so the priority scheduler is visibly exercised."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return [
         # SEV3 hygiene first — would block SEV0 in a FIFO scheduler.
         RawTrigger(

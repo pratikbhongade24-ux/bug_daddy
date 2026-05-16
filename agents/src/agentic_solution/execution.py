@@ -17,7 +17,7 @@ class ExecutionLogger:
     component: str
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any], component: str) -> "ExecutionLogger":
+    def from_payload(cls, payload: dict[str, Any], component: str) -> ExecutionLogger:
         endpoint = (
             payload.get("execution_log_endpoint")
             or os.getenv("AGENT_EXECUTION_CALLBACK_URL")

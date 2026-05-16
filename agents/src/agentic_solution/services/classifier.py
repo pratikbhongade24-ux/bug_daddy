@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from strands import Agent
+
 from agentic_solution.agents import build_classifier_agent
 from agentic_solution.config import AppConfig
 from agentic_solution.execution import ExecutionLogger
@@ -26,10 +27,10 @@ class ClassifierRuntime:
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         agent = self._build_agent()
         execution_logger = ExecutionLogger.from_payload(payload, "classifier")
-        
+
         # Prepare the triage prompt with issue data
         triage_input = f"Issue Data:\n{payload}"
-        
+
         logger.info("Classifying incoming issue...")
         result = str(agent(triage_input))
         logger.info("Classification result: %s", result)
@@ -48,7 +49,7 @@ class ClassifierRuntime:
             execution_logger.map_jira_resolution(jira_key)
             logger.info("Routing to Bug Daddy with Jira Key: %s", jira_key)
             return self.peers.invoke(self.config.bug_daddy, payload)
-        
+
         if "[ROUTE: INCIDENT]" in result:
             logger.info("Routing to Incident Daddy")
             return self.peers.invoke(self.config.incident_daddy, payload)

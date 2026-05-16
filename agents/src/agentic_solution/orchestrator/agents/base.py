@@ -23,9 +23,10 @@ The base class enforces three invariants that the supervisor relies on:
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, TypeVar
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 from ..contracts import AgentCapability, AgentOutcome, NormalizedEvent, RemediationStep
 
@@ -96,7 +97,7 @@ class BaseRemediationAgent(abc.ABC):
         Default implementation is a no-op success — agents that perform
         effectful work MUST override. The recovery layer replays
         compensations in LIFO order across the plan's executed steps."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return AgentOutcome(
             agent=self.capability.name,
             step_id=handle,
@@ -141,7 +142,7 @@ def _reset_registered_agent_classes_for_tests() -> None:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def make_outcome(

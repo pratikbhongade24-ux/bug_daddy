@@ -11,7 +11,7 @@ host quarantine.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import (
     AgentCapability,
@@ -19,11 +19,11 @@ from ..contracts import (
     IncidentClass,
     SeverityTier,
 )
-from .base import BaseRemediationAgent, make_outcome, register_agent, utcnow
+from .base import BaseRemediationAgent, make_outcome, register_agent
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @register_agent

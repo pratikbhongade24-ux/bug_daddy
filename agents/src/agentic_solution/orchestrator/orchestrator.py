@@ -133,7 +133,7 @@ class RemediationOrchestrator:
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise asyncio.TimeoutError("orchestrator did not drain in time")
+                raise TimeoutError("orchestrator did not drain in time")
             await asyncio.sleep(0.05)
             async with self._inflight_lock:
                 inflight = self._inflight

@@ -27,13 +27,13 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..agents.base import ExecutionContext
 from ..contracts import AgentOutcome, NormalizedEvent, RemediationStep, StepStatus
 from ..observability.logging import StructuredLogger
-from .circuit_breaker import CircuitOpenError
 from ..routing.registry import AgentRegistry
+from .circuit_breaker import CircuitOpenError
 
 
 class AgentExecutor:
@@ -64,7 +64,7 @@ class AgentExecutor:
         max_retries = step.max_retries if step.max_retries is not None else entry.capability.max_retries
 
         last_error: str | None = None
-        started_overall = datetime.now(timezone.utc)
+        started_overall = datetime.now(UTC)
 
         for attempt in range(max_retries + 1):
             step.attempts = attempt + 1
@@ -118,7 +118,7 @@ class AgentExecutor:
                 # Breaker is open — no point retrying this agent. Caller
                 # (supervisor) will rotate to a fallback.
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await entry.breaker.record_failure()
                 last_error = f"timeout after {timeout}s"
                 step.status = StepStatus.TIMED_OUT
@@ -145,7 +145,7 @@ class AgentExecutor:
                 await asyncio.sleep(self._backoff_delay(attempt))
 
         step.status = StepStatus.FAILED if step.status is not StepStatus.TIMED_OUT else StepStatus.TIMED_OUT
-        step.finished_at = datetime.now(timezone.utc)
+        step.finished_at = datetime.now(UTC)
         step.error = last_error
         return AgentOutcome(
             agent=step.agent,
@@ -166,7 +166,7 @@ class AgentExecutor:
         plan_id: str,
         timeout: float,
     ) -> AgentOutcome:
-        deadline_at = datetime.fromtimestamp(time.time() + timeout, tz=timezone.utc)
+        deadline_at = datetime.fromtimestamp(time.time() + timeout, tz=UTC)
         ctx = ExecutionContext(
             correlation_id=event.correlation_id,
             plan_id=plan_id,
@@ -183,7 +183,7 @@ class AgentExecutor:
         )
 
     def _unknown_agent_outcome(self, step: RemediationStep) -> AgentOutcome:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         step.status = StepStatus.FAILED
         step.finished_at = now
         step.error = f"agent_not_registered:{step.agent}"

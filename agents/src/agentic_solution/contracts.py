@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 Severity = Literal["sev1", "sev2", "sev3", "unknown"]
 ReviewDisposition = Literal["pull_request", "jira_ticket", "rework_required"]
 BugResolution = Literal["review_required", "pull_request", "jira_ticket", "rework_required"]

@@ -132,3 +132,36 @@ If `target` is omitted, trigger-style payloads default to `incident_daddy`. Revi
 - In `DRY_RUN=true`, each runtime validates the payload and returns a safe simulated response without invoking peer runtimes or MCP tools.
 - The current `sme_agent` is agent-backed and contract-ready, but it does not yet connect to a real vector DB. It uses inline context until you wire a retrieval backend behind it.
 - Because each `apps/*` directory is self-contained, there are no deployment-time imports from the repo root when you package an app folder independently.
+
+## Operational hardening
+
+The agents package ships with a production-grade dev loop:
+
+### Test suite
+- **125+ unit & integration tests** under `tests/` and `tests/orchestrator/`
+- Granular coverage of contracts, normalization, routing, scheduling, circuit breaker state transitions, executor reliability (retries/timeouts), recovery LIFO order, and the full ingestion → supervisor → audit pipeline
+- `conftest.py` autouses an env-scrub fixture so tests never depend on leaked shell state
+- Async tests run via `pytest-asyncio` in `auto` mode
+
+### Lint + type-check
+- **Ruff** configured with pycodestyle, pyflakes, isort, pyupgrade, bugbear, comprehensions, and pytest-style rules
+- **Mypy** in `strict_optional`, `warn_unused_ignores`, `warn_redundant_casts` mode against the orchestrator, heuristics, and secrets modules
+
+### Secrets management
+- `agentic_solution.secrets.Secrets` — typed access with `MissingSecretError` listing every absent name at once
+- Deep redaction by registered value AND by sensitive key name (`token`, `password`, `api_key`, etc.) — use `secrets.redact(payload)` before logging
+- Drop-in replaceable with a backend reading from AWS Secrets Manager or Vault by implementing the same `get/require` surface
+
+### Make targets
+```bash
+make install        # install package + dev extras
+make test           # full pytest suite
+make cov            # tests with line-coverage report
+make lint           # ruff
+make typecheck      # mypy
+make check          # lint + typecheck + tests (CI gate)
+make demo           # run the orchestrator demo
+```
+
+### CI
+`.github/workflows/agents-ci.yml` runs lint, type-check, and the full test suite with coverage on every PR touching `agents/`, against Python 3.11 and 3.12. The workflow fails if line coverage drops below 70%.

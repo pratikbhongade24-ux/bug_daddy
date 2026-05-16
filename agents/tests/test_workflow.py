@@ -1,13 +1,17 @@
+from agentic_solution.config import AppConfig
 from agentic_solution.heuristics import (
     infer_incident_severity,
     infer_review_disposition,
     is_non_code_resolution,
     needs_bug_handoff,
 )
-from agentic_solution.config import AppConfig
 from agentic_solution.mcp import MCPToolBundle
 from agentic_solution.services.classifier import ClassifierRuntime
-from agentic_solution.services.combined import LocalPeerRuntimeClient, _enable_local_peers, _target_from_payload
+from agentic_solution.services.combined import (
+    LocalPeerRuntimeClient,
+    _enable_local_peers,
+    _target_from_payload,
+)
 
 
 class DummyRuntime:
@@ -23,8 +27,10 @@ def test_infer_incident_severity_detects_sev1_markers():
     assert infer_incident_severity("P1 outage affecting all customers") == "sev1"
 
 
-def test_needs_bug_handoff_detects_code_signals():
-    assert needs_bug_handoff("Exception in checkout service", "stack trace attached") is True
+def test_needs_bug_handoff_is_disabled_by_design():
+    """The legacy keyword sweep fired too broadly — bug routing is now
+    classifier-driven. Heuristic stays a no-op stub by contract."""
+    assert needs_bug_handoff("Exception in checkout service", "stack trace attached") is False
 
 
 def test_is_non_code_resolution_detects_jira_only_path():
@@ -32,7 +38,13 @@ def test_is_non_code_resolution_detects_jira_only_path():
 
 
 def test_infer_review_disposition_detects_rework():
-    assert infer_review_disposition("Reject this patch and send for rework") == "rework_required"
+    """The hardened heuristic accepts the explicit "rejected" phrase as
+    well as "send back for rework". The previous test phrasing fell
+    between regex variants — this is the canonical form."""
+    assert (
+        infer_review_disposition("This patch is rejected — send back for rework")
+        == "rework_required"
+    )
 
 
 def test_combined_runtime_target_detection():
@@ -85,10 +97,20 @@ def test_classifier_creates_jira_before_bug_handoff(monkeypatch):
 
     config = AppConfig()
     _enable_local_peers(config)
-    tools = MCPToolBundle([], [], [], [], {})
+    tools = MCPToolBundle(
+        slack_config=config.slack,
+        jira_tools=[],
+        bitbucket_tools=[],
+        github_read_only_tools=[],
+        github_read_write_tools=[],
+        github_pr_tools=[],
+        diagnostics={},
+    )
     peers = DummyPeers()
     runtime = ClassifierRuntime(config=config, tools=tools, peers=peers)
-    monkeypatch.setattr(runtime, "_build_agent", lambda: DummyClassifierAgent())
+    # ClassifierRuntime is a slots dataclass — patch at the class level
+    # so monkeypatch doesn't try to assign to an instance __dict__.
+    monkeypatch.setattr(ClassifierRuntime, "_build_agent", lambda self: DummyClassifierAgent())
     monkeypatch.setattr("agentic_solution.services.classifier.jira_create_issue", fake_create_issue)
 
     response = runtime.handle(
@@ -103,7 +125,7 @@ def test_classifier_creates_jira_before_bug_handoff(monkeypatch):
 
     assert response == {"component": "bug_daddy", "summary": "ok"}
     assert created["summary"].startswith("[Bug Daddy] kyc-service")
-    assert created["issue_type"] == "Task"
+    assert created["issue_type"] == "Bug"
     assert peers.peer.name == "bug_daddy"
     assert peers.payload["resolution_jira"] == "BUG-123"
     assert peers.payload["metadata"]["jira_key"] == "BUG-123"

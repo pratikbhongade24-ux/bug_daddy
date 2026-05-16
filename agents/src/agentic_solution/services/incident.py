@@ -5,14 +5,20 @@ from typing import Any
 
 from strands import Agent
 
-from agentic_solution.agents import IncidentAgentBundle, build_incident_agents, _build_model
-from agentic_solution.prompts import SLACK_NOTIFIER_PROMPT
+from agentic_solution.agents import IncidentAgentBundle, _build_model, build_incident_agents
 from agentic_solution.config import AppConfig
-from agentic_solution.contracts import BugRequest, IncidentReport, IncidentRequest, IncidentResponse, IssueContext
+from agentic_solution.contracts import (
+    BugRequest,
+    IncidentReport,
+    IncidentRequest,
+    IncidentResponse,
+    IssueContext,
+)
 from agentic_solution.execution import ExecutionLogger
 from agentic_solution.heuristics import infer_incident_severity
 from agentic_solution.mcp import MCPToolBundle, load_mcp_tools, slack_client_context
 from agentic_solution.peer import PeerInvocationError, PeerRuntimeClient
+from agentic_solution.prompts import SLACK_NOTIFIER_PROMPT
 
 
 @dataclass(slots=True)

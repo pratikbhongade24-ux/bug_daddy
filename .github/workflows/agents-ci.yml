@@ -1,0 +1,85 @@
+name: agents-ci
+
+# Lint + type-check + tests for the agents package.
+#
+# Runs on every PR that touches agents/ and on pushes to the main branch.
+# Path filter keeps the workflow off PRs that don't affect this code.
+
+on:
+  pull_request:
+    paths:
+      - "agents/**"
+      - ".github/workflows/agents-ci.yml"
+  push:
+    branches: [master, main]
+    paths:
+      - "agents/**"
+      - ".github/workflows/agents-ci.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agents
+
+jobs:
+  test:
+    name: lint · typecheck · tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: agents/pyproject.toml
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check src tests
+
+      - name: Type-check (mypy)
+        run: mypy
+
+      - name: Run test suite with coverage
+        run: |
+          pytest tests \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=pytest-report.xml
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agents-coverage
+          path: |
+            agents/coverage.xml
+            agents/pytest-report.xml
+          if-no-files-found: warn
+
+      - name: Coverage gate (fail if < 70%)
+        if: matrix.python-version == '3.11'
+        run: |
+          python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          rate = float(ET.parse("coverage.xml").getroot().attrib["line-rate"])
+          pct = rate * 100
+          print(f"Line coverage: {pct:.2f}%")
+          if pct < 70.0:
+              print("::error::Coverage below 70% gate", file=sys.stderr)
+              sys.exit(1)
+          PY

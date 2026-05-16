@@ -3,18 +3,19 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, Generator
+from typing import Any
 
 from mcp import StdioServerParameters, stdio_client
 from strands.tools.mcp import MCPClient
 
 from agentic_solution.config import AppConfig, MCPServerConfig
 from agentic_solution.github_tools import (
+    get_native_github_pr_tools,
     get_native_github_read_only_tools,
     get_native_github_read_write_tools,
-    get_native_github_pr_tools,
-    native_github_diagnostics
+    native_github_diagnostics,
 )
 from agentic_solution.jira_tools import get_native_jira_tools, native_jira_diagnostics
 
@@ -41,7 +42,7 @@ class MCPToolBundle:
 
 
 @contextlib.contextmanager
-def slack_client_context(bundle: "MCPToolBundle") -> Generator[list[Any], None, None]:
+def slack_client_context(bundle: MCPToolBundle) -> Generator[list[Any], None, None]:
     """Open a live Slack MCP client for the duration of a request and yield its tools."""
     if not bundle.slack_enabled:
         yield []

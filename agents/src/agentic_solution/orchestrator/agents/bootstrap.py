@@ -12,14 +12,16 @@ process so any class decorated before bootstrap will be registered."""
 
 from __future__ import annotations
 
-from ..runtime.circuit_breaker import BreakerConfig, CircuitBreaker
 from ..routing.registry import AgentRegistry
+from ..runtime.circuit_breaker import BreakerConfig, CircuitBreaker
 
 # Importing the agent modules registers their classes via the decorator.
-from . import availability  # noqa: F401
-from . import capacity  # noqa: F401
-from . import hygiene  # noqa: F401
-from . import security  # noqa: F401
+from . import (
+    availability,  # noqa: F401
+    capacity,  # noqa: F401
+    hygiene,  # noqa: F401
+    security,  # noqa: F401
+)
 from .base import iter_registered_agent_classes
 
 

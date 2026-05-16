@@ -5,7 +5,7 @@ from typing import Any
 
 from agentic_solution.config import AppConfig, PeerAgentConfig
 from agentic_solution.peer import PeerInvocationError
-from agentic_solution.services import bug, incident, reviewer, sme, classifier, feature
+from agentic_solution.services import bug, classifier, feature, incident, reviewer, sme
 
 
 @dataclass(slots=True)
