@@ -143,7 +143,8 @@ def create_ticket(payload, context, request_id):
 
 def assign_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
-    if payload.get("simulateBug") == "queue_failure":
+    # Only simulate errors in non-production environments
+    if os.environ.get("ENVIRONMENT") != "production" and payload.get("simulateBug") == "queue_failure":
         # Return a controlled error response instead of raising an exception
         err = {
             "code": "QUEUE_ASSIGNMENT_FAILED",
@@ -171,7 +172,8 @@ def update_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
     comments = payload.get("comments", [])
     log("update_ticket", {"ticketId": ticket["ticketId"], "commentCount": len(comments)})
-    if payload.get("simulateBug") == "comment_shape":
+    # Only simulate errors in non-production environments
+    if os.environ.get("ENVIRONMENT") != "production" and payload.get("simulateBug") == "comment_shape":
         comments["latest"]  # This will raise a TypeError intentionally for testing
     return response(
         context,
@@ -256,7 +258,7 @@ def lambda_handler(event, context):
         return result
     except Exception as exc:
         # Log the error and return a structured error response instead of bubbling up
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
+        print(f"ERROR {SERVICE_NAME} failed while handling {requestId}: {exc}")
         print(traceback.format_exc())
         err = {"code": "INTERNAL_SERVER_ERROR", "message": str(exc)}
         return error_response(context, request_id, request_id, payload, err)
