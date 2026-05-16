@@ -6,7 +6,6 @@ SSH_KEY="${SSH_KEY:-$HOME/.ssh/bug-daddy-key.pem}"
 REMOTE="ubuntu@${EC2_IP}"
 BRANCH="${BRANCH:-master}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 REMOTE_ROOT="${REMOTE_ROOT:-/home/ubuntu/repo}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-bug-daddy-platform-backend.service}"
 AGENT_EXECUTION_LOG_SECRET="${AGENT_EXECUTION_LOG_SECRET:-}"
@@ -15,31 +14,16 @@ SECURITY_SCANNER_ACCESS_KEY_ID="${SECURITY_SCANNER_ACCESS_KEY_ID:-AKIARQ5BVXUOP7
 SECURITY_SCANNER_SECRET_ACCESS_KEY="${SECURITY_SCANNER_SECRET_ACCESS_KEY:-qJ1U3xow0qbk3rZnsq0AgM7g3jqbwoBXgaBcf7gA}"
 JIRA_WEBHOOK_SECRET="${JIRA_WEBHOOK_SECRET:-d8tbOEYzWYHpB3rHS878}"
 
-echo "Deploying branch '${BRANCH}' to ${EC2_IP}..."
+echo "Deploying backend (branch '${BRANCH}') to ${EC2_IP}..."
 
 ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${REMOTE}" \
-  "BRANCH=${BRANCH} BACKEND_PORT=${BACKEND_PORT} FRONTEND_PORT=${FRONTEND_PORT} REMOTE_ROOT=${REMOTE_ROOT} BACKEND_SERVICE=${BACKEND_SERVICE} AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL} AGENT_EXECUTION_LOG_SECRET='${AGENT_EXECUTION_LOG_SECRET}' SECURITY_SCANNER_ACCESS_KEY_ID='${SECURITY_SCANNER_ACCESS_KEY_ID}' SECURITY_SCANNER_SECRET_ACCESS_KEY='${SECURITY_SCANNER_SECRET_ACCESS_KEY}' JIRA_WEBHOOK_SECRET='${JIRA_WEBHOOK_SECRET}' bash -s" << 'EOF'
+  "BRANCH=${BRANCH} BACKEND_PORT=${BACKEND_PORT} REMOTE_ROOT=${REMOTE_ROOT} BACKEND_SERVICE=${BACKEND_SERVICE} AGENT_EXECUTION_CALLBACK_URL=${AGENT_EXECUTION_CALLBACK_URL} AGENT_EXECUTION_LOG_SECRET='${AGENT_EXECUTION_LOG_SECRET}' SECURITY_SCANNER_ACCESS_KEY_ID='${SECURITY_SCANNER_ACCESS_KEY_ID}' SECURITY_SCANNER_SECRET_ACCESS_KEY='${SECURITY_SCANNER_SECRET_ACCESS_KEY}' JIRA_WEBHOOK_SECRET='${JIRA_WEBHOOK_SECRET}' bash -s" << 'EOF'
 
 set -euo pipefail
 
-# Pull latest code
 cd "${REMOTE_ROOT}"
 git pull origin "${BRANCH}"
 
-# Frontend
-echo "Building frontend..."
-cd "${REMOTE_ROOT}/platform/frontend"
-rm -rf node_modules
-npm ci --omit=dev
-npm run build
-
-# Reload if the pm2 entry exists, otherwise start fresh. pm2's treekill handles
-# next-server children, so no manual port-killing is needed.
-PORT=${FRONTEND_PORT} pm2 reload bugdaddy --update-env 2>/dev/null \
-  || PORT=${FRONTEND_PORT} pm2 start npm --name bugdaddy -- start
-pm2 save
-
-# Backend
 echo "Restarting backend..."
 BACKEND_DIR="${REMOTE_ROOT}/platform/backend"
 VENV_DIR="/home/ubuntu/platform/backend/venv"

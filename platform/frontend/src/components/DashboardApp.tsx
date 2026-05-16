@@ -32,6 +32,7 @@ const SonarReportModal = dynamic(() => import('./sonar/SonarReportModal').then((
 import type { SonarReport } from './sonar/SonarReportModal';
 const AdminView = dynamic(() => import('./admin/AdminView').then((mod) => mod.AdminView), { ssr: false, loading: () => sectionSkeleton });
 const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView').then((mod) => mod.SecurityScannerView), { ssr: false, loading: () => sectionSkeleton });
+const GrafanaView = dynamic(() => import('./grafana/GrafanaView').then((mod) => mod.GrafanaView), { ssr: false, loading: () => sectionSkeleton });
 const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
 const CommandPalette = dynamic(() => import('./shared/CommandPalette').then((mod) => mod.CommandPalette), { ssr: false, loading: () => null });
 const DemoTourBanner = dynamic(() => import('./shared/DemoTourBanner').then((mod) => mod.DemoTourBanner), { ssr: false, loading: () => null });
@@ -455,6 +456,9 @@ export function DashboardApp() {
           ) : null}
           {view === 'security' ? (
             <SecurityScannerView addToast={toast} />
+          ) : null}
+          {view === 'grafana' ? (
+            <GrafanaView />
           ) : null}
           {view === 'admin' && isAdmin ? (
             <AdminView users={usersQuery.data?.items || []} loading={usersQuery.isLoading} loadError={adminErrorText} toast={toast} refresh={() => usersQuery.refetch()} />

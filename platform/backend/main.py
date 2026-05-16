@@ -3046,3 +3046,106 @@ def list_security_findings(
     finally:
         conn.close()
     return {"items": items, "total": len(items)}
+
+
+def _jira_issue_type_to_bug_daddy(jira_issue_type: str) -> str:
+    mapping = {
+        "Bug": "jira_bug",
+        "Incident": "jira_incident",
+        "Task": "jira_task",
+        "Story": "jira_story",
+        "Epic": "jira_epic",
+        "Sub-task": "jira_subtask",
+    }
+    return mapping.get(jira_issue_type, "jira_issue")
+
+
+@app.post("/webhooks/jira", status_code=200)
+def jira_webhook(payload: dict[str, Any]):
+    print("JIRA WEBHOOK PAYLOAD:", json.dumps(payload, default=str), flush=True)
+    webhook_event = payload.get("webhookEvent", "")
+    issue = payload.get("issue", {})
+    issue_fields = issue.get("fields", {})
+
+    if not issue:
+        return {"status": "ignored", "reason": "no issue in payload"}
+
+    jira_key = issue.get("key", "")
+    jira_id = issue.get("id", "")
+    summary = issue_fields.get("summary", "")
+    description_raw = issue_fields.get("description") or ""
+    if isinstance(description_raw, dict):
+        # Jira doc format — flatten to plain text
+        description_raw = json.dumps(description_raw)
+    project = (issue_fields.get("project") or {}).get("name", "")
+    jira_issue_type_name = (issue_fields.get("issuetype") or {}).get("name", "Bug")
+    priority = (issue_fields.get("priority") or {}).get("name", "")
+    reporter = (issue_fields.get("reporter") or {}).get("displayName", "")
+    assignee_obj = issue_fields.get("assignee") or {}
+    assignee = assignee_obj.get("displayName") or assignee_obj.get("emailAddress") or None
+    jira_status = (issue_fields.get("status") or {}).get("name", "")
+    environment = issue_fields.get("environment") or ""
+    labels = issue_fields.get("labels") or []
+    components = [c.get("name", "") for c in (issue_fields.get("components") or [])]
+    stack_trace = issue_fields.get("customfield_10100") or ""  # adjust field id if needed
+
+    service_name = project or "jira"
+    issue_type = _jira_issue_type_to_bug_daddy(jira_issue_type_name)
+    jira_url = f"{JIRA_BASE_URL}/browse/{jira_key}" if jira_key else None
+
+    description_parts = [f"[{jira_key}] {summary}"]
+    if priority:
+        description_parts.append(f"Priority: {priority}")
+    if reporter:
+        description_parts.append(f"Reporter: {reporter}")
+    if jira_status:
+        description_parts.append(f"Jira Status: {jira_status}")
+    if environment:
+        description_parts.append(f"Environment: {environment}")
+    if labels:
+        description_parts.append(f"Labels: {', '.join(labels)}")
+    if components:
+        description_parts.append(f"Components: {', '.join(components)}")
+    if description_raw:
+        description_parts.append(f"\n{description_raw}")
+    full_description = "\n".join(description_parts)
+
+    fingerprint = hashlib.sha256(f"jira|{jira_key}".encode()).hexdigest()
+
+    now = utc_now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM service_exception_log WHERE fingerprint = %s LIMIT 1",
+                (fingerprint,),
+            )
+            existing = cur.fetchone()
+
+            if existing:
+                cur.execute(
+                    """UPDATE service_exception_log
+                       SET last_seen = %s, description = %s, stack_trace = %s,
+                           assigned_to = %s, resolution_jira = %s, frequency = frequency + 1
+                       WHERE id = %s""",
+                    (now, full_description, stack_trace or None, assignee, jira_url, existing["id"]),
+                )
+                return {"status": "updated", "id": existing["id"], "jira_key": jira_key}
+            else:
+                cur.execute(
+                    """INSERT INTO service_exception_log (
+                           fingerprint, service_name, issue_type, source, description,
+                           stack_trace, frequency, first_seen, last_seen, status,
+                           assigned_to, resolution_jira, created_at
+                       ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        fingerprint, service_name, issue_type, "jira",
+                        full_description, stack_trace or None,
+                        1, now, now, "open",
+                        assignee, jira_url, now,
+                    ),
+                )
+                new_id = cur.lastrowid
+                return {"status": "created", "id": new_id, "jira_key": jira_key}
+    finally:
+        conn.close()
