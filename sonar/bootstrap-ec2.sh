@@ -69,6 +69,11 @@ if ! command -v aws >/dev/null 2>&1; then
   sudo /tmp/aws/install --update
 fi
 
+# Upgrade cryptography package to fix CVE-2026-34073
+# This addresses incomplete DNS name constraint enforcement on peer names
+sudo apt-get install -y python3-pip
+pip3 install --upgrade cryptography
+
 sudo usermod -aG docker ubuntu || true
 echo "vm.max_map_count=262144" | sudo tee /etc/sysctl.d/99-sonarqube.conf >/dev/null
 sudo sysctl -w vm.max_map_count=262144 >/dev/null
