@@ -28,7 +28,8 @@ import os
 
 import boto3
 
-from aws_inventory import inventory_all
+from aws_inspector import collect_inspector_findings
+from aws_inventory import inventory_full
 from cve_lookup import lookup_cves
 from lambda_package_extractor import extract_lambda_dependencies
 from report import build_report, print_summary, upload_to_s3
@@ -86,8 +87,12 @@ def run(
 
     # Phase 1 — asset discovery
     print("\n[scanner] Phase 1: AWS asset inventory")
-    assets = inventory_all(region)
+    inventory = inventory_full(region)
+    assets = inventory["assets"]
+    dependencies = inventory["dependencies"]
+    tool_results = inventory["tool_results"]
     print(f"[scanner] Total assets: {len(assets)}")
+    print(f"[scanner] Total dependencies: {len(dependencies)}")
 
     # Phase 1b — enrich Lambda assets with deployed package deps
     print("\n[scanner] Phase 1b: Extracting Lambda deployment packages")
@@ -96,10 +101,23 @@ def run(
     # Phase 2 — CVE lookup
     print("\n[scanner] Phase 2: CVE lookup")
     findings = _run_cve_phase(assets, nvd_api_key)
+    osv_nvd_count = len(findings)
+    tool_results.append({
+        "tool": "osv_nvd",
+        "category": "vulnerability_source",
+        "status": "ok",
+        "findings": osv_nvd_count,
+        "message": "",
+    })
+
+    print("\n[scanner] Phase 2b: AWS Inspector findings")
+    inspector_findings, inspector_result = collect_inspector_findings(region)
+    findings.extend(inspector_findings)
+    tool_results.append(inspector_result)
 
     # Phase 3 — report
     print("\n[scanner] Phase 3: Building report")
-    report = build_report(assets, findings)
+    report = build_report(assets, findings, dependencies=dependencies, tool_results=tool_results)
 
     with open(output_path, "w") as f:
         json.dump(report, f, indent=2)

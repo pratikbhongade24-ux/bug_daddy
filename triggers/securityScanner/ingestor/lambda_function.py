@@ -53,8 +53,33 @@ def _connect_db():
 # Mapping
 # ---------------------------------------------------------------------------
 
-def _build_fingerprint(cve_id: str, service: str) -> str:
-    return hashlib.sha256(f"security_scanner|{cve_id}|{service}".encode()).hexdigest()
+def _canonical_vuln_id(finding: dict) -> str:
+    ids = [finding.get("cve_id", ""), *(finding.get("aliases") or [])]
+    for value in ids:
+        if isinstance(value, str) and value.startswith("CVE-"):
+            return value
+    for value in ids:
+        if isinstance(value, str) and value:
+            return value
+    return "unknown"
+
+
+def _build_fingerprint(finding: dict) -> str:
+    asset_id = (
+        finding.get("asset_id")
+        or finding.get("function_arn")
+        or finding.get("resource_id")
+        or finding.get("service")
+        or "unknown"
+    )
+    component = finding.get("component") or finding.get("package_name") or "unknown"
+    identity = "|".join([
+        "security_scanner",
+        _canonical_vuln_id(finding).strip().lower(),
+        str(asset_id).strip().lower(),
+        str(component).strip().lower(),
+    ])
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def _build_stack_trace(finding: dict) -> str:
@@ -72,12 +97,12 @@ def _build_stack_trace(finding: dict) -> str:
 
 
 def _finding_to_row(finding: dict, scan_date: str, now: str) -> dict:
-    cve_id = finding.get("cve_id", "unknown")
+    cve_id = _canonical_vuln_id(finding)
     service = finding.get("service", "unknown")
     severity = finding.get("severity", "UNKNOWN").upper()
 
     return {
-        "fingerprint": _build_fingerprint(cve_id, service),
+        "fingerprint": _build_fingerprint(finding),
         "service_name": service,
         "issue_type": _SEVERITY_TO_ISSUE_TYPE.get(severity, "cve_low"),
         "source": "security_scanner",

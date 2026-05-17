@@ -998,7 +998,9 @@ button:disabled { cursor: not-allowed; }
   .sec-summary-grid,
   .sec-body,
   .sec-session-meta,
-  .sec-stepper { grid-template-columns: 1fr; }
+  .sec-stepper,
+  .sec-tools-grid,
+  .sec-edge-row { grid-template-columns: 1fr; }
   .sec-sidebar { border-right: 0; }
   .sec-history-list { overflow: visible; }
   .sec-stepper { grid-template-columns: 1fr; }
@@ -1006,6 +1008,7 @@ button:disabled { cursor: not-allowed; }
   .sec-search,
   .filter-select { width: 100%; }
   .sec-findings-count { margin-left: 0; }
+  .sec-edge-rel { justify-self: flex-start; }
   .table-controls { flex-direction: column; align-items: stretch; }
   .srch-box { min-width: 100%; }
   .issues-table { min-width: 980px; }
@@ -1525,6 +1528,9 @@ body { font-size: 15px; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
 }
+.sec-summary-grid.wide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .sec-stat-card {
   display: flex;
   align-items: center;
@@ -1542,6 +1548,7 @@ body { font-size: 15px; }
 .sec-stat-icon.critical { background: var(--c2d); color: var(--c2); }
 .sec-stat-icon.accent { background: var(--c3d); color: var(--c3); }
 .sec-stat-icon.success { background: var(--c1d); color: var(--c1); }
+.sec-stat-icon.neutral { background: var(--c5d); color: var(--c5); }
 .sec-stat-copy { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .sec-stat-label {
   font-size: 0.76rem;
@@ -1802,7 +1809,139 @@ body { font-size: 15px; }
   font-size: 0.95rem;
   text-align: center;
 }
+.sec-empty.compact {
+  align-items: flex-start;
+  padding: 1.2rem 1.25rem;
+  text-align: left;
+}
 .sec-empty.left { align-items: flex-start; text-align: left; padding: 1rem 0 0; }
+.sec-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+.sec-tool-card {
+  min-width: 0;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--s1);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.sec-tool-card.error {
+  border-color: rgba(239,68,68,0.25);
+  background: rgba(254,242,242,0.55);
+}
+.sec-tool-head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+}
+.sec-tool-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--c3d);
+  color: var(--c3);
+  display: grid;
+  place-items: center;
+}
+.sec-tool-head h3 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--t);
+  line-height: 1.25;
+}
+.sec-tool-head p {
+  margin-top: 0.2rem;
+  color: var(--t3);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+.sec-mini-status {
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.sec-mini-status.success { color: #047857; background: var(--c1d); border-color: rgba(16,185,129,0.25); }
+.sec-mini-status.danger { color: #b91c1c; background: var(--c2d); border-color: rgba(239,68,68,0.25); }
+.sec-tool-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.sec-tool-metrics span {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--s3);
+  padding: 0.55rem 0.65rem;
+  color: var(--t2);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.sec-tool-metrics strong {
+  color: var(--t);
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  margin-right: 0.25rem;
+}
+.sec-tool-message {
+  color: #b91c1c;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.sec-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+.sec-edge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--s1);
+}
+.sec-edge-node {
+  min-width: 0;
+  color: var(--t);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sec-edge-node.target { color: var(--c3); }
+.sec-edge-rel {
+  color: var(--t3);
+  background: var(--s3);
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.sec-edge-more {
+  color: var(--t2);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.2rem 0.1rem;
+}
 .filter-select {
   height: 42px;
   padding: 0 0.8rem;
@@ -1841,6 +1980,20 @@ body { font-size: 15px; }
 .sec-findings-table .sec-col-description { width: 42%; }
 .sec-findings-table .sec-col-last-seen { width: 9%; }
 .sec-findings-table .sec-col-status { width: 10%; }
+.sec-findings-table th:nth-child(1),
+.sec-findings-table td:nth-child(1) { width: 9%; }
+.sec-findings-table th:nth-child(2),
+.sec-findings-table td:nth-child(2) { width: 12%; }
+.sec-findings-table th:nth-child(3),
+.sec-findings-table td:nth-child(3) { width: 12%; }
+.sec-findings-table th:nth-child(4),
+.sec-findings-table td:nth-child(4) { width: 21%; }
+.sec-findings-table th:nth-child(5),
+.sec-findings-table td:nth-child(5) { width: 18%; }
+.sec-findings-table th:nth-child(6),
+.sec-findings-table td:nth-child(6) { width: 12%; }
+.sec-findings-table th:nth-child(7),
+.sec-findings-table td:nth-child(7) { width: 10%; }
 .sec-findings-table th,
 .sec-findings-table td {
   padding: 0.75rem 0.65rem;
@@ -1874,6 +2027,25 @@ body { font-size: 15px; }
 .sec-findings-table td { font-size: 0.82rem; color: var(--t); line-height: 1.35; }
 .sec-severity-badge { min-width: 0; text-align: center; font-size: 0.68rem; padding: 2px 6px; }
 .sec-cve-id { font-size: 0.78rem; white-space: normal; overflow-wrap: anywhere; color: var(--t); font-weight: 800; }
+.sec-tool-cell {
+  color: var(--t2);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.sec-main-cell {
+  color: var(--t);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.sec-sub-cell {
+  margin-top: 0.2rem;
+  color: var(--t3);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .sec-component, .sec-date-cell { color: var(--t2); font-size: 0.78rem; }
 .sec-finding-desc { color: var(--t); white-space: normal; overflow: visible; overflow-wrap: anywhere; word-break: break-word; font-size: 0.8rem; }
 .sec-findings-table td .badge {

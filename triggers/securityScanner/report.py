@@ -17,7 +17,12 @@ import boto3
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
 
 
-def build_report(assets: list[dict], findings: list[dict]) -> dict:
+def build_report(
+    assets: list[dict],
+    findings: list[dict],
+    dependencies: list[dict] | None = None,
+    tool_results: list[dict] | None = None,
+) -> dict:
     now = datetime.now(tz=timezone.utc)
     findings_sorted = sorted(
         findings,
@@ -26,8 +31,10 @@ def build_report(assets: list[dict], findings: list[dict]) -> dict:
     return {
         "date": now.strftime("%Y-%m-%d"),
         "scanned_at": now.isoformat(),
-        "summary": _summarise(assets, findings),
+        "summary": _summarise(assets, findings, dependencies or [], tool_results or []),
         "assets": assets,
+        "dependencies": dependencies or [],
+        "tool_results": tool_results or [],
         "findings": findings_sorted,
     }
 
@@ -71,7 +78,12 @@ def print_summary(report: dict) -> None:
 # Internal
 # ---------------------------------------------------------------------------
 
-def _summarise(assets: list[dict], findings: list[dict]) -> dict:
+def _summarise(
+    assets: list[dict],
+    findings: list[dict],
+    dependencies: list[dict],
+    tool_results: list[dict],
+) -> dict:
     counts: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for f in findings:
         sev = f.get("severity", "LOW")
@@ -79,6 +91,9 @@ def _summarise(assets: list[dict], findings: list[dict]) -> dict:
             counts[sev] += 1
     return {
         "total_assets": len(assets),
+        "total_dependencies": len(dependencies),
+        "tools_ok": sum(1 for t in tool_results if t.get("status") == "ok"),
+        "tools_error": sum(1 for t in tool_results if t.get("status") == "error"),
         "total_cves": len(findings),
         "critical": counts["CRITICAL"],
         "high": counts["HIGH"],

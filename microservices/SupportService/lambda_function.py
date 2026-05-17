@@ -173,6 +173,12 @@ def update_ticket(payload, context, request_id):
     log("update_ticket", {"ticketId": ticket["ticketId"], "commentCount": len(comments)})
     if payload.get("simulateBug") == "comment_shape":
         comments["latest"]  # This will raise a TypeError intentionally for testing
+    # Bug: support_from_onboarding — CustomerOnboardingService's submitOnboarding stamps
+    # escalationComments as a dict (schema mismatch). SupportService expects a list but
+    # receives {"latest": "Escalated by risk engine"} → TypeError on list index access.
+    if payload.get("simulateBug") == "support_from_onboarding":
+        comments_from_onboarding = payload.get("escalationComments", {"latest": "Escalated by risk engine"})
+        first_comment = comments_from_onboarding[0]  # TypeError: dict indices must be integers
     return response(
         context,
         request_id,
