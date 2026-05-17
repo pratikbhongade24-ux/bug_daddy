@@ -1,6 +1,6 @@
 services:
   sonarqube:
-    image: sonarqube:community
+    image: sonarqube:10.4-community
     restart: unless-stopped
     environment:
       SONAR_JDBC_URL: jdbc:postgresql://${SONAR_DB_HOST:-bugdaddy-sonarqube-postgres.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com}:${SONAR_DB_PORT:-5432}/${SONAR_DB_NAME:-sonarqube}
@@ -14,7 +14,7 @@ services:
       - sonarqube_logs:/opt/sonarqube/logs
 
   scanner:
-    image: sonarsource/sonar-scanner-cli:latest
+    image: sonarsource/sonar-scanner-cli:5.0
     depends_on:
       - sonarqube
     environment:
