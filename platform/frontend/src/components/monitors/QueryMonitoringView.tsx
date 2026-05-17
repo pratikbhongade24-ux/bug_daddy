@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiJson } from '@/lib/api';
 import type { ToastKind } from '@/lib/types';
 
-const CRON_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface Monitor {
   id: number;
@@ -67,10 +66,7 @@ function statusDot(status: string) {
 export function QueryMonitoringView({ toast }: { toast: (msg: string, kind?: ToastKind) => void }) {
   const queryClient = useQueryClient();
   const [lastRun, setLastRun] = useState<RunSummary | null>(null);
-  const [nextRunIn, setNextRunIn] = useState(CRON_INTERVAL_MS);
   const [expandedMonitor, setExpandedMonitor] = useState<number | null>(null);
-  const cronRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const monitorsQuery = useQuery({
     queryKey: ['monitors'],
@@ -94,31 +90,7 @@ export function QueryMonitoringView({ toast }: { toast: (msg: string, kind?: Toa
     onError: () => toast('Monitor run failed', 'err'),
   });
 
-  // Cron: run every 5 minutes automatically
-  useEffect(() => {
-    // Run immediately on mount
-    runMutation.mutate();
-
-    cronRef.current = setInterval(() => {
-      runMutation.mutate();
-    }, CRON_INTERVAL_MS);
-
-    // Countdown ticker
-    countdownRef.current = setInterval(() => {
-      setNextRunIn((prev) => Math.max(0, prev - 1000));
-    }, 1000);
-
-    return () => {
-      if (cronRef.current) clearInterval(cronRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const monitors = monitorsQuery.data ?? [];
-  const totalDiscrepancies = lastRun?.total_discrepancy_rows ?? 0;
-  const mm = String(Math.floor(nextRunIn / 60000)).padStart(2, '0');
-  const ss = String(Math.floor((nextRunIn % 60000) / 1000)).padStart(2, '0');
 
   return (
     <div className="view-root" style={{ padding: '24px 28px' }}>
@@ -127,21 +99,16 @@ export function QueryMonitoringView({ toast }: { toast: (msg: string, kind?: Toa
         <div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Query Monitoring</h2>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            Runs all system monitor queries every 5 minutes. Discrepancies are automatically ingested as bugs.
+            Run all system monitor queries manually. Discrepancies are ingested as bugs.
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            Next run in <strong>{mm}:{ss}</strong>
-          </span>
-          <button
-            className="btn btn-primary"
-            onClick={() => runMutation.mutate()}
-            disabled={runMutation.isPending}
-          >
-            {runMutation.isPending ? 'Running…' : 'Run Now'}
-          </button>
-        </div>
+        <button
+          className="btn btn-primary"
+          onClick={() => runMutation.mutate()}
+          disabled={runMutation.isPending}
+        >
+          {runMutation.isPending ? 'Running…' : 'Run Now'}
+        </button>
       </div>
 
       {/* Summary bar */}
