@@ -78,7 +78,6 @@ export function QueryMonitoringView({ toast }: { toast: (msg: string, kind?: Toa
     mutationFn: () => apiJson<RunSummary>('/monitors/run', { method: 'POST' }),
     onSuccess: (data) => {
       setLastRun(data);
-      setNextRunIn(CRON_INTERVAL_MS);
       queryClient.invalidateQueries({ queryKey: ['monitors'] });
       queryClient.invalidateQueries({ queryKey: ['issues'] });
       if (data.total_ingested > 0) {
