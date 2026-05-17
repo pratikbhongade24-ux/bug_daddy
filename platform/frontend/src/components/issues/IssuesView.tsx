@@ -78,6 +78,8 @@ export function IssuesView(props: {
 }) {
   const tabs: IssueTab[] = ['backlog', 'wip', 'review', 'resolved'];
   const showJiraColumn = props.tab !== 'backlog';
+  const showPrColumn = props.tab === 'review';
+  const showActionColumn = props.tab !== 'review';
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="view active">
       <PanelHeader
@@ -157,8 +159,9 @@ export function IssuesView(props: {
               <col className="col-criticality" />
               <col className="col-owner" />
               {showJiraColumn ? <col className="col-jira" /> : null}
+              {showPrColumn ? <col className="col-pr" /> : null}
               <col className="col-time" />
-              <col className="col-action" />
+              {showActionColumn ? <col className="col-action" /> : null}
             </colgroup>
             <thead>
               <tr>
@@ -171,8 +174,9 @@ export function IssuesView(props: {
                 <th>Criticality</th>
                 <th>Owner</th>
                 {showJiraColumn ? <th>Jira</th> : null}
+                {showPrColumn ? <th>PR</th> : null}
                 <th>Timestamp</th>
-                <th>Action</th>
+                {showActionColumn ? <th>Action</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -182,6 +186,8 @@ export function IssuesView(props: {
                   issue={issue}
                   tab={props.tab}
                   showJiraColumn={showJiraColumn}
+                  showPrColumn={showPrColumn}
+                  showActionColumn={showActionColumn}
                   isSyncing={props.syncingIssueIds?.includes(issue.id)}
                   loading={props.prioritizeLoading[issue.id]}
                   prioritize={props.prioritize}
@@ -203,6 +209,8 @@ export const IssueRow = memo(function IssueRow({
   issue,
   tab,
   showJiraColumn,
+  showPrColumn,
+  showActionColumn,
   isSyncing,
   loading,
   prioritize,
@@ -211,6 +219,8 @@ export const IssueRow = memo(function IssueRow({
   issue: Issue;
   tab: IssueTab;
   showJiraColumn: boolean;
+  showPrColumn: boolean;
+  showActionColumn: boolean;
   isSyncing?: boolean;
   loading?: string;
   prioritize: (issue: Issue) => void;
@@ -275,28 +285,33 @@ export const IssueRow = memo(function IssueRow({
       </td>
       <td className="td-own">{issue.owner}</td>
       {showJiraColumn ? (
-        <ResolutionLink value={issue.resolution_jira} fallback="-" asButton={tab === 'wip'} buttonLabel="Open Jira" />
+        <ResolutionLink value={issue.resolution_jira} fallback="-" asButton={tab === 'wip' || tab === 'review'} buttonLabel="Open Jira" />
+      ) : null}
+      {showPrColumn ? (
+        <ResolutionLink value={issue.resolution_pr} fallback="-" asButton buttonLabel="Open PR" />
       ) : null}
       <td className="td-time" title={issue.last_seen || issue.created_at || ''}>{formatTimestamp(issue.last_seen || issue.created_at)}</td>
-      <td>
-        {tab === 'backlog' || tab === 'review' ? (
-          <AsyncActionButton
-            className={clsx('act-btn pri-btn', loading && 'loading')}
-            pending={Boolean(loading)}
-            pendingLabel="Invoking..."
-            onClick={handlePrioritize}
-            style={{ position: 'relative' }}
-          >
-            Invoke AI
-          </AsyncActionButton>
-        ) : tab === 'resolved' ? (
-          <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button>
-        ) : (
-          <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>
-            Live Graph
-          </button>
-        )}
-      </td>
+      {showActionColumn ? (
+        <td>
+          {tab === 'backlog' || tab === 'review' ? (
+            <AsyncActionButton
+              className={clsx('act-btn pri-btn', loading && 'loading')}
+              pending={Boolean(loading)}
+              pendingLabel="Invoking..."
+              onClick={handlePrioritize}
+              style={{ position: 'relative' }}
+            >
+              Invoke AI
+            </AsyncActionButton>
+          ) : tab === 'resolved' ? (
+            <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button>
+          ) : (
+            <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>
+              Live Graph
+            </button>
+          )}
+        </td>
+      ) : null}
     </tr>
   );
 });

@@ -796,6 +796,43 @@ button:disabled { cursor: not-allowed; }
 .modal-close { display: flex; align-items: center; gap: 0.5rem; background: var(--s3); border: 1px solid var(--bd); color: var(--t2); border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 0.85rem; }
 .modal-close:hover { background: var(--s4); color: var(--t); }
 .modal-body { flex: 1; display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
+.pm-sheet {
+  border-top: 1px solid var(--bd);
+  background: linear-gradient(180deg, #f8fbff, #f2f7ff);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 42%;
+}
+.pm-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.pm-sheet-head strong {
+  font-size: 0.9rem;
+  color: #1e3a8a;
+}
+.pm-sheet-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.pm-editor {
+  width: 100%;
+  min-height: 210px;
+  max-height: 300px;
+  resize: vertical;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  padding: 0.7rem 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
 
 .n8n-canvas { position: relative; overflow: auto; background: var(--bg); background-image: radial-gradient(circle, var(--s5) 1px, transparent 1px); background-size: 24px 24px; cursor: grab; }
 .n8n-canvas:active { cursor: grabbing; }
