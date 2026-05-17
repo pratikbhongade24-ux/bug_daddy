@@ -37,6 +37,7 @@ const SecurityScannerView = dynamic(() => import('./security/SecurityScannerView
 const GrafanaView = dynamic(() => import('./grafana/GrafanaView').then((mod) => mod.GrafanaView), { ssr: false, loading: () => sectionSkeleton });
 const KibanaView = dynamic(() => import('./kibana/KibanaView').then((mod) => mod.KibanaView), { ssr: false, loading: () => sectionSkeleton });
 const ExecutionGraphModal = dynamic(() => import('./graph/ExecutionGraphModal').then((mod) => mod.ExecutionGraphModal), { ssr: false, loading: () => null });
+const ObservabilityModal = dynamic(() => import('./observability/ObservabilityModal').then((mod) => mod.ObservabilityModal), { ssr: false, loading: () => null });
 const CommandPalette = dynamic(() => import('./shared/CommandPalette').then((mod) => mod.CommandPalette), { ssr: false, loading: () => null });
 const DemoTourBanner = dynamic(() => import('./shared/DemoTourBanner').then((mod) => mod.DemoTourBanner), { ssr: false, loading: () => null });
 const AiThinkingBadge = dynamic(() => import('./shared/AiThinkingBadge').then((mod) => mod.AiThinkingBadge), { ssr: false, loading: () => null });
@@ -69,6 +70,7 @@ export function DashboardApp() {
   const [sortDir, setSortDir] = useState(-1);
   const [prioritizeLoading, setPrioritizeLoading] = useState<Record<number, string>>({});
   const [modalIssue, setModalIssue] = useState<{ issue: Issue; summary: boolean; sessionId?: string } | null>(null);
+  const [observabilityIssue, setObservabilityIssue] = useState<Issue | null>(null);
   const [sonarReportModal, setSonarReportModal] = useState<{ date: string; report: SonarReport | null; loading: boolean; error?: string } | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -435,6 +437,7 @@ export function DashboardApp() {
               prioritizeLoading={prioritizeLoading}
               prioritize={prioritize}
               openGraph={(issue, summaryView) => setModalIssue({ issue, summary: summaryView })}
+              openObservability={(issue) => setObservabilityIssue(issue)}
               onExport={exportCSV}
             />
           ) : null}
@@ -498,6 +501,12 @@ export function DashboardApp() {
             setAgentActive(false);
             await refreshDashboard();
           }}
+        />
+      ) : null}
+      {observabilityIssue ? (
+        <ObservabilityModal
+          issue={observabilityIssue}
+          onClose={() => setObservabilityIssue(null)}
         />
       ) : null}
       {sonarReportModal ? (

@@ -155,6 +155,9 @@ export interface ExecutionEvent {
   output_summary: string | null;
   error_message: string | null;
   tool_name: string | null;
+  duration_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
   created_at: string | null;
 }
 

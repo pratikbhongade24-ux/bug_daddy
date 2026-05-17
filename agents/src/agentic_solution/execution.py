@@ -128,6 +128,8 @@ class ExecutionLogger:
         started_at: float,
         output_summary: str | None = None,
         result: Any = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
     ) -> None:
         self.emit(
             "node.completed",
@@ -139,6 +141,8 @@ class ExecutionLogger:
             output_summary=_truncate(output_summary),
             result=_json_safe(result),
             duration_ms=int((time.monotonic() - started_at) * 1000),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     def node_failed(

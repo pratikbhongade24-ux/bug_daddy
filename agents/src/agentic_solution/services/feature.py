@@ -100,6 +100,8 @@ class FeatureDaddyRuntime:
 
         pr_url = _extract_pr_url(review)
         disposition = "pull_request" if "[DECISION: APPROVE]" in review else "rework_required"
+        if pr_url and disposition == "pull_request":
+            logger.map_pull_request_resolution(pr_url)
         summary = _first_non_empty_line(review)
 
         response = FeatureResponse(

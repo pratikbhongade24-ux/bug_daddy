@@ -157,6 +157,9 @@ class BugDaddyRuntime:
         try:
             started = logger.node_started("rev", "Reviewer Daddy", "Hand off remediation package to reviewer_daddy")
             review_response = self.peers.invoke(self.config.reviewer_daddy, review_payload)
+            pr_url = review_response.get("pr_url")
+            if pr_url:
+                logger.map_pull_request_resolution(pr_url)
             logger.node_completed(
                 "rev",
                 "Reviewer Daddy",

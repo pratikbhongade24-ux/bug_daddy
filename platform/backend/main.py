@@ -224,6 +224,8 @@ class AgentExecutionEventCreate(BaseModel):
     error_code: str | None = Field(default=None, max_length=100)
     error_message: str | None = None
     duration_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class UserResponse(BaseModel):
@@ -1166,6 +1168,8 @@ def ensure_execution_schema(conn):
               error_code VARCHAR(100) NULL,
               error_message TEXT NULL,
               duration_ms INT NULL,
+              input_tokens INT NULL,
+              output_tokens INT NULL,
               created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               UNIQUE KEY uq_session_sequence (session_id, sequence_no),
               INDEX idx_execution_logs_session_id (session_id, id),
@@ -1182,6 +1186,13 @@ def ensure_execution_schema(conn):
             cur.execute(
                 "ALTER TABLE agent_execution_sessions ADD COLUMN next_sequence_no BIGINT NOT NULL DEFAULT 0 AFTER status"
             )
+        for col, definition in [
+            ("input_tokens", "INT NULL AFTER duration_ms"),
+            ("output_tokens", "INT NULL AFTER input_tokens"),
+        ]:
+            cur.execute("SHOW COLUMNS FROM agent_execution_logs LIKE %s", (col,))
+            if not cur.fetchone():
+                cur.execute(f"ALTER TABLE agent_execution_logs ADD COLUMN {col} {definition}")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS sonar_scan_sessions (
@@ -1387,10 +1398,11 @@ def append_execution_event(conn, session_id: str, payload: AgentExecutionEventCr
             INSERT INTO agent_execution_logs (
               session_id, sequence_no, event_type, node_id, node_name, agent_name, status, level,
               title, description, reasoning_summary, input_summary, output_summary, result,
-              tool_name, tool_input, tool_output, error_code, error_message, duration_ms
+              tool_name, tool_input, tool_output, error_code, error_message, duration_ms,
+              input_tokens, output_tokens
             )
             VALUES (
-              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             """,
             (
@@ -1414,6 +1426,8 @@ def append_execution_event(conn, session_id: str, payload: AgentExecutionEventCr
                 event.error_code,
                 event.error_message,
                 event.duration_ms,
+                event.input_tokens,
+                event.output_tokens,
             ),
         )
         event_id = cur.lastrowid
