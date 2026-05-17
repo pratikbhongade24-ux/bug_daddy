@@ -91,7 +91,11 @@ def load_customer(payload):
 def run_risk_checks(profile, payload):
     log("run_risk_checks", {"customerId": profile["customerId"]})
     if payload.get("simulateBug") == "risk_division":
-        return 100 / int(payload.get("riskDenominator", 0))
+        denominator = int(payload.get("riskDenominator", 0))
+        if denominator == 0:
+            # Handle division by zero case appropriately
+            return {"error": "Invalid risk denominator value"}
+        return 100 / denominator
     return {"kycScore": 82, "fraudScore": 11, "bureauScore": 741}
 
 
