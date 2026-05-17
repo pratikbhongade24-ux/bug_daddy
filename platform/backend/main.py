@@ -4020,7 +4020,7 @@ def list_monitors(actor: dict = Depends(require_auth)):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, monitor_name, description, severity, owner_service, service,
+                SELECT id, monitor_name, description, check_query, severity, owner_service, service,
                        is_active, last_run_at, last_result, created_at, updated_at
                 FROM ms_system_monitors
                 ORDER BY severity DESC, id ASC
