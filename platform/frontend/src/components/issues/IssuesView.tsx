@@ -304,7 +304,7 @@ export const IssueRow = memo(function IssueRow({
               Invoke AI
             </AsyncActionButton>
           ) : tab === 'resolved' ? (
-            <button className="act-btn sum-btn" onClick={() => openGraph(issue, true)}>Summary</button>
+            <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>Live Graph</button>
           ) : (
             <button className="act-btn live-btn" onClick={() => openGraph(issue, false)}>
               Live Graph

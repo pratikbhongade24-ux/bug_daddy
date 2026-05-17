@@ -109,6 +109,12 @@ class IncidentDaddyRuntime:
                 started = logger.node_started("bug", "Bug Daddy", "Hand off to bug_daddy", orchestration_raw)
                 try:
                     bug_response = self.peers.invoke(self.config.bug_daddy, bug_request_payload)
+                    pr_url = (
+                        bug_response.get("pr_url")
+                        or (bug_response.get("review_response") or {}).get("pr_url")
+                    )
+                    if pr_url:
+                        logger.map_pull_request_resolution(pr_url)
                     logger.node_completed(
                         "bug",
                         "Bug Daddy",
