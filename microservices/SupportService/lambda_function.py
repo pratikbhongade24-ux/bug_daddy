@@ -143,7 +143,9 @@ def create_ticket(payload, context, request_id):
 
 def assign_ticket(payload, context, request_id):
     ticket = load_ticket(payload)
+    # Handle intentional error simulation for testing purposes
     if payload.get("simulateBug") == "queue_failure":
+        log("simulate_bug_triggered", {"type": "queue_failure", "queue": ticket["assignedQueue"]})
         # Return a controlled error response instead of raising an exception
         err = {
             "code": "QUEUE_ASSIGNMENT_FAILED",
@@ -151,6 +153,15 @@ def assign_ticket(payload, context, request_id):
             "queue": ticket["assignedQueue"],
         }
         return error_response(context, request_id, "assignTicket", payload, err)
+    
+    # Additional defensive check to prevent accidental RuntimeError
+    if payload.get("assignedQueue") is None:
+        err = {
+            "code": "INVALID_QUEUE",
+            "message": "assignedQueue cannot be null or empty",
+        }
+        return error_response(context, request_id, "assignTicket", payload, err)
+        
     return response(
         context,
         request_id,
@@ -262,7 +273,6 @@ def lambda_handler(event, context):
         return result
     except Exception as exc:
         # Log the error and return a structured error response instead of bubbling up
-        print(f"ERROR {SERVICE_NAME} failed while handling {request_id}: {exc}")
-        print(traceback.format_exc())
+        log("unexpected_error", {"error": str(exc), "traceback": traceback.format_exc()})
         err = {"code": "INTERNAL_SERVER_ERROR", "message": str(exc)}
         return error_response(context, request_id, request_id, payload, err)
