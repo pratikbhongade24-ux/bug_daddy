@@ -24,22 +24,19 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from schema_app import ensure_core_schema, schema_status, seed_core_data
 
 
-DB_HOST = os.getenv("DB_HOST", "database-1.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com")
+DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "bug_daddy")
 DB_USER = os.getenv("DB_USER", "bug_daddy")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "bug_daddy")
-TOKEN_SECRET = os.getenv("TOKEN_SECRET", "bug-daddy-dev-secret")
+TOKEN_SECRET = os.getenv("TOKEN_SECRET", "change-me-in-production")
 ACCESS_TOKEN_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
 REFRESH_TOKEN_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "14"))
 PASSWORD_RESET_HOURS = int(os.getenv("PASSWORD_RESET_HOURS", "1"))
 EMAIL_VERIFY_HOURS = int(os.getenv("EMAIL_VERIFY_HOURS", "24"))
 PBKDF2_ITERATIONS = int(os.getenv("PBKDF2_ITERATIONS", "120000"))
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-AGENTCORE_RUNTIME_ARN = os.getenv(
-    "AGENTCORE_RUNTIME_ARN",
-    "arn:aws:bedrock-agentcore:ap-south-1:105028893980:runtime/bug_daddy-IV6831D6Rs",
-)
+AGENTCORE_RUNTIME_ARN = os.getenv("AGENTCORE_RUNTIME_ARN", "")
 AGENT_EXECUTION_LOG_SECRET = os.getenv("AGENT_EXECUTION_LOG_SECRET")
 AGENT_EXECUTION_CALLBACK_URL = os.getenv("AGENT_EXECUTION_CALLBACK_URL")
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://bugdaddy.atlassian.net").rstrip("/")
@@ -50,10 +47,7 @@ SONAR_PRESIGN_EXPIRES_SECONDS = int(os.getenv("SONAR_PRESIGN_EXPIRES_SECONDS", "
 SECURITY_SCANNER_AWS_REGION = os.getenv("SECURITY_SCANNER_AWS_REGION", AWS_REGION)
 SECURITY_SCANNER_ACCESS_KEY_ID = os.getenv("SECURITY_SCANNER_ACCESS_KEY_ID")
 SECURITY_SCANNER_SECRET_ACCESS_KEY = os.getenv("SECURITY_SCANNER_SECRET_ACCESS_KEY")
-AI_QUEUE_URL = os.getenv(
-    "AI_QUEUE_URL",
-    "https://sqs.ap-south-1.amazonaws.com/105028893980/bug-daddy-ai-automation-queue",
-)
+AI_QUEUE_URL = os.getenv("AI_QUEUE_URL", "")
 AI_QUEUE_WORKERS = int(os.getenv("AI_QUEUE_WORKERS", "3"))
 AI_QUEUE_POLL_SECONDS = int(os.getenv("AI_QUEUE_POLL_SECONDS", "10"))
 AI_QUEUE_DEFAULT_LENGTH = int(os.getenv("AI_QUEUE_DEFAULT_LENGTH", "3"))

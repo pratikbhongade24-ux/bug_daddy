@@ -37,12 +37,7 @@ AWS_REGION     = os.getenv("AWS_REGION", "ap-south-1")
 S3_BUCKET      = os.getenv("S3_BUCKET", "sme-rag-documents")
 S3_PREFIX      = "docs/"
 
-DATABASE_URL   = os.getenv(
-    "RAG_DATABASE_URL",
-    "postgresql://sonar:DCjHsU0Rscm9gs08wAo1a390sqIN"
-    "@bugdaddy-sonarqube-postgres.ctkcsksi0yjl.ap-south-1.rds.amazonaws.com"
-    ":5432/sonarqube?sslmode=require",
-)
+DATABASE_URL   = os.environ["RAG_DATABASE_URL"]
 
 EMBEDDING_MODEL = os.getenv("BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
 DOCS_DIR        = Path(__file__).parent / "docs"

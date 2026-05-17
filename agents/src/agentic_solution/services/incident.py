@@ -209,7 +209,7 @@ class IncidentDaddyRuntime:
                     f"Post this exact message to Slack channel C0B2QUEU4NN using slack_post_message:\n\n{slack_message}"
                 )
             logger.node_completed("slk", "Slack Notifier", "Slack notification sent", started, "ok")
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
             logger.node_failed("slk", "Slack Notifier", "Slack notification failed", started, exc)
 
     def _create_jira_incident(self, report: IncidentReport, request: IncidentRequest, logger: ExecutionLogger) -> None:
@@ -249,7 +249,7 @@ class IncidentDaddyRuntime:
                 labels=["incident", sev_label.lower()],
             )
             logger.node_completed("jira", "Jira", "Jira incident created", started, result.get("browse_url") or result.get("key"), result)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
             logger.node_failed("jira", "Jira", "Jira incident creation failed", started, exc)
 
     def _query_sme(self, request: IncidentRequest) -> tuple[str, dict[str, Any]]:
