@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { memo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ExternalLink, Info, Search, Download, ListFilter } from 'lucide-react';
+import { ExternalLink, Info, Search, Download, ListFilter, Activity } from 'lucide-react';
 import { Issue, IssueTab } from '@/lib/types';
 import { PanelHeader } from '../shared/PanelHeader';
 import { SkeletonTableRows } from '../shared/SkeletonLoader';
@@ -74,6 +74,7 @@ export function IssuesView(props: {
   prioritizeLoading: Record<number, string>;
   prioritize: (issue: Issue) => void;
   openGraph: (issue: Issue, summary: boolean) => void;
+  openObservability: (issue: Issue) => void;
   onExport: () => void;
 }) {
   const tabs: IssueTab[] = ['backlog', 'wip', 'review', 'resolved'];
@@ -162,6 +163,7 @@ export function IssuesView(props: {
               {showPrColumn ? <col className="col-pr" /> : null}
               <col className="col-time" />
               {showActionColumn ? <col className="col-action" /> : null}
+              <col className="col-observability" />
             </colgroup>
             <thead>
               <tr>
@@ -177,6 +179,7 @@ export function IssuesView(props: {
                 {showPrColumn ? <th>PR</th> : null}
                 <th>Timestamp</th>
                 {showActionColumn ? <th>Action</th> : null}
+                <th>Observability</th>
               </tr>
             </thead>
             <tbody>
@@ -192,6 +195,7 @@ export function IssuesView(props: {
                   loading={props.prioritizeLoading[issue.id]}
                   prioritize={props.prioritize}
                   openGraph={props.openGraph}
+                  openObservability={props.openObservability}
                 />
               ))}
             </tbody>
@@ -215,6 +219,7 @@ export const IssueRow = memo(function IssueRow({
   loading,
   prioritize,
   openGraph,
+  openObservability,
 }: {
   issue: Issue;
   tab: IssueTab;
@@ -225,6 +230,7 @@ export const IssueRow = memo(function IssueRow({
   loading?: string;
   prioritize: (issue: Issue) => void;
   openGraph: (issue: Issue, summary: boolean) => void;
+  openObservability: (issue: Issue) => void;
 }) {
   const [flashed, setFlashed] = useState(false);
 
@@ -312,6 +318,11 @@ export const IssueRow = memo(function IssueRow({
           )}
         </td>
       ) : null}
+      <td>
+        <button className="act-btn obs-btn" onClick={() => openObservability(issue)} title="View agent execution trace and observability">
+          <Activity size={13} /> Observe
+        </button>
+      </td>
     </tr>
   );
 });
