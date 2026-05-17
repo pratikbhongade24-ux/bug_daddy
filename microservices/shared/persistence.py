@@ -188,6 +188,118 @@ MICRO_TABLE_SQL = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS ms_payments (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      payment_id VARCHAR(100) NOT NULL,
+      customer_id BIGINT NULL,
+      bank_code VARCHAR(50) NOT NULL,
+      amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+      account_masked VARCHAR(100) NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'INITIATED',
+      bank_ref_id VARCHAR(100) NULL,
+      settlement_window VARCHAR(30) NULL,
+      raw_payload JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_ms_payments_payment (payment_id),
+      KEY idx_ms_payments_customer (customer_id),
+      KEY idx_ms_payments_status (status),
+      KEY idx_ms_payments_bank (bank_code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ms_refunds (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      refund_id VARCHAR(100) NOT NULL,
+      original_payment_id VARCHAR(100) NOT NULL,
+      customer_id BIGINT NULL,
+      bank_code VARCHAR(50) NOT NULL,
+      refund_type VARCHAR(20) NOT NULL,
+      refund_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+      reason TEXT NULL,
+      remarks TEXT NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'INITIATED',
+      bank_ref_id VARCHAR(100) NULL,
+      notify_customer BOOLEAN NOT NULL DEFAULT TRUE,
+      raw_payload JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_ms_refunds_refund (refund_id),
+      KEY idx_ms_refunds_original_payment (original_payment_id),
+      KEY idx_ms_refunds_customer (customer_id),
+      KEY idx_ms_refunds_status (status),
+      KEY idx_ms_refunds_bank (bank_code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ms_reconciliation_runs (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      recon_id VARCHAR(100) NOT NULL,
+      bank_code VARCHAR(50) NOT NULL,
+      recon_type VARCHAR(30) NOT NULL DEFAULT 'ALL',
+      from_date DATE NULL,
+      to_date DATE NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+      total_internal INT NOT NULL DEFAULT 0,
+      total_bank INT NOT NULL DEFAULT 0,
+      matched_count INT NOT NULL DEFAULT 0,
+      discrepancy_count INT NOT NULL DEFAULT 0,
+      match_rate VARCHAR(20) NULL,
+      summary_json JSON NULL,
+      completed_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_ms_reconciliation_runs_recon (recon_id),
+      KEY idx_ms_recon_runs_bank (bank_code),
+      KEY idx_ms_recon_runs_status (status),
+      KEY idx_ms_recon_runs_dates (from_date, to_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ms_reconciliation_items (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      recon_id VARCHAR(100) NOT NULL,
+      reference_id VARCHAR(100) NOT NULL,
+      txn_type VARCHAR(20) NOT NULL DEFAULT 'PAYMENT',
+      internal_txn_id VARCHAR(100) NULL,
+      bank_txn_id VARCHAR(100) NULL,
+      amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+      match_status VARCHAR(50) NOT NULL,
+      resolution_code VARCHAR(100) NULL,
+      resolved_by VARCHAR(100) NULL,
+      resolved_at DATETIME NULL,
+      remarks TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_ms_recon_items_recon (recon_id),
+      KEY idx_ms_recon_items_reference (reference_id),
+      KEY idx_ms_recon_items_status (match_status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ms_system_monitors (
+      id BIGINT NOT NULL AUTO_INCREMENT,
+      monitor_name VARCHAR(200) NOT NULL,
+      description TEXT NOT NULL,
+      check_query TEXT NOT NULL,
+      severity VARCHAR(30) NOT NULL DEFAULT 'WARNING',
+      owner_service VARCHAR(100) NOT NULL,
+      service VARCHAR(100) NOT NULL DEFAULT 'unknown',
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      last_run_at DATETIME NULL,
+      last_result JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_ms_system_monitors_name (monitor_name),
+      KEY idx_ms_system_monitors_service (owner_service),
+      KEY idx_ms_system_monitors_severity (severity)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS ms_support_tickets (
       id BIGINT NOT NULL AUTO_INCREMENT,
       ticket_id VARCHAR(100) NOT NULL,
@@ -240,6 +352,8 @@ SERVICE_REGISTRY = {
     "AutoDebitService": ("repayment_mandates", "payments", ["registerMandate", "validateMandate", "executeDebit", "getMandateStatus", "getDebitHistory"]),
     "DisbursementService": ("loan_disbursement", "payments", ["createDisbursement", "validateAccount", "releaseFunds", "getDisbursementStatus", "getDisbursementLedger"]),
     "SupportService": ("customer_support", "customer-ops", ["createTicket", "assignTicket", "updateTicket", "getTicketStatus", "getTicketTimeline"]),
+    "PaymentService": ("payment_processing", "payments", ["initiatePayment", "getPaymentStatus", "processRefund", "getRefundStatus", "getPaymentLedger"]),
+    "ReconciliationService": ("payment_reconciliation", "payments", ["runReconciliation", "getDiscrepancies", "resolveDiscrepancy", "getReconciliationReport", "getDailyReconReportJson", "getReconciliationSummary"]),
 }
 
 
@@ -845,6 +959,229 @@ def persist_support(conn, payload: dict[str, Any], response_payload: dict[str, A
     return {"entity_type": "support_ticket", "entity_id": ticket_id, "tables": ["ms_support_tickets"]}
 
 
+def persist_payment(conn, payload: dict[str, Any], response_payload: dict[str, Any]) -> dict[str, Any]:
+    operation = response_payload.get("operation_name")
+    customer_id = ensure_customer(conn, payload, response_payload)
+
+    if operation == "processRefund":
+        refund = response_payload.get("refund") or {}
+        bank_response = response_payload.get("bankResponse") or {}
+        refund_id = refund.get("refundId") or f"REF-{uuid.uuid4().hex[:12].upper()}"
+        original_payment_id = refund.get("originalPaymentId") or payload.get("originalPaymentId") or "PAY-001"
+        bank_code = refund.get("bankCode") or payload.get("bankCode") or "MOCKBANK"
+        refund_amount = decimal_value(refund.get("refundAmount") or payload.get("refundAmount"))
+        refund_type = refund.get("refundType") or payload.get("refundType") or "FULL"
+        status = refund.get("status") or "INITIATED"
+        bank_ref_id = bank_response.get("bankRefId")
+        reason = refund.get("reason") or payload.get("reason")
+        remarks = refund.get("remarks") or payload.get("remarks")
+        notify_customer = bool(refund.get("notifyCustomer", True))
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ms_refunds
+                  (refund_id, original_payment_id, customer_id, bank_code, refund_type, refund_amount,
+                   reason, remarks, status, bank_ref_id, notify_customer, raw_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                  original_payment_id = VALUES(original_payment_id),
+                  customer_id = COALESCE(VALUES(customer_id), customer_id),
+                  bank_code = VALUES(bank_code),
+                  refund_type = VALUES(refund_type),
+                  refund_amount = VALUES(refund_amount),
+                  reason = COALESCE(VALUES(reason), reason),
+                  remarks = COALESCE(VALUES(remarks), remarks),
+                  status = VALUES(status),
+                  bank_ref_id = COALESCE(VALUES(bank_ref_id), bank_ref_id),
+                  notify_customer = VALUES(notify_customer),
+                  raw_payload = VALUES(raw_payload)
+                """,
+                (
+                    refund_id,
+                    original_payment_id,
+                    customer_id,
+                    bank_code,
+                    refund_type,
+                    refund_amount,
+                    reason,
+                    remarks,
+                    status,
+                    bank_ref_id,
+                    notify_customer,
+                    json_value(payload),
+                ),
+            )
+        return {"entity_type": "refund", "entity_id": refund_id, "tables": ["ms_refunds"]}
+
+    # Default: insert/upsert into ms_payments
+    payment = response_payload.get("payment") or response_payload.get("status") or {}
+    bank_response = response_payload.get("bankResponse") or {}
+    payment_id = payment.get("paymentId") or payload.get("paymentId") or "PAY-001"
+    bank_code = payment.get("bankCode") or payload.get("bankCode") or "MOCKBANK"
+    amount = decimal_value(payment.get("amount") or payload.get("amount"))
+    status = payment.get("status") or payment.get("state") or "INITIATED"
+    bank_ref_id = bank_response.get("bankRefId")
+    account_masked = bank_response.get("accountMasked") or payload.get("accountNumberMasked")
+    settlement_window = bank_response.get("settlementWindow")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO ms_payments
+              (payment_id, customer_id, bank_code, amount, account_masked, status,
+               bank_ref_id, settlement_window, raw_payload)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              customer_id = COALESCE(VALUES(customer_id), customer_id),
+              bank_code = VALUES(bank_code),
+              amount = GREATEST(amount, VALUES(amount)),
+              account_masked = COALESCE(VALUES(account_masked), account_masked),
+              status = VALUES(status),
+              bank_ref_id = COALESCE(VALUES(bank_ref_id), bank_ref_id),
+              settlement_window = COALESCE(VALUES(settlement_window), settlement_window),
+              raw_payload = VALUES(raw_payload)
+            """,
+            (
+                payment_id,
+                customer_id,
+                bank_code,
+                amount,
+                account_masked,
+                status,
+                bank_ref_id,
+                settlement_window,
+                json_value(payload),
+            ),
+        )
+    return {"entity_type": "payment", "entity_id": payment_id, "tables": ["ms_payments"]}
+
+
+def persist_reconciliation(conn, payload: dict[str, Any], response_payload: dict[str, Any]) -> dict[str, Any]:
+    operation = response_payload.get("operation_name")
+
+    if operation == "runReconciliation":
+        reconciliation = response_payload.get("reconciliation") or {}
+        summary = response_payload.get("summary") or {}
+        recon_id = reconciliation.get("reconId") or f"RECON-{uuid.uuid4().hex[:12].upper()}"
+        bank_code = reconciliation.get("bankCode") or payload.get("bankCode") or "ALL"
+        recon_type = reconciliation.get("reconType") or payload.get("reconType") or "ALL"
+        from_date = reconciliation.get("fromDate") or payload.get("fromDate") or None
+        to_date = reconciliation.get("toDate") or payload.get("toDate") or None
+        status = reconciliation.get("status") or "COMPLETED"
+        completed_at = reconciliation.get("completedAt")
+        total_internal = int(summary.get("totalInternal") or 0)
+        total_bank = int(summary.get("totalBank") or 0)
+        matched_count = int(summary.get("matched") or 0)
+        discrepancy_count = int(summary.get("discrepancies") or 0)
+        match_rate = summary.get("matchRate")
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ms_reconciliation_runs
+                  (recon_id, bank_code, recon_type, from_date, to_date, status,
+                   total_internal, total_bank, matched_count, discrepancy_count,
+                   match_rate, summary_json, completed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                  bank_code = VALUES(bank_code),
+                  recon_type = VALUES(recon_type),
+                  from_date = COALESCE(VALUES(from_date), from_date),
+                  to_date = COALESCE(VALUES(to_date), to_date),
+                  status = VALUES(status),
+                  total_internal = VALUES(total_internal),
+                  total_bank = VALUES(total_bank),
+                  matched_count = VALUES(matched_count),
+                  discrepancy_count = VALUES(discrepancy_count),
+                  match_rate = VALUES(match_rate),
+                  summary_json = VALUES(summary_json),
+                  completed_at = COALESCE(VALUES(completed_at), completed_at)
+                """,
+                (
+                    recon_id,
+                    bank_code,
+                    recon_type,
+                    from_date or None,
+                    to_date or None,
+                    status,
+                    total_internal,
+                    total_bank,
+                    matched_count,
+                    discrepancy_count,
+                    match_rate,
+                    json_value(summary),
+                    completed_at,
+                ),
+            )
+        # Insert matched items
+        matched_items = response_payload.get("matched") or []
+        discrepancy_items = response_payload.get("discrepancies") or []
+        with conn.cursor() as cur:
+            for item in matched_items:
+                cur.execute(
+                    """
+                    INSERT INTO ms_reconciliation_items
+                      (recon_id, reference_id, txn_type, internal_txn_id, bank_txn_id, amount, match_status)
+                    VALUES (%s, %s, 'PAYMENT', %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                      match_status = VALUES(match_status),
+                      bank_txn_id = COALESCE(VALUES(bank_txn_id), bank_txn_id)
+                    """,
+                    (
+                        recon_id,
+                        item.get("referenceId"),
+                        item.get("internalTxnId"),
+                        item.get("bankTxnId"),
+                        decimal_value(item.get("amount")),
+                        item.get("status", "MATCHED"),
+                    ),
+                )
+            for item in discrepancy_items:
+                cur.execute(
+                    """
+                    INSERT INTO ms_reconciliation_items
+                      (recon_id, reference_id, txn_type, internal_txn_id, bank_txn_id, amount, match_status)
+                    VALUES (%s, %s, 'PAYMENT', %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                      match_status = VALUES(match_status)
+                    """,
+                    (
+                        recon_id,
+                        item.get("referenceId"),
+                        item.get("internalTxnId"),
+                        item.get("bankTxnId"),
+                        decimal_value(item.get("internalAmount") or item.get("amount")),
+                        item.get("status", "UNMATCHED_INTERNAL"),
+                    ),
+                )
+        return {"entity_type": "reconciliation_run", "entity_id": recon_id, "tables": ["ms_reconciliation_runs", "ms_reconciliation_items"]}
+
+    if operation == "resolveDiscrepancy":
+        resolution = response_payload.get("resolution") or {}
+        recon_id = resolution.get("reconId") or payload.get("reconId")
+        reference_id = resolution.get("referenceId") or payload.get("referenceId")
+        resolution_code = resolution.get("resolutionCode") or payload.get("resolutionCode")
+        resolved_by = resolution.get("resolvedBy") or payload.get("resolvedBy")
+        resolved_at = resolution.get("resolvedAt") or utc_sql()
+        remarks = resolution.get("remarks") or payload.get("remarks")
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE ms_reconciliation_items
+                SET match_status = 'RESOLVED',
+                    resolution_code = %s,
+                    resolved_by = %s,
+                    resolved_at = %s,
+                    remarks = %s
+                WHERE recon_id = %s AND reference_id = %s
+                """,
+                (resolution_code, resolved_by, resolved_at, remarks, recon_id, reference_id),
+            )
+        return {"entity_type": "reconciliation_item", "entity_id": reference_id, "tables": ["ms_reconciliation_items"]}
+
+    # For read/report operations
+    recon_id = payload.get("reconId") or "RECON-001"
+    return {"entity_type": "reconciliation_run", "entity_id": recon_id, "tables": ["ms_reconciliation_runs"]}
+
+
 def with_operation_name(operation: str, fn: Callable[[Any, dict[str, Any], dict[str, Any]], dict[str, Any]]):
     def wrapped(conn, payload: dict[str, Any], response_payload: dict[str, Any]) -> dict[str, Any]:
         return fn(conn, payload, {**response_payload, "operation_name": operation})
@@ -877,6 +1214,14 @@ DISPATCHERS = {
     ("SupportService", "assignTicket"): with_operation_name("assignTicket", persist_support),
     ("SupportService", "updateTicket"): with_operation_name("updateTicket", persist_support),
     ("SupportService", "getTicketStatus"): with_operation_name("getTicketStatus", persist_support),
+    ("PaymentService", "initiatePayment"): with_operation_name("initiatePayment", persist_payment),
+    ("PaymentService", "getPaymentStatus"): with_operation_name("getPaymentStatus", persist_payment),
+    ("PaymentService", "processRefund"): with_operation_name("processRefund", persist_payment),
+    ("PaymentService", "getRefundStatus"): with_operation_name("getRefundStatus", persist_payment),
+    ("ReconciliationService", "runReconciliation"): with_operation_name("runReconciliation", persist_reconciliation),
+    ("ReconciliationService", "resolveDiscrepancy"): with_operation_name("resolveDiscrepancy", persist_reconciliation),
+    ("ReconciliationService", "getReconciliationReport"): with_operation_name("getReconciliationReport", persist_reconciliation),
+    ("ReconciliationService", "getDailyReconReportJson"): with_operation_name("getDailyReconReportJson", persist_reconciliation),
 }
 
 
@@ -973,6 +1318,30 @@ def read_disbursement_ledger(disbursement_id: str | None) -> dict[str, Any]:
             cur.execute("SELECT * FROM ms_disbursements WHERE disbursement_id = %s", (disbursement_id,))
             row = parse_json_columns(cur.fetchone(), "raw_payload")
         return {"disbursement": row}
+
+    return safe_read(_read)
+
+
+def read_payment_ledger(payment_id: str | None) -> dict[str, Any]:
+    def _read(conn):
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM ms_payments WHERE payment_id = %s", (payment_id,))
+            payment = parse_json_columns(cur.fetchone(), "raw_payload")
+            cur.execute("SELECT * FROM ms_refunds WHERE original_payment_id = %s ORDER BY created_at ASC", (payment_id,))
+            refunds = normalize_rows(cur.fetchall(), "raw_payload")
+        return {"payment": payment, "refunds": refunds}
+
+    return safe_read(_read)
+
+
+def read_reconciliation_report(recon_id: str | None) -> dict[str, Any]:
+    def _read(conn):
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM ms_reconciliation_runs WHERE recon_id = %s", (recon_id,))
+            run = parse_json_columns(cur.fetchone(), "summary_json")
+            cur.execute("SELECT * FROM ms_reconciliation_items WHERE recon_id = %s ORDER BY created_at ASC", (recon_id,))
+            items = normalize_rows(cur.fetchall())
+        return {"run": run, "items": items}
 
     return safe_read(_read)
 

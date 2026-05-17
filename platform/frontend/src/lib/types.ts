@@ -357,5 +357,5 @@ export interface SecurityFindingsResponse {
   total: number;
 }
 
-export type ViewName = 'dashboard' | 'issues' | 'ai_queue' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana';
+export type ViewName = 'dashboard' | 'issues' | 'ai_queue' | 'sonar' | 'admin' | 'security' | 'grafana' | 'kibana' | 'query_monitoring';
 export type IssueTab = 'backlog' | 'wip' | 'review' | 'resolved';

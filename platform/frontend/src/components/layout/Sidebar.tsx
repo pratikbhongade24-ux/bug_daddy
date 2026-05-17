@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { LayoutDashboard, Bug, ShieldCheck, Users, ScanSearch, BarChart2, Search } from 'lucide-react';
+import { LayoutDashboard, Bug, ShieldCheck, Users, ScanSearch, BarChart2, Search, Activity } from 'lucide-react';
 import { ViewName } from '@/lib/types';
 
 export function Sidebar({
@@ -34,6 +34,9 @@ export function Sidebar({
         </button>
         <button type="button" aria-current={view === 'kibana' ? 'page' : undefined} className={clsx('nav-item', view === 'kibana' && 'active')} onClick={() => setView('kibana')}>
           <Search size={16} /> Kibana
+        </button>
+        <button type="button" aria-current={view === 'query_monitoring' ? 'page' : undefined} className={clsx('nav-item', view === 'query_monitoring' && 'active')} onClick={() => setView('query_monitoring')}>
+          <Activity size={16} /> Query Monitoring
         </button>
         {isAdmin ? (
           <button type="button" aria-current={view === 'admin' ? 'page' : undefined} className={clsx('nav-item', view === 'admin' && 'active')} onClick={() => setView('admin')}>

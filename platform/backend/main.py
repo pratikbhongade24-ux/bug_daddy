@@ -4007,3 +4007,176 @@ def jira_webhook(payload: dict[str, Any]):
                 return {"status": "created", "id": new_id, "jira_key": jira_key}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Query Monitoring — runs all ms_system_monitors queries and ingests bugs
+# ---------------------------------------------------------------------------
+
+@app.get("/monitors")
+def list_monitors(actor: dict = Depends(require_auth)):
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, monitor_name, description, severity, owner_service, service,
+                       is_active, last_run_at, last_result, created_at, updated_at
+                FROM ms_system_monitors
+                ORDER BY severity DESC, id ASC
+                """
+            )
+            rows = cur.fetchall()
+        items = []
+        for row in rows:
+            row = dict(row)
+            if isinstance(row.get("last_result"), str):
+                try:
+                    row["last_result"] = json.loads(row["last_result"])
+                except Exception:
+                    pass
+            for key in ("last_run_at", "created_at", "updated_at"):
+                if hasattr(row.get(key), "isoformat"):
+                    row[key] = row[key].isoformat()
+            items.append(row)
+        return {"items": items}
+    finally:
+        conn.close()
+
+
+@app.post("/monitors/run")
+def run_monitors(actor: dict = Depends(require_auth)):
+    """
+    Executes every active monitor query in ms_system_monitors.
+    If a query returns rows (non-null result), the discrepancies are ingested
+    as bugs into service_exception_log with source='query_monitor'.
+    Returns a summary of what ran and what was ingested.
+    """
+    conn = get_conn()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    results = []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, monitor_name, description, check_query, severity, owner_service, service FROM ms_system_monitors WHERE is_active = TRUE"
+            )
+            monitors = cur.fetchall()
+
+        for monitor in monitors:
+            monitor_id = monitor["id"]
+            monitor_name = monitor["monitor_name"]
+            check_query = monitor["check_query"]
+            severity = monitor["severity"]
+            owner_service = monitor["owner_service"]
+            service = monitor["service"]
+            description = monitor["description"]
+
+            run_result = {"monitor_id": monitor_id, "monitor_name": monitor_name, "status": "ok", "rows": 0, "ingested": []}
+
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(check_query)
+                    rows = cur.fetchall()
+
+                serialized_rows = []
+                for row in rows:
+                    clean = {}
+                    for k, v in row.items():
+                        if hasattr(v, "isoformat"):
+                            clean[k] = v.isoformat()
+                        else:
+                            try:
+                                clean[k] = float(v) if v is not None else None
+                            except (TypeError, ValueError):
+                                clean[k] = str(v) if v is not None else None
+                    serialized_rows.append(clean)
+
+                last_result = {"rows": len(serialized_rows), "sample": serialized_rows[:5], "ran_at": now}
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE ms_system_monitors SET last_run_at = %s, last_result = %s WHERE id = %s",
+                        (now, json.dumps(last_result, default=str), monitor_id),
+                    )
+
+                run_result["rows"] = len(serialized_rows)
+
+                if serialized_rows:
+                    run_result["status"] = "discrepancy"
+                    for row in serialized_rows:
+                        key_id = row.get("refund_id") or row.get("reference_id") or row.get("payment_id") or json.dumps(sorted(row.items()), default=str)[:120]
+                        fp_raw = f"query_monitor:{monitor_name}:{key_id}"
+                        fingerprint = hashlib.sha256(fp_raw.encode()).hexdigest()[:32]
+
+                        row_summary = ", ".join(f"{k}={v}" for k, v in list(row.items())[:6])
+                        bug_description = (
+                            f"[Query Monitor] {monitor_name}\n\n"
+                            f"Monitor description: {description}\n\n"
+                            f"Discrepancy row: {row_summary}\n\n"
+                            f"Service: {service} | Owner: {owner_service} | Severity: {severity}"
+                        )
+                        stack_trace = json.dumps(row, indent=2, default=str)
+                        execution_logs = json.dumps({"monitor": monitor_name, "row": row, "ran_at": now}, indent=2, default=str)
+
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT id FROM service_exception_log WHERE fingerprint = %s LIMIT 1",
+                                (fingerprint,),
+                            )
+                            existing = cur.fetchone()
+
+                        if existing:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """UPDATE service_exception_log
+                                       SET last_seen = %s, frequency = frequency + 1,
+                                           description = %s, stack_trace = %s,
+                                           entire_execution_logs = %s,
+                                           resolved_at = CASE WHEN status = 'resolved' THEN NULL ELSE resolved_at END,
+                                           status = CASE WHEN status = 'resolved' THEN 'open' ELSE status END
+                                       WHERE id = %s""",
+                                    (now, bug_description, stack_trace, execution_logs, existing["id"]),
+                                )
+                            run_result["ingested"].append({"fingerprint": fingerprint, "action": "updated", "id": existing["id"]})
+                        else:
+                            criticality_map = {"CRITICAL": "Critical", "WARNING": "High", "INFO": "Medium"}
+                            criticality = criticality_map.get(severity, "Medium")
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """INSERT INTO service_exception_log
+                                           (fingerprint, service_name, issue_type, source, description,
+                                            stack_trace, entire_execution_logs, frequency,
+                                            first_seen, last_seen, status, created_at)
+                                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                    (
+                                        fingerprint, service, "query_monitor_discrepancy",
+                                        "query_monitor", bug_description, stack_trace,
+                                        execution_logs, 1, now, now, "open", now,
+                                    ),
+                                )
+                                new_id = cur.lastrowid
+                            run_result["ingested"].append({"fingerprint": fingerprint, "action": "created", "id": new_id})
+
+            except Exception as exc:
+                run_result["status"] = "error"
+                run_result["error"] = str(exc)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE ms_system_monitors SET last_run_at = %s, last_result = %s WHERE id = %s",
+                        (now, json.dumps({"error": str(exc), "ran_at": now}), monitor_id),
+                    )
+
+            results.append(run_result)
+
+        conn.commit()
+        total_discrepancies = sum(r["rows"] for r in results if r["status"] == "discrepancy")
+        total_ingested = sum(len(r["ingested"]) for r in results)
+        return {
+            "ran_at": now,
+            "monitors_run": len(results),
+            "total_discrepancy_rows": total_discrepancies,
+            "total_ingested": total_ingested,
+            "results": results,
+        }
+    finally:
+        conn.close()
