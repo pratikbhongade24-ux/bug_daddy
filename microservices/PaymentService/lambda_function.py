@@ -274,6 +274,11 @@ def process_refund(payload, context, request_id):
     remarks = payload.get("remarks", "")
     notify_customer = payload.get("notifyCustomer", True)
 
+    # Prevent partial refunds for AXIS bank due to API limitation
+    if bank_code == "AXIS" and refund_type == "PARTIAL":
+        return error_response(context, request_id, "processRefund", payload, 400,
+                              "AXIS bank does not support partial refunds. Please use a different bank or process a full refund.")
+
     if refund_type == "PARTIAL":
         try:
             refund_amount = float(payload["refundAmount"])
@@ -287,13 +292,7 @@ def process_refund(payload, context, request_id):
 
     refund_id = "REF-" + uuid.uuid4().hex[:12].upper()
 
-    if bank_code == "AXIS" and refund_type == "PARTIAL":
-        original_amount_raw = payload.get("originalAmount", 0)
-        original_amount = Decimal(str(original_amount_raw)) if original_amount_raw else Decimal(str(refund_amount))
-        bank_response = _mock_axis_process_refund(
-            refund_id, original_payment_id, refund_amount, original_amount=original_amount
-        )
-    elif bank_code in _REFUND_ADAPTERS:
+    if bank_code in _REFUND_ADAPTERS:
         bank_response = _REFUND_ADAPTERS[bank_code](refund_id, original_payment_id, refund_amount)
     elif bank_code == "AXIS":
         bank_response = _mock_axis_process_refund(refund_id, original_payment_id, refund_amount)
